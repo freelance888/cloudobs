@@ -415,6 +415,34 @@ def setup_transition():
     return status.to_http_status()
 
 
+@app.route('/gdrive/init', methods=["POST"])
+def setup_gdrive_sync():
+    """
+    Query parameters:
+    transition_settings: json dictionary,
+    e.g. {"lang": {'drive_id': ..., 'media_dir': ..., 'api_key': ..., 'sync_seconds': ...}, ...}
+        drive_id = request.args.get("drive_id", "")
+        media_dir = request.args.get("media_dir", "/home/stream/content")
+        api_key = request.args.get("gdrive_api_key", "")
+        sync_seconds = request.args.get("gdrive_sync_seconds", "120")
+    :return:
+    """
+    transition_settings = request.args.get("transition_settings", None)
+    transition_settings = json.loads(transition_settings)
+
+    params = MultilangParams(transition_settings, langs=langs)
+    status = broadcast(
+        API_TRANSITION_ROUTE,
+        "POST",
+        params=params,
+        param_name="transition_settings",
+        return_status=True,
+        method_name="setup_transition",
+    )
+
+    return status.to_http_status()
+
+
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
     return '', 200

@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 class DriveSync(threading.Thread):
     def __init__(self):
-        super().__init__()
+        threading.Thread.__init__(self)
 
-    def run(self) -> None:
+    def run(self):
         """
         Every `sync_period_seconds` lists child files within
         a specified `drive_id`, compares with a list of files
