@@ -337,7 +337,7 @@ def set_source_volume():
 
     params = MultilangParams(volume_settings, langs=langs)
     status = broadcast(
-        API_TS_VOLUME_ROUTE,
+        API_SOURCE_VOLUME_ROUTE,
         "POST",
         params=params,
         param_name="volume_settings",
