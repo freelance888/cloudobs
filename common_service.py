@@ -19,6 +19,7 @@ from config import API_STREAM_STOP_ROUTE
 from config import API_TRANSITION_ROUTE
 from config import API_TS_OFFSET_ROUTE
 from config import API_TS_VOLUME_ROUTE
+from config import API_GDRIVE_SYNC
 from util import ExecutionStatus, MultilangParams
 
 load_dotenv()
@@ -144,7 +145,7 @@ def init():
 
         requests_.append(request_)
 
-    # initialize grequests
+    # post requests
     responses_ = util.async_aiohttp_post_all(urls=requests_)
 
     for lang, response in zip(langs, responses_):
@@ -415,29 +416,25 @@ def setup_transition():
     return status.to_http_status()
 
 
-@app.route('/gdrive/init', methods=["POST"])
+@app.route(API_GDRIVE_SYNC, methods=["POST"])
 def setup_gdrive_sync():
     """
     Query parameters:
-    transition_settings: json dictionary,
-    e.g. {"lang": {'drive_id': ..., 'media_dir': ..., 'api_key': ..., 'sync_seconds': ...}, ...}
-        drive_id = request.args.get("drive_id", "")
-        media_dir = request.args.get("media_dir", "/home/stream/content")
-        api_key = request.args.get("gdrive_api_key", "")
-        sync_seconds = request.args.get("gdrive_sync_seconds", "120")
+    gdrive_settings: json dictionary,
+    e.g. {"lang": {'drive_id': ..., 'media_dir': ..., 'api_key': ..., 'sync_seconds': ..., gdrive_sync_addr: ...}, ...}
     :return:
     """
-    transition_settings = request.args.get("transition_settings", None)
-    transition_settings = json.loads(transition_settings)
+    gdrive_settings = request.args.get("gdrive_settings", None)
+    gdrive_settings = json.loads(gdrive_settings)
 
-    params = MultilangParams(transition_settings, langs=langs)
+    params = MultilangParams(gdrive_settings, langs=langs)
     status = broadcast(
-        API_TRANSITION_ROUTE,
+        API_GDRIVE_SYNC,
         "POST",
         params=params,
-        param_name="transition_settings",
+        param_name="gdrive_settings",
         return_status=True,
-        method_name="setup_transition",
+        method_name="setup_gdrive_sync",
     )
 
     return status.to_http_status()

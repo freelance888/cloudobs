@@ -116,7 +116,7 @@ class MultilangParams:
 
 
 class ExecutionStatus:
-    def __init__(self, status, message=""):
+    def __init__(self, status=True, message=""):
         self.status = status
         self.message = message
 

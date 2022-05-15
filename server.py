@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 import obs
 from util import ExecutionStatus
+from util import MultilangParams
 
 load_dotenv()
 BASE_MEDIA_DIR = os.getenv("MEDIA_DIR")
@@ -31,6 +32,8 @@ class Server:
         self.obs_instances = None  # {..., "lang": obs.OBS(), ...}
         self.obs_clients = None
         self.is_initialized = False
+
+        self.media_dir = MultilangParams({'__all__': MEDIA_DIR})
 
     def initialize(self):
         """
@@ -78,6 +81,7 @@ class Server:
                 continue
             obs_: obs.OBS = self.obs_instances[lang]
             use_file_num, name = params_["search_by_num"], params_["name"]
+            media_dir = self.media_dir[lang]
 
             if use_file_num:
                 # extract file number
@@ -92,7 +96,7 @@ class Server:
                     continue
                 file_num = file_num.group()
 
-                files = glob.glob(os.path.join(MEDIA_DIR, f"{file_num}*"))
+                files = glob.glob(os.path.join(media_dir, f"{file_num}*"))
                 if len(files) == 0:
                     msg_ = f"W PYSERVER::Server::run_media(): no media found, " f"lang {lang}, name {name}"
                     print(msg_)
@@ -100,7 +104,7 @@ class Server:
                     continue
                 path = files[0]
             else:
-                path = os.path.join(MEDIA_DIR, name)
+                path = os.path.join(media_dir, name)
                 if not os.path.isfile(path):
                     msg_ = (
                         f"W PYSERVER::Server::run_media(): no media found with name specified, "
@@ -413,6 +417,13 @@ class Server:
                 # return ExecutionStatus(status=False, message=msg_)
 
         return status
+
+    def set_media_dir(self, media_dir_settings):
+        """
+        :param media_dir_settings: dict, e.g. {"lang": media_dir}
+        :return:
+        """
+        self.media_dir = MultilangParams(media_dir_settings)
 
     def _establish_connections(self, verbose=True):
         """

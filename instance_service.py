@@ -5,6 +5,7 @@ import time
 from dotenv import load_dotenv
 from flask import Flask
 from flask import request
+import requests
 
 import server
 from config import API_CLEANUP_ROUTE
@@ -18,6 +19,7 @@ from config import API_STREAM_STOP_ROUTE
 from config import API_TRANSITION_ROUTE
 from config import API_TS_OFFSET_ROUTE
 from config import API_TS_VOLUME_ROUTE
+from config import API_GDRIVE_SYNC
 from util import ExecutionStatus
 
 load_dotenv()
@@ -302,6 +304,42 @@ def setup_transition():
     # TODO: validate `transition_settings`
 
     status: ExecutionStatus = obs_server.setup_transition(transition_settings=transition_settings)
+
+    return status.to_http_status()
+
+
+@app.route(API_GDRIVE_SYNC, methods=["POST"])
+def setup_gdrive_sync():
+    """
+    Query parameters:
+    gdrive_settings: json dictionary,
+    e.g. {"lang": {'drive_id': ..., 'media_dir': ..., 'api_key': ..., 'sync_seconds': ..., gdrive_sync_addr: ...}, ...}
+    :return:
+    """
+    gdrive_settings = request.args.get("gdrive_settings", None)
+    gdrive_settings = json.loads(gdrive_settings)
+
+    media_dir_settings = {lang: gdrive_settings[lang]['media_dir'] for lang in gdrive_settings}
+    obs_server.set_media_dir(media_dir_settings)
+
+    status: ExecutionStatus = ExecutionStatus()
+    for lang, data in gdrive_settings.items():
+        drive_id = data['drive_id']
+        media_dir = data['media_dir']
+        api_key = data['api_key']
+        sync_seconds = data['sync_seconds']
+        gdrive_sync_addr = 'http://localhost:7000'  # data['gdrive_sync_addr']  # default, one language
+
+        response_ = requests.post(gdrive_sync_addr, data={
+            'drive_id': drive_id,
+            'media_dir': media_dir,
+            'api_key': api_key,
+            'sync_seconds': sync_seconds
+        })
+        if response_.status_code != 200:
+            msg_ = f"E PYSERVER::setup_gdrive_sync(): Lang {lang}, details: {response_.text}"
+            print(msg_)
+            status.append_error(msg_)
 
     return status.to_http_status()
 
