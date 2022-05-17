@@ -178,23 +178,15 @@ class OBS:
         the media when it has finished. Fires Exception when couldn't add or mute a source.
         """
 
-        def transition_end_foo():
-            self.delete_source(source_name=TRANSITION_INPUT_NAME)
-            self.set_source_mute(False)
-            self.set_ts_mute(False)
-            self.media_cb_thread.clean_callbacks()
-
-        def media_end_foo():
-            self.delete_source(source_name=MEDIA_INPUT_NAME)
-            if self.transition_name == "Stinger":
-                self._run_media(self.transition_path, TRANSITION_INPUT_NAME)
-            self.media_cb_thread.append_callback(transition_end_foo, self.transition_point / 1000)
-
         def media_play_foo():
-            # delay at self.transition_point / 1000
+            """
+            Removes transition, runs media
+            """
+            # delay for self.transition_point / 1000
             try:
                 self._run_media(path, MEDIA_INPUT_NAME)
                 self.delete_source(source_name=TRANSITION_INPUT_NAME)
+                self.set_source_mute(True)
                 self.set_ts_mute(True)
                 duration = self.client.call(
                     obs.requests.GetMediaDuration(sourceName=MEDIA_INPUT_NAME)
@@ -206,13 +198,37 @@ class OBS:
                 self.set_ts_mute(False)
                 raise ex
 
-        self.media_cb_thread.clean_callbacks()
-        self.delete_source(MEDIA_INPUT_NAME)
+        def media_end_foo():
+            """
+            Deletes media, runs stinger if needed
+            """
+            self.delete_source(source_name=MEDIA_INPUT_NAME)
+            if self.transition_name == "Stinger":
+                self._run_media(self.transition_path, TRANSITION_INPUT_NAME)
+                self.media_cb_thread.append_callback(transition_end_foo, self.transition_point / 1000)
+            elif self.transition_name == "Cut":
+                self.media_cb_thread.append_callback(transition_end_foo, 0)
+
+        def transition_end_foo():
+            """
+            On transition (stinger) finish handler.
+            Removes stinger, mutes source and teamspeak
+            """
+            self.delete_source(source_name=TRANSITION_INPUT_NAME)
+            self.set_source_mute(False)
+            self.set_ts_mute(False)
+            self.media_cb_thread.clean_callbacks()
+
+        self.media_cb_thread.clean_callbacks()  # clean callbacks queue
+        self.delete_source(MEDIA_INPUT_NAME)  # remove media, if any has been played before
 
         if self.transition_name == "Stinger":
             self._run_media(self.transition_path, TRANSITION_INPUT_NAME)
-        self.set_source_mute(True)  # mute main source
-        self.set_ts_mute(True)  # mute main source
+            self.set_source_mute(True)  # mute main source
+            self.set_ts_mute(True)  # mute teamspeak
+        elif self.transition_name == "Cut":
+            self.set_source_mute(False)  # unmute main source
+            self.set_ts_mute(False)  # unmute teamspeak
 
         self.media_cb_thread.append_callback(media_play_foo, self.transition_point / 1000)
 
@@ -256,7 +272,9 @@ class OBS:
             self.transition_path = transition_settings["path"]
             self.transition_point = int(transition_settings["transition_point"])
         else:
-            self.transition_point = 0
+            if "transition_point" not in transition_settings:
+                transition_settings["transition_point"] = 0
+            self.transition_point = int(transition_settings["transition_point"])
 
         self.transition_name = transition_name
 

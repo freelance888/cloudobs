@@ -10,7 +10,7 @@ from util import ExecutionStatus
 from util import MultilangParams
 
 load_dotenv()
-BASE_MEDIA_DIR = os.getenv("MEDIA_DIR")
+BASE_MEDIA_DIR = '/home/stream/content'  # default value, overwritten by gdrive_sync initialization
 MEDIA_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 
