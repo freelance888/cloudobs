@@ -45,12 +45,12 @@ langs = []
 
 
 def broadcast(
-    api_route,
-    http_method,
-    params: util.MultilangParams = None,
-    param_name="params",
-    return_status=False,
-    method_name="broadcast",
+        api_route,
+        http_method,
+        params: util.MultilangParams = None,
+        param_name="params",
+        return_status=False,
+        method_name="broadcast",
 ):
     requests_ = {}  # lang: request
     responses_ = {}  # lang: response
@@ -443,6 +443,12 @@ def setup_gdrive_sync():
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
     return '', 200
+
+
+@app.after_request
+def apply_caching(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
 
 
 if __name__ == "__main__":
