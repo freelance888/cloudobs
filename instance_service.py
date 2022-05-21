@@ -321,7 +321,7 @@ def setup_gdrive_sync():
     gdrive_settings = json.loads(gdrive_settings)
 
     media_dir_settings = {lang: gdrive_settings[lang]['media_dir'] for lang in gdrive_settings}
-    obs_server.set_media_dir(media_dir_settings)
+    #obs_server.set_media_dir(media_dir_settings)
 
     status: ExecutionStatus = ExecutionStatus()
     for lang, data in gdrive_settings.items():
