@@ -328,7 +328,7 @@ def setup_gdrive_sync():
         media_dir = data['media_dir']
         api_key = data['api_key']
         sync_seconds = data['sync_seconds']
-        gdrive_sync_addr = 'http://localhost:7000'  # data['gdrive_sync_addr']  # default, one language
+        gdrive_sync_addr = 'http://localhost:7000/init'  # data['gdrive_sync_addr']  # default, one language
 
         response_ = requests.post(gdrive_sync_addr, data={
             'drive_id': drive_id,
