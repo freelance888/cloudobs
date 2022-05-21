@@ -429,7 +429,7 @@ def setup_gdrive_sync():
 
     params = MultilangParams(gdrive_settings, langs=langs)
     status = broadcast(
-        API_GDRIVE_SYNC,
+        "/init",
         "POST",
         params=params,
         param_name="gdrive_settings",
