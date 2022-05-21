@@ -81,7 +81,7 @@ class Server:
                 continue
             obs_: obs.OBS = self.obs_instances[lang]
             use_file_num, name = params_["search_by_num"], params_["name"]
-            media_dir = self.media_dir[lang]
+            media_dir = os.path.join(self.media_dir[lang], "media")
 
             if use_file_num:
                 # extract file number
