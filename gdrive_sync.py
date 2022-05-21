@@ -77,8 +77,8 @@ def init():
     with lock:
         drive_id = request.args.get("drive_id", "")
         media_dir = request.args.get("media_dir", "/home/stream/content")
-        api_key = request.args.get("gdrive_api_key", "")
-        sync_seconds = request.args.get("gdrive_sync_seconds", "120")
+        api_key = request.args.get("api_key", "")
+        sync_seconds = request.args.get("sync_seconds", "120")
 
         media_dir = os.path.join(media_dir, 'media')
         sync_seconds = max(1, int(sync_seconds))

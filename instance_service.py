@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from flask import Flask
 from flask import request
 import requests
+from urllib.parse import urlencode
 
 import server
 from config import API_CLEANUP_ROUTE
@@ -330,12 +331,15 @@ def setup_gdrive_sync():
         sync_seconds = data['sync_seconds']
         gdrive_sync_addr = 'http://localhost:7000/init'  # data['gdrive_sync_addr']  # default, one language
 
-        response_ = requests.post(gdrive_sync_addr, data={
+
+        query_params = urlencode({
             'drive_id': drive_id,
             'media_dir': media_dir,
             'api_key': api_key,
             'sync_seconds': sync_seconds
         })
+
+        response_ = requests.post(f"{gdrive_sync_addr}?{query_params}")
         if response_.status_code != 200:
             msg_ = f"E PYSERVER::setup_gdrive_sync(): Lang {lang}, details: {response_.text}"
             print(msg_)
