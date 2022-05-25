@@ -81,6 +81,25 @@ def init():
     return status.to_http_status()
 
 
+@app.route(API_INIT_ROUTE, methods=["GET"])
+def get_init():
+    """
+    Returns current `init` settings
+    """
+    if obs_server is None:
+        return json.dumps({}), 500
+    """
+    server_langs: dict of 
+    lang: {
+        "obs_host": "localhost",
+        "websocket_port": 1234,
+        "password": "qwerty123",
+        "original_media_url": "srt://localhost"
+    }
+    """
+    return json.dumps(obs_server.server_langs), 200
+
+
 @app.route(API_CLEANUP_ROUTE, methods=["POST"])
 def cleanup():
     """
@@ -140,13 +159,22 @@ def set_stream_settings():
 @app.route(API_STREAM_START_ROUTE, methods=["POST"])
 def stream_start():
     """
-    Starts streaming on all machines
+    Starts streaming.
+    Query parameters:
+    langs: json list of langs,
+    e.g. ["eng", "rus"], or ["__all__"] (default)
     :return:
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
 
-    status: ExecutionStatus = obs_server.start_streaming()
+    _langs = request.args.get("langs")
+    if not _langs or "__all__" in _langs:  # if _langs is not specified, or `__all__` languages specified
+        _langs = json.dumps(
+            {lang: {} for lang in obs_server.server_langs}
+        )  # replace with all langs list from `server_langs`
+    _langs = [_ for _ in json.loads(_langs)]  # cast to list of langs
+    status: ExecutionStatus = obs_server.start_streaming(langs=_langs)
 
     return status.to_http_status()
 
@@ -154,13 +182,22 @@ def stream_start():
 @app.route(API_STREAM_STOP_ROUTE, methods=["POST"])
 def stream_stop():
     """
-    Stops streaming on all machines
+    Stops streaming.
+    Query parameters:
+    langs: json list of langs,
+    e.g. ["eng", "rus"], or ["__all__"] (default)
     :return:
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
 
-    status: ExecutionStatus = obs_server.stop_streaming()
+    _langs = request.args.get("langs")
+    if not _langs or "__all__" in _langs:  # if _langs is not specified, or `__all__` languages specified
+        _langs = json.dumps(
+            {lang: {} for lang in obs_server.server_langs}
+        )  # replace with all langs list from `server_langs`
+    _langs = [_ for _ in json.loads(_langs)]  # cast to list of langs
+    status: ExecutionStatus = obs_server.stop_streaming(langs=_langs)
 
     return status.to_http_status()
 
@@ -330,7 +367,6 @@ def setup_gdrive_sync():
         api_key = data['api_key']
         sync_seconds = data['sync_seconds']
         gdrive_sync_addr = 'http://localhost:7000/init'  # data['gdrive_sync_addr']  # default, one language
-
 
         query_params = urlencode({
             'drive_id': drive_id,

@@ -157,6 +157,32 @@ def init():
     return status.to_http_status()
 
 
+@app.route(API_INIT_ROUTE, methods=["GET"])
+def get_init():
+    """
+    Returns `init` info
+    :return: {
+        "lang": {
+            "host_url": "base_url",
+            "websocket_port": 1234,
+            "password": "qwerty123",
+            "original_media_url": "srt://localhost"
+        }
+    }
+    """
+    responses = broadcast(API_INIT_ROUTE, "GET", params=None, return_status=False)
+    data = {}
+    for lang, response in responses.items():
+        try:
+            data_ = json.loads(response.text)
+        except json.JSONDecodeError:
+            data_ = {lang: "#"}
+        for lang_, value in data_.items():
+            data[lang_] = value
+
+    return json.dumps(data), 200
+
+
 @app.route(API_CLEANUP_ROUTE, methods=["POST"])
 def cleanup():
     """
@@ -220,10 +246,17 @@ def set_stream_settings():
 @app.route(API_STREAM_START_ROUTE, methods=["POST"])
 def stream_start():
     """
-    Starts streaming on all machines
+    Starts streaming.
+    Query parameters:
+    langs: json list of langs,
+    e.g. ["eng", "rus"], or ["__all__"] (default)
     :return:
     """
-    status = broadcast(API_STREAM_START_ROUTE, "POST", params=None, return_status=True, method_name="stream_start")
+    _langs = request.args.get("langs", json.dumps(["__all__"]))
+    _langs = json.loads(_langs)
+
+    params = MultilangParams({_: {} for _ in _langs}, langs=langs)
+    status = broadcast(API_STREAM_START_ROUTE, "POST", params=params, return_status=True, method_name="stream_start")
 
     return status.to_http_status()
 
@@ -231,10 +264,17 @@ def stream_start():
 @app.route(API_STREAM_STOP_ROUTE, methods=["POST"])
 def stream_stop():
     """
-    Stops streaming on all machines
+    Stops streaming.
+    Query parameters:
+    langs: json list of langs,
+    e.g. ["eng", "rus"], or ["__all__"] (default)
     :return:
     """
-    status = broadcast(API_STREAM_STOP_ROUTE, "POST", params=None, return_status=True, method_name="stream_stop")
+    _langs = request.args.get("langs", json.dumps(["__all__"]))
+    _langs = json.loads(_langs)
+
+    params = MultilangParams({_: {} for _ in _langs}, langs=langs)
+    status = broadcast(API_STREAM_STOP_ROUTE, "POST", params=params, return_status=True, method_name="stream_stop")
 
     return status.to_http_status()
 

@@ -378,7 +378,7 @@ class Server:
                 # return ExecutionStatus(status=False, message=msg_)
         return status
 
-    def start_streaming(self):
+    def start_streaming(self, langs):
         """
         :return:
         """
@@ -388,6 +388,8 @@ class Server:
         status = ExecutionStatus(status=True)
 
         for lang, obs_ in self.obs_instances.items():
+            if lang not in langs:
+                continue
             try:
                 obs_.start_streaming()
             except BaseException as ex:
@@ -398,7 +400,7 @@ class Server:
 
         return status
 
-    def stop_streaming(self):
+    def stop_streaming(self, langs):
         """
         :return:
         """
@@ -408,6 +410,8 @@ class Server:
         status = ExecutionStatus(status=True)
 
         for lang, obs_ in self.obs_instances.items():
+            if lang not in langs:
+                continue
             try:
                 obs_.stop_streaming()
             except BaseException as ex:
