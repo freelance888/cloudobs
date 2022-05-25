@@ -25,6 +25,7 @@ Jinja2 = "3.0.0"
 itsdangerous = "2.0.1"
 Werkzeug = "2.0.0"
 asgiref = "~=3.4.1"
+pyOpenSSL = "19.1.0"
 
 
 [tool.poetry.dev-dependencies]
