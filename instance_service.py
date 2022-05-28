@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import threading
 
 from dotenv import load_dotenv
 from flask import Flask
@@ -43,7 +44,13 @@ if SENTRY_DSN:
 
 app = Flask(__name__)
 obs_server: server.Server = None
+lock = threading.Lock()
 
+def lock_decorator(func):
+    def wrapper():
+        with lock:
+            return func()
+    return wrapper
 
 @app.route(API_INIT_ROUTE, methods=["POST"])
 def init():
@@ -363,10 +370,12 @@ def setup_gdrive_sync():
     status: ExecutionStatus = ExecutionStatus()
     for lang, data in gdrive_settings.items():
         drive_id = data['drive_id']
-        media_dir = data['media_dir']
+        media_dir = data['media_dir'] if 'media_dir' in data else '/home/stream/content'
         api_key = data['api_key']
         sync_seconds = data['sync_seconds']
-        gdrive_sync_addr = 'http://localhost:7000/init'  # data['gdrive_sync_addr']  # default, one language
+        gdrive_sync_addr = data['gdrive_sync_addr'] if 'gdrive_sync_addr' in data else 'http://localhost:7000'
+
+        gdrive_sync_addr = gdrive_sync_addr.rstrip('/')
 
         query_params = urlencode({
             'drive_id': drive_id,
@@ -375,7 +384,7 @@ def setup_gdrive_sync():
             'sync_seconds': sync_seconds
         })
 
-        response_ = requests.post(f"{gdrive_sync_addr}?{query_params}")
+        response_ = requests.post(f"{gdrive_sync_addr}/init?{query_params}")
         if response_.status_code != 200:
             msg_ = f"E PYSERVER::setup_gdrive_sync(): Lang {lang}, details: {response_.text}"
             print(msg_)
@@ -387,7 +396,6 @@ def setup_gdrive_sync():
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
     return '', 200
-
 
 if __name__ == "__main__":
     app.run("0.0.0.0", 6000)

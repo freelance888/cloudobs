@@ -1,6 +1,7 @@
 import json
 import os
 from urllib.parse import urlencode
+import threading
 
 from dotenv import load_dotenv
 from flask import Flask
@@ -42,6 +43,13 @@ if SENTRY_DSN:
 app = Flask(__name__)
 instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
 langs = []
+lock = threading.Lock()
+
+def lock_decorator(func):
+    def wrapper():
+        with lock:
+            return func()
+    return wrapper
 
 
 def broadcast(
@@ -87,6 +95,7 @@ def broadcast(
         return responses_
 
 
+@lock_decorator
 @app.route(API_INIT_ROUTE, methods=["POST"])
 def init():
     """
@@ -157,6 +166,7 @@ def init():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_INIT_ROUTE, methods=["GET"])
 def get_init():
     """
@@ -183,6 +193,7 @@ def get_init():
     return json.dumps(data), 200
 
 
+@lock_decorator
 @app.route(API_CLEANUP_ROUTE, methods=["POST"])
 def cleanup():
     """
@@ -200,6 +211,7 @@ def cleanup():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_MEDIA_PLAY_ROUTE, methods=["POST"])
 def media_play():
     """
@@ -219,6 +231,7 @@ def media_play():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_SET_STREAM_SETTINGS_ROUTE, methods=["POST"])
 def set_stream_settings():
     """
@@ -243,6 +256,7 @@ def set_stream_settings():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_STREAM_START_ROUTE, methods=["POST"])
 def stream_start():
     """
@@ -261,6 +275,7 @@ def stream_start():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_STREAM_STOP_ROUTE, methods=["POST"])
 def stream_stop():
     """
@@ -279,6 +294,7 @@ def stream_stop():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_TS_OFFSET_ROUTE, methods=["POST"])
 def set_ts_offset():
     """
@@ -303,6 +319,7 @@ def set_ts_offset():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_TS_OFFSET_ROUTE, methods=["GET"])
 def get_ts_offset():
     """
@@ -322,6 +339,7 @@ def get_ts_offset():
     return json.dumps(data), 200
 
 
+@lock_decorator
 @app.route(API_TS_VOLUME_ROUTE, methods=["POST"])
 def set_ts_volume():
     """
@@ -346,6 +364,7 @@ def set_ts_volume():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_TS_VOLUME_ROUTE, methods=["GET"])
 def get_ts_volume():
     """
@@ -365,6 +384,7 @@ def get_ts_volume():
     return json.dumps(data), 200
 
 
+@lock_decorator
 @app.route(API_SOURCE_VOLUME_ROUTE, methods=["POST"])
 def set_source_volume():
     """
@@ -389,6 +409,7 @@ def set_source_volume():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_SOURCE_VOLUME_ROUTE, methods=["GET"])
 def get_source_volume():
     """
@@ -408,6 +429,7 @@ def get_source_volume():
     return json.dumps(data), 200
 
 
+@lock_decorator
 @app.route(API_SIDECHAIN_ROUTE, methods=["POST"])
 def setup_sidechain():
     """
@@ -432,12 +454,13 @@ def setup_sidechain():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_TRANSITION_ROUTE, methods=["POST"])
 def setup_transition():
     """
     Query parameters:
     transition_settings: json dictionary,
-    e.g. {"lang": {'transition_name': ..., 'audio_fade_style': ..., 'path': ..., ...}, ...}
+    e.g. {"lang": {'transition_name': ..., 'transition_point': ..., 'path': ..., ...}, ...}
     :return:
     """
     transition_settings = request.args.get("transition_settings", None)
@@ -456,6 +479,7 @@ def setup_transition():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route(API_GDRIVE_SYNC, methods=["POST"])
 def setup_gdrive_sync():
     """
@@ -481,6 +505,7 @@ def setup_gdrive_sync():
     return status.to_http_status()
 
 
+@lock_decorator
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
     return '', 200
@@ -494,6 +519,16 @@ def apply_caching(response):
     response.headers["Access-Control-Allow-Headers"] = "Origin, X-Requested-With, Content-Type, Accept, Authorization"
     return response
 
+class HTTPSThread(threading.Thread):
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+
+    def run(self) -> None:
+        self.app.run("0.0.0.0", 5001, ssl_context='adhoc')
+
+_thread = HTTPSThread(app)
 
 if __name__ == "__main__":
-    app.run("0.0.0.0", 5000, ssl_context='adhoc')
+    _thread.start()
+    app.run("0.0.0.0", 5000)
