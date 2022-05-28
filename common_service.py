@@ -47,8 +47,12 @@ lock = threading.Lock()
 
 def lock_decorator(func):
     def wrapper():
-        with lock:
-            return func()
+        lock.acquire()
+        try:
+            result = func()
+            return result
+        finally:
+            lock.release()
     return wrapper
 
 
