@@ -52,7 +52,7 @@ class CallbackThread(threading.Thread):
     def delete_cb_type(self, cb_type):
         with self.lock:
             self.callbacks = [
-                cb for cb in self.callbacks if cb["cb_type"] == cb_type
+                cb for cb in self.callbacks if cb["cb_type"] != cb_type
             ]
 
     def run(self):
