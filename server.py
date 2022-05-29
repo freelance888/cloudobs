@@ -90,6 +90,7 @@ class Server:
                 msg_ = f"E PYSERVER::Server::schedule_media(): couldn't schedule media, lang {lang}. Details: {ex}"
                 print(msg_)
                 status.append_error(msg_)
+        return status
 
     def run_media(self, params):
         if not self.is_initialized:
