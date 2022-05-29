@@ -1,4 +1,5 @@
 API_INIT_ROUTE = "/init"
+API_MEDIA_SCHEDULE_ROUTE = "/media/schedule"
 API_MEDIA_PLAY_ROUTE = "/media/play"
 API_SET_STREAM_SETTINGS_ROUTE = "/stream/settings"
 API_STREAM_START_ROUTE = "/stream/start"

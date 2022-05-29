@@ -1,4 +1,8 @@
-#0.1.0 - 2022-05-28
+# 0.2.0 - 2022-05-29
+### Added:
+ - `POST /media/schedule`
+
+# 0.1.0 - 2022-05-28
 ### Added:
  - `GET /init`
  - Language option for `/stream/start` and `/stream/stop`
