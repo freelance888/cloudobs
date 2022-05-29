@@ -191,10 +191,11 @@ class OBS:
         """
         CB_TYPE = "schedule"
 
-        self.schedule_mode = True
         self.media_cb_thread.delete_cb_type(CB_TYPE)
 
-        for path, timestamp in schedule:
+        schedule = sorted(schedule, key=lambda x: x[1])  # sort by timestamp
+
+        for i, (path, timestamp) in enumerate(schedule):
             self.media_cb_thread.append_callback(
                 foo=lambda: self.run_media(path=path),
                 delay=timestamp / 1000,
@@ -202,7 +203,7 @@ class OBS:
             )
 
 
-    def run_media(self, path):
+    def run_media(self, path, source_name=MEDIA_INPUT_NAME):
         """
         Mutes original media, adds and runs the media located at `path`, and appends a listener which removes
         the media when it has finished. Fires Exception when couldn't add or mute a source.
@@ -215,16 +216,16 @@ class OBS:
             """
             # delay for self.transition_point / 1000
             try:
-                self._run_media(path, MEDIA_INPUT_NAME)
+                self._run_media(path, source_name)
                 self.delete_source(source_name=TRANSITION_INPUT_NAME)
                 self.set_source_mute(True)
                 self.set_ts_mute(True)
                 duration = self.client.call(
-                    obs.requests.GetMediaDuration(sourceName=MEDIA_INPUT_NAME)
+                    obs.requests.GetMediaDuration(sourceName=source_name)
                 ).getMediaDuration()
                 self.media_cb_thread.append_callback(media_end_foo, duration / 1000, cb_type=CB_TYPE)
             except Exception as ex:
-                self.delete_source(MEDIA_INPUT_NAME)
+                self.delete_source(source_name)
                 self.set_source_mute(False)
                 self.set_ts_mute(False)
                 raise ex
@@ -233,7 +234,7 @@ class OBS:
             """
             Deletes media, runs stinger if needed
             """
-            self.delete_source(source_name=MEDIA_INPUT_NAME)
+            self.delete_source(source_name=source_name)
             if self.transition_name == "Stinger":
                 self._run_media(self.transition_path, TRANSITION_INPUT_NAME)
                 self.media_cb_thread.append_callback(transition_end_foo, self.transition_point / 1000, cb_type=CB_TYPE)
@@ -251,7 +252,7 @@ class OBS:
             self.media_cb_thread.delete_cb_type(cb_type=CB_TYPE)
 
         self.media_cb_thread.delete_cb_type(cb_type=CB_TYPE)  # clean callbacks queue
-        self.delete_source(MEDIA_INPUT_NAME)                  # remove media, if any has been played before
+        self.delete_source(source_name)                       # remove media, if any has been played before
 
         if self.transition_name == "Stinger":
             self._run_media(self.transition_path, TRANSITION_INPUT_NAME)
