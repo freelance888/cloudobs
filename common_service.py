@@ -11,6 +11,7 @@ import server
 import util
 from config import API_CLEANUP_ROUTE
 from config import API_INIT_ROUTE
+from config import API_MEDIA_SCHEDULE_ROUTE
 from config import API_MEDIA_PLAY_ROUTE
 from config import API_SET_STREAM_SETTINGS_ROUTE
 from config import API_SIDECHAIN_ROUTE
@@ -45,6 +46,7 @@ instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": 
 langs = []
 lock = threading.Lock()
 
+
 def lock_decorator(func):
     def wrapper():
         lock.acquire()
@@ -53,6 +55,7 @@ def lock_decorator(func):
             return result
         finally:
             lock.release()
+
     return wrapper
 
 
@@ -211,6 +214,28 @@ def cleanup():
             msg_ = f"E PYSERVER::cleanup(): couldn't cleanup server for {lang}, details: {response.text}"
             print(msg_)
             status.append_error(msg_)
+
+    return status.to_http_status()
+
+
+@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["POST"])
+def media_schedule():
+    """
+    Query parameters:
+    schedule: json dictionary,
+    e.g. {"lang": [..., [path, timestamp], ...], ...}
+     - path - media name
+     - timestamp - relative timestamp in milliseconds
+    :return:
+    """
+    schedule = request.args.get("schedule", None)
+    schedule = json.loads(schedule)
+
+    schedule = MultilangParams(schedule, langs=langs)
+    status = broadcast(
+        API_MEDIA_SCHEDULE_ROUTE, "POST", params=schedule, param_name="schedule",
+        return_status=True, method_name="media_schedule"
+    )
 
     return status.to_http_status()
 
@@ -523,6 +548,7 @@ def apply_caching(response):
     response.headers["Access-Control-Allow-Headers"] = "Origin, X-Requested-With, Content-Type, Accept, Authorization"
     return response
 
+
 class HTTPSThread(threading.Thread):
     def __init__(self, app):
         super().__init__()
@@ -530,6 +556,7 @@ class HTTPSThread(threading.Thread):
 
     def run(self) -> None:
         self.app.run("0.0.0.0", 5001, ssl_context='adhoc')
+
 
 _thread = HTTPSThread(app)
 

@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 import server
 from config import API_CLEANUP_ROUTE
 from config import API_INIT_ROUTE
+from config import API_MEDIA_SCHEDULE_ROUTE
 from config import API_MEDIA_PLAY_ROUTE
 from config import API_SET_STREAM_SETTINGS_ROUTE
 from config import API_SIDECHAIN_ROUTE
@@ -46,11 +47,14 @@ app = Flask(__name__)
 obs_server: server.Server = None
 lock = threading.Lock()
 
+
 def lock_decorator(func):
     def wrapper():
         with lock:
             return func()
+
     return wrapper
+
 
 @app.route(API_INIT_ROUTE, methods=["POST"])
 def init():
@@ -123,6 +127,27 @@ def cleanup():
         obs_server = None
 
     return ExecutionStatus(status=True).to_http_status()
+
+
+@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["POST"])
+def media_schedule():
+    """
+    Query parameters:
+    schedule: json dictionary,
+    e.g. {"lang": [..., [path, timestamp], ...], ...}
+     - path - media name
+     - timestamp - relative timestamp in milliseconds
+    :return:
+    """
+    if obs_server is None:
+        return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
+
+    schedule = request.args.get("schedule", None)
+    schedule = json.loads(schedule)
+
+    status: ExecutionStatus = obs_server.schedule_media(schedule=schedule)
+
+    return status.to_http_status()
 
 
 @app.route(API_MEDIA_PLAY_ROUTE, methods=["POST"])
@@ -396,6 +421,7 @@ def setup_gdrive_sync():
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
     return '', 200
+
 
 if __name__ == "__main__":
     app.run("0.0.0.0", 6000)

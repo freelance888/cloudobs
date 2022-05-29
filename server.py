@@ -56,7 +56,7 @@ class Server:
         return status
 
     def cleanup(self):
-        self.stop_streaming()  # no need to check status
+        self.stop_streaming(["__all__"])  # no need to check status
         self._reset_scenes()
         # self.drop_connections()
 
@@ -66,6 +66,30 @@ class Server:
                 client.disconnect()
             except Exception:  # FIXME
                 pass
+
+    def schedule_media(self, schedule):
+        """
+        :param schedule: dictionary of {lang: [..., [path, timestamp], ...], ...}
+         - path - media name
+         - timestamp - relative timestamp in milliseconds
+        """
+        if not self.is_initialized:
+            return ExecutionStatus(status=False, message="The server was not initialized yet")
+
+        status = ExecutionStatus(status=True)
+        for lang, schedule_ in schedule.items():
+            if lang not in self.obs_instances:
+                msg_ = f"W PYSERVER::Server::schedule_media(): no obs instance found with lang {lang} specified"
+                print(msg_)
+                status.append_warning(msg_)
+                continue
+            obs_: obs.OBS = self.obs_instances[lang]
+            try:
+                obs_.schedule_media(schedule_)
+            except BaseException as ex:
+                msg_ = f"E PYSERVER::Server::schedule_media(): couldn't schedule media, lang {lang}. Details: {ex}"
+                print(msg_)
+                status.append_error(msg_)
 
     def run_media(self, params):
         if not self.is_initialized:
@@ -408,9 +432,10 @@ class Server:
             return ExecutionStatus(status=False, message="The server was not initialized yet")
 
         status = ExecutionStatus(status=True)
+        b_all_langs = len(langs) > 0 and langs[0] == "__all__"
 
         for lang, obs_ in self.obs_instances.items():
-            if lang not in langs:
+            if not b_all_langs and lang not in langs:
                 continue
             try:
                 obs_.stop_streaming()
