@@ -22,7 +22,7 @@ from config import API_TRANSITION_ROUTE
 from config import API_TS_OFFSET_ROUTE
 from config import API_TS_VOLUME_ROUTE
 from config import API_GDRIVE_SYNC
-from util import ExecutionStatus, MultilangParams
+from util import ExecutionStatus, MultilangParams, CallbackThread
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR")
@@ -45,6 +45,7 @@ app = Flask(__name__)
 instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
 langs = []
 lock = threading.Lock()
+cb_thread = CallbackThread()
 
 
 def broadcast(
@@ -159,7 +160,7 @@ def init():
 
     return status.to_http_status()
 
-
+#TODO
 @app.route(API_INIT_ROUTE, methods=["GET"])
 def get_init():
     """
@@ -207,14 +208,24 @@ def cleanup():
 def media_schedule():
     """
     Query parameters:
-    schedule: json dictionary,
-    e.g. {"lang": [..., [path, timestamp], ...], ...}
+    schedule: schedule list,
+    e.g. [..., [name, timestamp], ...]
      - path - media name
-     - timestamp - relative timestamp in milliseconds
+     - timestamp - relative timestamp in seconds
     :return:
     """
     schedule = request.args.get("schedule", None)
     schedule = json.loads(schedule)
+
+    for name, timestamp in schedule:
+        def foo():
+            params = MultilangParams({"__all__": {"name": name, "search_by_num": "1"}}, langs=langs)
+            _ = broadcast(
+                API_MEDIA_PLAY_ROUTE, "POST", params=params,
+                param_name="params", return_status=True, method_name="media_play"
+            )
+        cb_thread.append_callback(foo=foo, delay=timestamp)
+
 
     schedule = MultilangParams(schedule, langs=langs)
     status = broadcast(
@@ -536,5 +547,6 @@ class HTTPSThread(threading.Thread):
 _thread = HTTPSThread(app)
 
 if __name__ == "__main__":
+    cb_thread.start()
     _thread.start()
     app.run("0.0.0.0", 5000)

@@ -4,6 +4,7 @@ import time
 
 import obswebsocket as obs
 import obswebsocket.requests
+from util import CallbackThread
 
 ORIGINAL_STREAM_SOURCE_NAME = "original_stream"
 TS_INPUT_NAME = "ts_input"
@@ -26,60 +27,6 @@ def obs_fire(type, cls, cls_foo, comment, datain, dataout):
     raise Exception(f"{type} PYSERVER::{cls}::{cls_foo}(): {comment} " f"datain: {datain}, dataout: {dataout}")
 
 
-class CallbackThread(threading.Thread):
-    def __init__(self, obs_):
-        self.obs_ = obs_
-        self.lock = threading.Lock()
-        self.callbacks = []  # list of {"foo": foo, "delay": delay}, note: delay in seconds
-        self.running = True
-        threading.Thread.__init__(self)
-
-    def append_callback(self, foo, delay, cb_type="none"):
-        """
-        :param foo:
-        :param delay: delay in seconds
-        :return:
-        """
-        with self.lock:
-            self.callbacks.append({
-                "foo": foo, "delay": delay, "__time__": time.time(), "__done__": False, "cb_type": cb_type
-            })
-
-    def clean_callbacks(self):
-        with self.lock:
-            self.callbacks = []
-
-    def delete_cb_type(self, cb_type):
-        with self.lock:
-            self.callbacks = [
-                cb for cb in self.callbacks if cb["cb_type"] != cb_type
-            ]
-
-    def run(self):
-        while self.running:
-            self._check_callbacks()
-            time.sleep(0.01)
-
-    def _check_callbacks(self):
-        for cb in self.callbacks.copy():
-            self._check_callback(cb)
-        with self.lock:
-            self.callbacks = [cb for cb in self.callbacks if not cb["__done__"]]
-
-    def _check_callback(self, cb):
-        if cb["__done__"]:
-            return
-        if (time.time() - cb["__time__"]) >= cb["delay"]:
-            self._invoke(cb["foo"])
-            cb["__done__"] = True
-
-    def _invoke(self, foo):
-        try:
-            foo()
-        except BaseException as ex:
-            print(f"E PYSERVER::CallbackThread::_invoke(): {ex}")
-
-
 class OBS:
     def __init__(self, lang, client):
         self.lang = lang
@@ -94,7 +41,7 @@ class OBS:
 
         self.schedule_mode = False
 
-        self.media_cb_thread = CallbackThread(self)
+        self.media_cb_thread = CallbackThread()
         self.media_cb_thread.start()
 
         self.client.register(create_event_handler(self))
@@ -203,7 +150,7 @@ class OBS:
             )
 
 
-    def run_media(self, path, source_name=MEDIA_INPUT_NAME):
+    def run_media(self, path, media_type='media', source_name=MEDIA_INPUT_NAME):
         """
         Mutes original media, adds and runs the media located at `path`, and appends a listener which removes
         the media when it has finished. Fires Exception when couldn't add or mute a source.
