@@ -16,6 +16,15 @@
  - Returns current `server_lang` variable of the server (see `POST /init`)
 ### `POST /cleanup`
  - Cleans up the server: stop streaming -> reset scenes -> close obs connections
+### `POST /media/schedule`
+ - Schedules media play
+ - Accepts the following parameters:
+   - `schedule` - json list, e.g.:
+   ```
+   [..., [name, timestamp], ...]
+   ```
+ - `timestamp` - floating-point number, in seconds
+ - name media-file name, used `search_by_num=1` (see `POST /media/play`)
 ### `POST /media/play`
  - Plays media (video/audio)
  - Accepts the following parameters:
@@ -157,3 +166,16 @@
     }
     ```
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
+### `GET /gdrive/files`
+ - Returns information about google drive files
+ - Accepts the following parameters:
+   - `return_details` - `"1/0"` (default `0`), points if needed to return 
+     detailed info for all languages. Values:
+     - `0` - returns 
+       ```
+       {"__all__": [... [filename, true/false - loaded/not loaded], ...]}
+       ```
+     - `1` - returns
+       ```
+       {"lang": [... [filename, true/false - at least loaded on one server (or not)], ...]}
+       ```

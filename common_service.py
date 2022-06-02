@@ -22,7 +22,8 @@ from config import API_TRANSITION_ROUTE
 from config import API_TS_OFFSET_ROUTE
 from config import API_TS_VOLUME_ROUTE
 from config import API_GDRIVE_SYNC
-from util import ExecutionStatus, MultilangParams, CallbackThread
+from config import API_GDRIVE_FILES
+from util import ExecutionStatus, MultilangParams, CallbackThread, GDriveFiles
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR")
@@ -136,9 +137,8 @@ def init():
         instance_service_addrs[lang] = {
             "addr": lang_info["host_url"].strip("/"),
         }
-        lang_info.pop("host_url")
         # initialization for every instance service
-        # for now every obs instance should be started locally with the instance service
+        # for now every obs app should be started locally with the instance_service
         lang_info["obs_host"] = "localhost"
         lang_info = {lang: lang_info}
 
@@ -160,14 +160,14 @@ def init():
 
     return status.to_http_status()
 
-#TODO
+
 @app.route(API_INIT_ROUTE, methods=["GET"])
 def get_init():
     """
     Returns `init` info
     :return: {
         "lang": {
-            "host_url": "base_url",
+            "host_url": "instance_service_addr",
             "websocket_port": 1234,
             "password": "qwerty123",
             "original_media_url": "srt://localhost"
@@ -220,20 +220,18 @@ def media_schedule():
     for name, timestamp in schedule:
         def foo():
             params = MultilangParams({"__all__": {"name": name, "search_by_num": "1"}}, langs=langs)
-            _ = broadcast(
-                API_MEDIA_PLAY_ROUTE, "POST", params=params,
-                param_name="params", return_status=True, method_name="media_play"
-            )
+            with lock:
+                try:
+                    _ = broadcast(
+                        API_MEDIA_PLAY_ROUTE, "POST", params=params,
+                        param_name="params", return_status=True, method_name="media_play"
+                    )
+                except BaseException as ex:
+                    print(f"E PYSERVER::common_service::media_schedule(): {ex}")
+
         cb_thread.append_callback(foo=foo, delay=timestamp)
 
-
-    schedule = MultilangParams(schedule, langs=langs)
-    status = broadcast(
-        API_MEDIA_SCHEDULE_ROUTE, "POST", params=schedule, param_name="schedule",
-        return_status=True, method_name="media_schedule"
-    )
-
-    return status.to_http_status()
+    return ExecutionStatus(True).to_http_status()
 
 
 @app.route(API_MEDIA_PLAY_ROUTE, methods=["POST"])
@@ -517,13 +515,55 @@ def setup_gdrive_sync():
     return status.to_http_status()
 
 
+@app.route(API_GDRIVE_FILES, methods=["GET"])
+def get_gdrive_files():
+    """
+    Retrieves information about google drive files
+    Query parameters:
+    return_details: "1/0", points if needed to return detailed info for all languages,
+     - "0" - returns dict of {"__all__": [... [filename, true/false - loaded/not loaded], ...]}
+     - "1" - returns dict of {"lang": [... [filename, true/false - at least loaded on one server (or not)], ...]}
+     - default - "0"
+    """
+    return_details = int(request.args.get("return_details", "0"))
+
+    # fetch data from remote servers
+    responses = broadcast(API_GDRIVE_FILES, "GET", params=None, return_status=False)
+    data = {}  # dict of {"lang": [... [filename, true/false - loaded/not loaded], ...]}
+    for lang, response in responses.items():
+        try:
+            data_ = json.loads(response.text)
+            for lang_, value in data_.items():
+                data[lang_] = value
+        except json.JSONDecodeError:
+            pass
+
+    # result: {"lang": {}, ... } if return_details else {"__all__": {}}
+    result = {"__all__": {}}
+    if return_details:
+        result = {lang: {} for lang in data}
+
+    for lang_, files_ in data.items():
+        lang = lang_ if return_details else "__all__"
+        for filename, loaded in files_:
+            files = result[lang]
+            # condition, if the file has been loaded at least on one server
+            files[filename] = max(loaded, files[filename]) if filename in files else loaded
+
+    result = {lang: list(files.items()) for lang, files in result}
+
+    return json.dumps(result), 200
+
+
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
     return '', 200
 
+
 @app.before_request
 def before_request():
     lock.acquire()
+
 
 @app.after_request
 def apply_caching(response):

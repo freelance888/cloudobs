@@ -98,6 +98,39 @@ class ServiceAddrStorage:
         return self.dct[lang]["addr"]
 
 
+class GDriveFiles:
+    def __init__(self, with_lock=False):
+        self.filenames = dict()  # filename: bool - loaded
+        self.with_lock = with_lock
+        if self.with_lock:
+            self._lock = threading.Lock()
+
+    def __setitem__(self, key, value):
+        if not self.with_lock:
+            self.filenames[key] = value
+        with self._lock:
+            self.filenames[key] = value
+
+    def __getitem__(self, item):
+        if not self.with_lock:
+            return self.filenames[item]
+        with self._lock:
+            return self.filenames[item]
+
+    def __iter__(self):
+        self._n = 0
+        self._items = list(self.filenames.items())
+        return self
+
+    def __next__(self):
+        if self._n < len(self.filenames):
+            result = self._items[self._n]  # (filename, b_state)
+            self._n += 1
+            return result
+        else:
+            raise StopIteration
+
+
 class MultilangParams:
     def __init__(self, params_dict, langs=None):
         self.params_dict = params_dict

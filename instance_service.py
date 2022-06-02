@@ -23,6 +23,7 @@ from config import API_TRANSITION_ROUTE
 from config import API_TS_OFFSET_ROUTE
 from config import API_TS_VOLUME_ROUTE
 from config import API_GDRIVE_SYNC
+from config import API_GDRIVE_FILES
 from util import ExecutionStatus
 
 load_dotenv()
@@ -43,17 +44,22 @@ if SENTRY_DSN:
         traces_sample_rate=1.0,
     )
 
+class GDriveHelper:
+    def __init__(self):
+        self.workers = {}
+
+    def add_worker(self, lang, addr, drive_id, media_dir, api_key, sync_seconds):
+        self.workers[lang] = {
+            "addr": addr,
+            "drive_id": drive_id,
+            "media_dir": media_dir,
+            "api_key": api_key,
+            "sync_seconds": sync_seconds
+        }
+
 app = Flask(__name__)
 obs_server: server.Server = None
-lock = threading.Lock()
-
-
-def lock_decorator(func):
-    def wrapper():
-        with lock:
-            return func()
-
-    return wrapper
+gdrive_helper: GDriveHelper = GDriveHelper()
 
 
 @app.route(API_INIT_ROUTE, methods=["POST"])
@@ -61,6 +67,7 @@ def init():
     """
     Query parameters:
     server_langs: json, dict {
+        "host_url": "...",
         "obs_host": "localhost",
         "websocket_port": 1234,
         "password": "qwerty123",
@@ -96,19 +103,20 @@ def init():
 def get_init():
     """
     Returns current `init` settings
-    """
-    if obs_server is None:
-        return json.dumps({}), 500
-    """
-    server_langs: dict of 
+    server_langs: dict of
     lang: {
-        "obs_host": "localhost",
+        "host_url": "...",
         "websocket_port": 1234,
         "password": "qwerty123",
         "original_media_url": "srt://localhost"
     }
     """
-    return json.dumps(obs_server.server_langs), 200
+    if obs_server is None:
+        return json.dumps({}), 500
+    result = obs_server.server_langs.copy()
+    for lang in result:
+        result[lang].pop("obs_host")
+    return json.dumps(result), 200
 
 
 @app.route(API_CLEANUP_ROUTE, methods=["POST"])
@@ -415,7 +423,39 @@ def setup_gdrive_sync():
             print(msg_)
             status.append_error(msg_)
 
+        gdrive_helper.add_worker(
+            lang=lang,
+            addr=gdrive_sync_addr,
+            drive_id=drive_id,
+            media_dir=media_dir,
+            api_key=api_key,
+            sync_seconds=sync_seconds,
+        )
+
+
     return status.to_http_status()
+
+
+@app.route(API_GDRIVE_FILES, methods=["GET"])
+def get_gdrive_files():
+    """
+    Retrieves information about google drive files,
+    returns dict of {"lang": [... [filename, true/false - loaded/not loaded], ...]}
+    """
+    if obs_server is None:
+        return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
+
+    data = {}
+
+    for lang in gdrive_helper.workers:
+        addr = gdrive_helper.workers[lang]["addr"]
+        response_ = requests.get(f"{addr}/files")
+        if response_.status_code != 200:
+            msg_ = f"E PYSERVER::get_gdrive_files(): Lang {lang}, details: {response_.text}"
+            print(msg_)
+            continue
+        data[lang] = json.loads(response_.text)
+    return json.dumps(data), 200
 
 
 @app.route('/healthcheck', methods=['GET'])
