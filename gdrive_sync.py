@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import io
+import json
 import os.path
 import time
 from flask import Flask
@@ -9,8 +10,9 @@ import threading
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from util import GDriveFiles
 
-b_init, drive_id, media_dir, api_key, sync_seconds = False, None, None, None, 2
+b_init, drive_id, media_dir, api_key, sync_seconds = False, None, "", None, 2
 lock = threading.Lock()
 
 app = Flask(__name__)
@@ -19,6 +21,7 @@ app = Flask(__name__)
 class DriveSync(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
+        self.files = GDriveFiles(with_lock=True)
 
     def run(self):
         """
@@ -49,6 +52,10 @@ class DriveSync(threading.Thread):
                         if "files" not in files:
                             raise Exception(f"Couldn't list files in specified driveId. Error: {files}")
 
+                        for fileinfo in files["files"]:
+                            fid, fname = fileinfo["id"], fileinfo["name"]
+                            self.files[fname] = False
+
                         print(f"I PYSERVER::run_drive_sync(): Sync {len(files['files'])} files")
                         for fileinfo in files["files"]:
                             fid, fname = fileinfo["id"], fileinfo["name"]
@@ -63,6 +70,7 @@ class DriveSync(threading.Thread):
                                     while not done:
                                         status, done = downloader.next_chunk()
                                         # print("Download %d%%." % int(status.progress() * 100))
+                                    self.files[fname] = True
                                     print(
                                         f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}, status: {status}")
             except Exception as ex:
@@ -86,6 +94,12 @@ def init():
         b_init = True
         os.system(f"mkdir -p {media_dir}")
     return 'Ok', 200
+
+
+@app.route('/files', methods=['GET'])
+def get_files():
+    data = [[fname, state] for fname, state in drive_sync.files]
+    return json.dumps(data), 200
 
 
 @app.route('/healthcheck', methods=['GET'])

@@ -1,41 +1,52 @@
 import re
+import threading
+import time
 
 import aiohttp
 import asyncio
 from asgiref import sync
+
 
 class Response:
     def __init__(self, text, status_code):
         self.text = text
         self.status_code = status_code
 
+
 def async_aiohttp_get_all(urls):
     """
     performs asynchronous get requests
     """
+
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
             async def fetch(url):
                 async with session.get(url) as response:
                     return Response(await response.text(), response.status)
+
             return await asyncio.gather(*[
                 fetch(url) for url in urls
             ])
+
     # call get_all as a sync function to be used in a sync context
     return sync.async_to_sync(get_all)(urls)
+
 
 def async_aiohttp_post_all(urls):
     """
     performs asynchronous get requests
     """
+
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
             async def fetch(url):
                 async with session.post(url) as response:
                     return Response(await response.text(), response.status)
+
             return await asyncio.gather(*[
                 fetch(url) for url in urls
             ])
+
     # call get_all as a sync function to be used in a sync context
     return sync.async_to_sync(get_all)(urls)
 
@@ -85,6 +96,39 @@ class ServiceAddrStorage:
 
     def addr(self, lang):
         return self.dct[lang]["addr"]
+
+
+class GDriveFiles:
+    def __init__(self, with_lock=False):
+        self.filenames = dict()  # filename: bool - loaded
+        self.with_lock = with_lock
+        if self.with_lock:
+            self._lock = threading.Lock()
+
+    def __setitem__(self, key, value):
+        if not self.with_lock:
+            self.filenames[key] = value
+        with self._lock:
+            self.filenames[key] = value
+
+    def __getitem__(self, item):
+        if not self.with_lock:
+            return self.filenames[item]
+        with self._lock:
+            return self.filenames[item]
+
+    def __iter__(self):
+        self._n = 0
+        self._items = list(self.filenames.items())
+        return self
+
+    def __next__(self):
+        if self._n < len(self.filenames):
+            result = self._items[self._n]  # (filename, b_state)
+            self._n += 1
+            return result
+        else:
+            raise StopIteration
 
 
 class MultilangParams:
@@ -151,3 +195,56 @@ class ExecutionStatus:
         code = 200 if self.__bool__() else 500
         msg = "Ok" if code == 200 and not self.message else self.message
         return msg, code
+
+
+class CallbackThread(threading.Thread):
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.callbacks = []  # list of {"foo": foo, "delay": delay}, note: delay in seconds
+        self.running = True
+        threading.Thread.__init__(self)
+
+    def append_callback(self, foo, delay, cb_type="none"):
+        """
+        :param foo:
+        :param delay: delay in seconds
+        :return:
+        """
+        with self.lock:
+            self.callbacks.append({
+                "foo": foo, "delay": delay, "__time__": time.time(), "__done__": False, "cb_type": cb_type
+            })
+
+    def clean_callbacks(self):
+        with self.lock:
+            self.callbacks = []
+
+    def delete_cb_type(self, cb_type):
+        with self.lock:
+            self.callbacks = [
+                cb for cb in self.callbacks if cb["cb_type"] != cb_type
+            ]
+
+    def run(self):
+        while self.running:
+            self._check_callbacks()
+            time.sleep(0.01)
+
+    def _check_callbacks(self):
+        for cb in self.callbacks.copy():
+            self._check_callback(cb)
+        with self.lock:
+            self.callbacks = [cb for cb in self.callbacks if not cb["__done__"]]
+
+    def _check_callback(self, cb):
+        if cb["__done__"]:
+            return
+        if (time.time() - cb["__time__"]) >= cb["delay"]:
+            self._invoke(cb["foo"])
+            cb["__done__"] = True
+
+    def _invoke(self, foo):
+        try:
+            foo()
+        except BaseException as ex:
+            print(f"E PYSERVER::CallbackThread::_invoke(): {ex}")

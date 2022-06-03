@@ -106,8 +106,10 @@ class Server:
                 continue
             obs_: obs.OBS = self.obs_instances[lang]
             use_file_num, name = params_["search_by_num"], params_["name"]
+            media_type = params_['media_type'] if 'media_type' in params_ else 'media'
             media_dir = os.path.join(self.media_dir[lang], "media")
 
+            # search for the file
             if use_file_num:
                 # extract file number
                 file_num = re.search(r"^\d+", name)
@@ -140,7 +142,7 @@ class Server:
                     continue
 
             try:
-                obs_.run_media(path)
+                obs_.run_media(path, media_type=media_type)
             except BaseException as ex:
                 msg_ = f"E PYSERVER::Server::run_media(): couldn't play media, lang {lang}. Details: {ex}"
                 print(msg_)
