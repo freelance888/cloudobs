@@ -216,20 +216,21 @@ def media_schedule():
     """
     schedule = request.args.get("schedule", None)
     schedule = json.loads(schedule)
+    cb_thread.clean_callbacks()
+
+    def foo(name_):
+        params = MultilangParams({"__all__": {"name": name_, "search_by_num": "1"}}, langs=langs)
+        with lock:
+            try:
+                _ = broadcast(
+                    API_MEDIA_PLAY_ROUTE, "POST", params=params,
+                    param_name="params", return_status=True, method_name="media_play"
+                )
+            except BaseException as ex:
+                print(f"E PYSERVER::common_service::media_schedule(): {ex}")
 
     for name, timestamp in schedule:
-        def foo():
-            params = MultilangParams({"__all__": {"name": name, "search_by_num": "1"}}, langs=langs)
-            with lock:
-                try:
-                    _ = broadcast(
-                        API_MEDIA_PLAY_ROUTE, "POST", params=params,
-                        param_name="params", return_status=True, method_name="media_play"
-                    )
-                except BaseException as ex:
-                    print(f"E PYSERVER::common_service::media_schedule(): {ex}")
-
-        cb_thread.append_callback(foo=foo, delay=timestamp)
+        cb_thread.append_callback(foo=foo, args=(name, ), delay=timestamp)
 
     return ExecutionStatus(True).to_http_status()
 

@@ -200,11 +200,11 @@ class ExecutionStatus:
 class CallbackThread(threading.Thread):
     def __init__(self):
         self.lock = threading.Lock()
-        self.callbacks = []  # list of {"foo": foo, "delay": delay}, note: delay in seconds
+        self.callbacks = []  # list of {"foo": foo, "args": args, "delay": delay}, note: delay in seconds
         self.running = True
         threading.Thread.__init__(self)
 
-    def append_callback(self, foo, delay, cb_type="none"):
+    def append_callback(self, foo, delay, args=None, cb_type="none"):
         """
         :param foo:
         :param delay: delay in seconds
@@ -212,7 +212,8 @@ class CallbackThread(threading.Thread):
         """
         with self.lock:
             self.callbacks.append({
-                "foo": foo, "delay": delay, "__time__": time.time(), "__done__": False, "cb_type": cb_type
+                "foo": foo, "delay": delay, "args": args,
+                "__time__": time.time(), "__done__": False, "cb_type": cb_type
             })
 
     def clean_callbacks(self):
@@ -240,11 +241,15 @@ class CallbackThread(threading.Thread):
         if cb["__done__"]:
             return
         if (time.time() - cb["__time__"]) >= cb["delay"]:
-            self._invoke(cb["foo"])
+            self._invoke(cb)
             cb["__done__"] = True
 
-    def _invoke(self, foo):
+    def _invoke(self, cb):
         try:
-            foo()
+            foo, args = cb["foo"], cb["args"]
+            if args is not None:
+                foo(*args)
+            else:
+                foo()
         except BaseException as ex:
             print(f"E PYSERVER::CallbackThread::_invoke(): {ex}")
