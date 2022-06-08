@@ -23,6 +23,7 @@ from config import API_TS_OFFSET_ROUTE
 from config import API_TS_VOLUME_ROUTE
 from config import API_GDRIVE_SYNC
 from config import API_GDRIVE_FILES
+from config import API_INFO_ROUTE
 from util import ExecutionStatus, MultilangParams, CallbackThread, GDriveFiles
 
 load_dotenv()
@@ -66,7 +67,7 @@ def broadcast(
         addr = instance_service_addrs.addr(lang)  # get server address
         request_ = f"{addr}{api_route}"  # create requests
         if params is not None:  # add query params if needed
-            params_json = json.dumps({lang: params[lang]})
+            params_json = json.dumps(params[lang])
             query_params = urlencode({param_name: params_json})
             request_ = request_ + "?" + query_params
         requests_[lang] = request_  # dump request
@@ -90,6 +91,22 @@ def broadcast(
         return status
     else:
         return responses_
+
+
+@app.route(API_INFO_ROUTE, methods=["GET"])
+def info():
+    """
+    :return:
+    """
+    responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
+    data = {}
+    for lang, response in responses.items():
+        try:
+            data[lang] = json.loads(response.text)
+        except json.JSONDecodeError:
+            data[lang] = "#"
+
+    return json.dumps(data), 200
 
 
 @app.route(API_INIT_ROUTE, methods=["POST"])
@@ -140,7 +157,6 @@ def init():
         # initialization for every instance service
         # for now every obs app should be started locally with the instance_service
         lang_info["obs_host"] = "localhost"
-        lang_info = {lang: lang_info}
 
         query_params = urlencode({"server_langs": json.dumps(lang_info)})
 
@@ -159,32 +175,6 @@ def init():
             status.append_error(msg_)
 
     return status.to_http_status()
-
-
-@app.route(API_INIT_ROUTE, methods=["GET"])
-def get_init():
-    """
-    Returns `init` info
-    :return: {
-        "lang": {
-            "host_url": "instance_service_addr",
-            "websocket_port": 1234,
-            "password": "qwerty123",
-            "original_media_url": "srt://localhost"
-        }
-    }
-    """
-    responses = broadcast(API_INIT_ROUTE, "GET", params=None, return_status=False)
-    data = {}
-    for lang, response in responses.items():
-        try:
-            data_ = json.loads(response.text)
-        except json.JSONDecodeError:
-            data_ = {lang: "#"}
-        for lang_, value in data_.items():
-            data[lang_] = value
-
-    return json.dumps(data), 200
 
 
 @app.route(API_CLEANUP_ROUTE, methods=["POST"])
@@ -230,7 +220,7 @@ def media_schedule():
                 print(f"E PYSERVER::common_service::media_schedule(): {ex}")
 
     for name, timestamp in schedule:
-        cb_thread.append_callback(foo=foo, args=(name, ), delay=timestamp)
+        cb_thread.append_callback(foo=foo, args=(name,), delay=timestamp)
 
     return ExecutionStatus(True).to_http_status()
 
@@ -330,7 +320,7 @@ def set_ts_offset():
         API_TS_OFFSET_ROUTE,
         "POST",
         params=params,
-        param_name="offset_settings",
+        param_name="ts_offset",
         return_status=True,
         method_name="set_ts_offset",
     )
@@ -348,11 +338,9 @@ def get_ts_offset():
     data = {}
     for lang, response in responses.items():
         try:
-            data_ = json.loads(response.text)
+            data[lang] = json.loads(response.text)
         except json.JSONDecodeError:
-            data_ = {lang: "#"}
-        for lang_, value in data_.items():
-            data[lang_] = value
+            data[lang] = "#"
 
     return json.dumps(data), 200
 
@@ -373,7 +361,7 @@ def set_ts_volume():
         API_TS_VOLUME_ROUTE,
         "POST",
         params=params,
-        param_name="volume_settings",
+        param_name="volume_db",
         return_status=True,
         method_name="set_ts_volume",
     )
@@ -391,11 +379,9 @@ def get_ts_volume():
     data = {}
     for lang, response in responses.items():
         try:
-            data_ = json.loads(response.text)
+            data[lang] = json.loads(response.text)
         except json.JSONDecodeError:
-            data_ = {lang: "#"}
-        for lang_, value in data_.items():
-            data[lang_] = value
+            data[lang] = "#"
 
     return json.dumps(data), 200
 
@@ -416,7 +402,7 @@ def set_source_volume():
         API_SOURCE_VOLUME_ROUTE,
         "POST",
         params=params,
-        param_name="volume_settings",
+        param_name="volume_db",
         return_status=True,
         method_name="set_source_volume",
     )
@@ -434,11 +420,9 @@ def get_source_volume():
     data = {}
     for lang, response in responses.items():
         try:
-            data_ = json.loads(response.text)
+            data[lang] = json.loads(response.text)
         except json.JSONDecodeError:
-            data_ = {lang: "#"}
-        for lang_, value in data_.items():
-            data[lang_] = value
+            data[lang] = "#"
 
     return json.dumps(data), 200
 
