@@ -99,7 +99,7 @@ def init():
 
 @app.route('/files', methods=['GET'])
 def get_files():
-    data = [[fname, state] for fname, state in drive_sync.files]
+    data = [[fname, state] for fname, state in drive_sync.files.items()]
     return json.dumps(data), 200
 
 

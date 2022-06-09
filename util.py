@@ -130,6 +130,9 @@ class GDriveFiles:
         else:
             raise StopIteration
 
+    def items(self):
+        return self.filenames.items()
+
 
 class MultilangParams:
     def __init__(self, params_dict, langs=None):
