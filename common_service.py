@@ -517,11 +517,9 @@ def get_gdrive_files():
     data = {}  # dict of {"lang": [... [filename, true/false - loaded/not loaded], ...]}
     for lang, response in responses.items():
         try:
-            data_ = json.loads(response.text)
-            for lang_, value in data_.items():
-                data[lang_] = value
+            data[lang] = json.loads(response.text)
         except json.JSONDecodeError:
-            pass
+            data[lang] = "#"
 
     # result: {"lang": {}, ... } if return_details else {"__all__": {}}
     result = {"__all__": {}}
