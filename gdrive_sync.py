@@ -54,7 +54,8 @@ class DriveSync(threading.Thread):
 
                         for fileinfo in files["files"]:
                             fid, fname = fileinfo["id"], fileinfo["name"]
-                            self.files[fname] = False
+                            if fname not in self.files:
+                                self.files[fname] = False
 
                         print(f"I PYSERVER::run_drive_sync(): Sync {len(files['files'])} files")
                         for fileinfo in files["files"]:

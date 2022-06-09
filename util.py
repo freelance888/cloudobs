@@ -119,7 +119,7 @@ class GDriveFiles:
 
     def __iter__(self):
         self._n = 0
-        self._items = list(self.filenames.items())
+        self._items = list(self.filenames.keys())
         return self
 
     def __next__(self):
