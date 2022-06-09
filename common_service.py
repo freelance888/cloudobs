@@ -533,7 +533,7 @@ def get_gdrive_files():
             # condition, if the file has been loaded at least on one server
             files[filename] = max(loaded, files[filename]) if filename in files else loaded
 
-    result = {lang: list(files.items()) for lang, files in result}
+    result = {lang: list(files.items()) for lang, files in result.items()}
 
     return json.dumps(result), 200
 
