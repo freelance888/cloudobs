@@ -74,6 +74,8 @@ class DriveSync(threading.Thread):
                                     self.files[fname] = True
                                     print(
                                         f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}, status: {status}")
+                            else:
+                                self.files[fname] = True
             except Exception as ex:
                 print(f"E PYSERVER::run_drive_sync(): {ex}")
             time.sleep(sync_seconds)
