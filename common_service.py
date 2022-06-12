@@ -177,6 +177,22 @@ def init():
     return status.to_http_status()
 
 
+@app.route(API_INIT_ROUTE, methods=["GET"])
+def get_init():
+    """
+    :return:
+    """
+    responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
+    data = {}
+    for lang, response in responses.items():
+        try:
+            data[lang] = json.loads(response.text)["server_langs"]
+        except json.JSONDecodeError:
+            data[lang] = "#"
+
+    return json.dumps(data), 200
+
+
 @app.route(API_CLEANUP_ROUTE, methods=["POST"])
 def cleanup():
     """
