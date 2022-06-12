@@ -119,7 +119,7 @@ class GDriveFiles:
 
     def __iter__(self):
         self._n = 0
-        self._items = list(self.filenames.items())
+        self._items = list(self.filenames.keys())
         return self
 
     def __next__(self):
@@ -129,6 +129,9 @@ class GDriveFiles:
             return result
         else:
             raise StopIteration
+
+    def items(self):
+        return self.filenames.items()
 
 
 class MultilangParams:
@@ -253,3 +256,26 @@ class CallbackThread(threading.Thread):
                 foo()
         except BaseException as ex:
             print(f"E PYSERVER::CallbackThread::_invoke(): {ex}")
+
+class DefaultDict:
+    def __init__(self, dict):
+        self.dict = dict
+
+    def __setitem__(self, key, value):
+        if key not in self.dict:
+            raise KeyError('No new keys allowed')
+        else:
+            self.dict[key] = value
+
+    def __getitem__(self, item):
+        return self.dict[item]
+
+    def keys(self):
+        return self.dict.keys()
+
+    def values(self):
+        return self.dict.values()
+
+    def items(self):
+        return self.dict.items()
+

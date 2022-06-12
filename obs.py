@@ -28,8 +28,7 @@ def obs_fire(type, cls, cls_foo, comment, datain, dataout):
 
 
 class OBS:
-    def __init__(self, lang, client):
-        self.lang = lang
+    def __init__(self, client):
         self.client = client
         self.original_media_source = None
         self.media_queue = []
@@ -413,7 +412,7 @@ class OBS:
         if not response.status:
             raise Exception(
                 f"E PYSERVER::OBS::set_stream_settings(): "
-                f"lang: {self.lang}, datain: {response.datain}, dataout: {response.dataout}"
+                f"datain: {response.datain}, dataout: {response.dataout}"
             )
 
     def start_streaming(self):
@@ -424,7 +423,7 @@ class OBS:
         if not response.status:
             raise Exception(
                 f"E PYSERVER::OBS::start_streaming(): "
-                f"lang: {self.lang}, datain: {response.datain}, dataout: {response.dataout}"
+                f"datain: {response.datain}, dataout: {response.dataout}"
             )
 
     def stop_streaming(self):
@@ -435,7 +434,7 @@ class OBS:
         if not response.status:
             raise Exception(
                 f"E PYSERVER::OBS::stop_streaming(): "
-                f"lang: {self.lang}, datain: {response.datain}, dataout: {response.dataout}"
+                f"datain: {response.datain}, dataout: {response.dataout}"
             )
 
     def set_source_mute(self, mute):

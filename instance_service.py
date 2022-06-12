@@ -24,6 +24,7 @@ from config import API_TS_OFFSET_ROUTE
 from config import API_TS_VOLUME_ROUTE
 from config import API_GDRIVE_SYNC
 from config import API_GDRIVE_FILES
+from config import API_INFO_ROUTE
 from util import ExecutionStatus
 
 load_dotenv()
@@ -44,12 +45,13 @@ if SENTRY_DSN:
         traces_sample_rate=1.0,
     )
 
+
 class GDriveHelper:
     def __init__(self):
-        self.workers = {}
+        self.worker = {}
 
-    def add_worker(self, lang, addr, drive_id, media_dir, api_key, sync_seconds):
-        self.workers[lang] = {
+    def set_worker(self, addr, drive_id, media_dir, api_key, sync_seconds):
+        self.worker = {
             "addr": addr,
             "drive_id": drive_id,
             "media_dir": media_dir,
@@ -57,9 +59,18 @@ class GDriveHelper:
             "sync_seconds": sync_seconds
         }
 
+
 app = Flask(__name__)
 obs_server: server.Server = None
 gdrive_helper: GDriveHelper = GDriveHelper()
+
+
+@app.route(API_INFO_ROUTE, methods=["GET"])
+def info():
+    """
+    :return:
+    """
+    return json.dumps(obs_server.settings.to_dict()), 200
 
 
 @app.route(API_INIT_ROUTE, methods=["POST"])
@@ -78,10 +89,6 @@ def init():
     server_langs = request.args.get("server_langs", "")
     server_langs = json.loads(server_langs)
 
-    # status: ExecutionStatus = util.validate_init_params(server_langs)
-    # if not status:
-    #     return status.to_http_status()
-
     global obs_server
 
     if obs_server is not None:
@@ -97,26 +104,6 @@ def init():
     status: ExecutionStatus = obs_server.initialize()
 
     return status.to_http_status()
-
-
-@app.route(API_INIT_ROUTE, methods=["GET"])
-def get_init():
-    """
-    Returns current `init` settings
-    server_langs: dict of
-    lang: {
-        "host_url": "...",
-        "websocket_port": 1234,
-        "password": "qwerty123",
-        "original_media_url": "srt://localhost"
-    }
-    """
-    if obs_server is None:
-        return json.dumps({}), 500
-    result = obs_server.server_langs.copy()
-    for lang in result:
-        result[lang].pop("obs_host")
-    return json.dumps(result), 200
 
 
 @app.route(API_CLEANUP_ROUTE, methods=["POST"])
@@ -142,7 +129,7 @@ def media_schedule():
     """
     Query parameters:
     schedule: json dictionary,
-    e.g. {"lang": [..., [path, timestamp], ...], ...}
+    e.g. [..., [path, timestamp], ...]
      - path - media name
      - timestamp - relative timestamp in milliseconds
     :return:
@@ -163,7 +150,7 @@ def media_play():
     """
     Query parameters:
     params: json dictionary,
-    e.g. {"lang": {"name": "...", "search_by_num": "0/1"}, ...}
+    e.g. {"name": "...", "search_by_num": "0/1"}
     :return:
     """
     if obs_server is None:
@@ -182,7 +169,7 @@ def set_stream_settings():
     """
     Query parameters:
     stream_settings: json dictionary,
-    e.g. {"lang": {"server": "rtmp://...", "key": "..."}, ...}
+    e.g. {"server": "rtmp://...", "key": "..."}
     :return:
     """
     if obs_server is None:
@@ -200,21 +187,12 @@ def set_stream_settings():
 def stream_start():
     """
     Starts streaming.
-    Query parameters:
-    langs: json list of langs,
-    e.g. ["eng", "rus"], or ["__all__"] (default)
     :return:
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
 
-    _langs = request.args.get("langs")
-    if not _langs or "__all__" in _langs:  # if _langs is not specified, or `__all__` languages specified
-        _langs = json.dumps(
-            {lang: {} for lang in obs_server.server_langs}
-        )  # replace with all langs list from `server_langs`
-    _langs = [_ for _ in json.loads(_langs)]  # cast to list of langs
-    status: ExecutionStatus = obs_server.start_streaming(langs=_langs)
+    status: ExecutionStatus = obs_server.start_streaming()
 
     return status.to_http_status()
 
@@ -223,21 +201,11 @@ def stream_start():
 def stream_stop():
     """
     Stops streaming.
-    Query parameters:
-    langs: json list of langs,
-    e.g. ["eng", "rus"], or ["__all__"] (default)
-    :return:
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
 
-    _langs = request.args.get("langs")
-    if not _langs or "__all__" in _langs:  # if _langs is not specified, or `__all__` languages specified
-        _langs = json.dumps(
-            {lang: {} for lang in obs_server.server_langs}
-        )  # replace with all langs list from `server_langs`
-    _langs = [_ for _ in json.loads(_langs)]  # cast to list of langs
-    status: ExecutionStatus = obs_server.stop_streaming(langs=_langs)
+    status: ExecutionStatus = obs_server.stop_streaming()
 
     return status.to_http_status()
 
@@ -246,17 +214,17 @@ def stream_stop():
 def set_ts_offset():
     """
     Query parameters:
-    offset_settings: json dictionary,
-    e.g. {"lang": offset, ...} (note, offset in milliseconds)
+    ts_offset: json dictionary,
+    e.g. ts_offset (note, offset in milliseconds)
     :return:
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
 
-    offset_settings = request.args.get("offset_settings", None)
-    offset_settings = json.loads(offset_settings)
+    ts_offset = request.args.get("ts_offset", None)
+    ts_offset = json.loads(ts_offset)
 
-    status: ExecutionStatus = obs_server.set_ts_sync_offset(offset_settings=offset_settings)
+    status: ExecutionStatus = obs_server.set_ts_sync_offset(ts_offset=ts_offset)
 
     return status.to_http_status()
 
@@ -265,7 +233,7 @@ def set_ts_offset():
 def get_ts_offset():
     """
     Retrieves information about teamspeak sound offset
-    :return: {"lang": offset, ...} (note, offset in milliseconds)
+    :return: offset (note, offset in milliseconds)
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
@@ -280,18 +248,17 @@ def get_ts_offset():
 def set_ts_volume():
     """
     Query parameters:
-    volume_settings: json dictionary,
-    e.g. {"lang": volume, ...}
+    volume_db: json dictionary,
+    e.g. 0
     :return:
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
 
-    volume_settings = request.args.get("volume_settings", None)
-    volume_settings = json.loads(volume_settings)
-    # TODO: validate `volume_settings`
+    volume_db = request.args.get("volume_db", None)
+    volume_db = json.loads(volume_db)
 
-    status: ExecutionStatus = obs_server.set_ts_volume_db(volume_settings=volume_settings)
+    status: ExecutionStatus = obs_server.set_ts_volume_db(volume_db=volume_db)
 
     return status.to_http_status()
 
@@ -300,7 +267,7 @@ def set_ts_volume():
 def get_ts_volume():
     """
     Retrieves information about teamspeak sound volume
-    :return: {"lang": volume, ...} (note, volume in decibels)
+    :return: volume_db (note, volume in decibels)
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
@@ -315,18 +282,18 @@ def get_ts_volume():
 def set_source_volume():
     """
     Query parameters:
-    volume_settings: json dictionary,
-    e.g. {"lang": volume, ...}
+    volume_db: json dictionary,
+    e.g. 0
     :return:
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
 
-    volume_settings = request.args.get("volume_settings", None)
-    volume_settings = json.loads(volume_settings)
+    volume_db = request.args.get("volume_db", None)
+    volume_db = json.loads(volume_db)
     # TODO: validate `volume_settings`
 
-    status: ExecutionStatus = obs_server.set_source_volume_db(volume_settings=volume_settings)
+    status: ExecutionStatus = obs_server.set_source_volume_db(volume_db=volume_db)
 
     return status.to_http_status()
 
@@ -335,7 +302,7 @@ def set_source_volume():
 def get_source_volume():
     """
     Retrieves information about original source sound volume
-    :return: {"lang": volume, ...} (note, volume in decibels)
+    :return: volume_db (note, volume in decibels)
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
@@ -351,7 +318,7 @@ def setup_sidechain():
     """
     Query parameters:
     sidechain_settings: json dictionary,
-    e.g. {"lang": {'ratio': ..., 'release_time': ..., 'threshold': ...}, ...}
+    e.g. {'ratio': ..., 'release_time': ..., 'threshold': ...}
     :return:
     """
     if obs_server is None:
@@ -359,7 +326,6 @@ def setup_sidechain():
 
     sidechain_settings = request.args.get("sidechain_settings", None)
     sidechain_settings = json.loads(sidechain_settings)
-    # TODO: validate `sidechain_settings`
 
     status: ExecutionStatus = obs_server.setup_sidechain(sidechain_settings=sidechain_settings)
 
@@ -371,7 +337,7 @@ def setup_transition():
     """
     Query parameters:
     transition_settings: json dictionary,
-    e.g. {"lang": {'transition_name': ..., 'audio_fade_style': ..., 'path': ..., ...}, ...}
+    e.g. {'transition_name': ..., 'audio_fade_style': ..., 'path': ..., ...}
     :return:
     """
     if obs_server is None:
@@ -379,7 +345,6 @@ def setup_transition():
 
     transition_settings = request.args.get("transition_settings", None)
     transition_settings = json.loads(transition_settings)
-    # TODO: validate `transition_settings`
 
     status: ExecutionStatus = obs_server.setup_transition(transition_settings=transition_settings)
 
@@ -388,50 +353,50 @@ def setup_transition():
 
 @app.route(API_GDRIVE_SYNC, methods=["POST"])
 def setup_gdrive_sync():
+    # TODO: -> Server
     """
     Query parameters:
     gdrive_settings: json dictionary,
-    e.g. {"lang": {'drive_id': ..., 'media_dir': ..., 'api_key': ..., 'sync_seconds': ..., gdrive_sync_addr: ...}, ...}
+    e.g. {'drive_id': ..., 'media_dir': ..., 'api_key': ..., 'sync_seconds': ..., gdrive_sync_addr: ...}
     :return:
     """
     gdrive_settings = request.args.get("gdrive_settings", None)
     gdrive_settings = json.loads(gdrive_settings)
 
-    media_dir_settings = {lang: gdrive_settings[lang]['media_dir'] for lang in gdrive_settings}
+    media_dir_settings = gdrive_settings['media_dir']
     obs_server.set_media_dir(media_dir_settings)
 
     status: ExecutionStatus = ExecutionStatus()
-    for lang, data in gdrive_settings.items():
-        drive_id = data['drive_id']
-        media_dir = data['media_dir'] if 'media_dir' in data else '/home/stream/content'
-        api_key = data['api_key']
-        sync_seconds = data['sync_seconds']
-        gdrive_sync_addr = data['gdrive_sync_addr'] if 'gdrive_sync_addr' in data else 'http://localhost:7000'
 
-        gdrive_sync_addr = gdrive_sync_addr.rstrip('/')
+    drive_id = gdrive_settings['drive_id']
+    media_dir = gdrive_settings['media_dir'] if 'media_dir' in gdrive_settings else '/home/stream/content'
+    api_key = gdrive_settings['api_key']
+    sync_seconds = gdrive_settings['sync_seconds']
+    gdrive_sync_addr = gdrive_settings[
+        'gdrive_sync_addr'] if 'gdrive_sync_addr' in gdrive_settings else 'http://localhost:7000'
 
-        query_params = urlencode({
-            'drive_id': drive_id,
-            'media_dir': media_dir,
-            'api_key': api_key,
-            'sync_seconds': sync_seconds
-        })
+    gdrive_sync_addr = gdrive_sync_addr.rstrip('/')
 
-        response_ = requests.post(f"{gdrive_sync_addr}/init?{query_params}")
-        if response_.status_code != 200:
-            msg_ = f"E PYSERVER::setup_gdrive_sync(): Lang {lang}, details: {response_.text}"
-            print(msg_)
-            status.append_error(msg_)
+    query_params = urlencode({
+        'drive_id': drive_id,
+        'media_dir': media_dir,
+        'api_key': api_key,
+        'sync_seconds': sync_seconds
+    })
 
-        gdrive_helper.add_worker(
-            lang=lang,
-            addr=gdrive_sync_addr,
-            drive_id=drive_id,
-            media_dir=media_dir,
-            api_key=api_key,
-            sync_seconds=sync_seconds,
-        )
+    response_ = requests.post(f"{gdrive_sync_addr}/init?{query_params}")
+    if response_.status_code != 200:
+        msg_ = f"E PYSERVER::setup_gdrive_sync(): Details: {response_.text}"
+        print(msg_)
+        status.append_error(msg_)
 
+    gdrive_helper.set_worker(
+        addr=gdrive_sync_addr,
+        drive_id=drive_id,
+        media_dir=media_dir,
+        api_key=api_key,
+        sync_seconds=sync_seconds,
+    )
 
     return status.to_http_status()
 
@@ -440,21 +405,18 @@ def setup_gdrive_sync():
 def get_gdrive_files():
     """
     Retrieves information about google drive files,
-    returns dict of {"lang": [... [filename, true/false - loaded/not loaded], ...]}
+    returns dict of [... [filename, true/false - loaded/not loaded], ...]
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
 
-    data = {}
-
-    for lang in gdrive_helper.workers:
-        addr = gdrive_helper.workers[lang]["addr"]
-        response_ = requests.get(f"{addr}/files")
-        if response_.status_code != 200:
-            msg_ = f"E PYSERVER::get_gdrive_files(): Lang {lang}, details: {response_.text}"
-            print(msg_)
-            continue
-        data[lang] = json.loads(response_.text)
+    addr = gdrive_helper.worker["addr"]
+    response_ = requests.get(f"{addr}/files")
+    if response_.status_code != 200:
+        msg_ = f"E PYSERVER::get_gdrive_files(): Details: {response_.text}"
+        print(msg_)
+        return "#", 500
+    data = json.loads(response_.text)
     return json.dumps(data), 200
 
 
