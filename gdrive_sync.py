@@ -47,7 +47,11 @@ class DriveSync(threading.Thread):
                            'name': 'electron_edited.wav',
                            'mimeType': 'audio/wav'}]}
                         """
-                        files = service.files().list(q=f"'{drive_id}' in parents").execute()
+                        files = service.files().list(q=f"'{drive_id}' in parents",
+                                                     supportsAllDrives=True,
+                                                     supportsTeamDrives=True,
+                                                     includeItemsFromAllDrives=True,
+                                                     includeTeamDriveItems=True).execute()
                         # if something went wrong
                         if "files" not in files:
                             raise Exception(f"Couldn't list files in specified driveId. Error: {files}")
