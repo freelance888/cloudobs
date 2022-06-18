@@ -1,3 +1,4 @@
+API_WAKEUP_ROUTE = "/wakeup"
 API_INIT_ROUTE = "/init"
 API_INFO_ROUTE = "/info"
 API_MEDIA_SCHEDULE_ROUTE = "/media/schedule"

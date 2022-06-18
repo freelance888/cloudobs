@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from urllib.parse import urlencode
 import threading
 
@@ -10,6 +11,7 @@ from flask import request
 import server
 import util
 from config import API_CLEANUP_ROUTE
+from config import API_WAKEUP_ROUTE
 from config import API_INIT_ROUTE
 from config import API_MEDIA_SCHEDULE_ROUTE
 from config import API_MEDIA_PLAY_ROUTE
@@ -46,6 +48,7 @@ if SENTRY_DSN:
 app = Flask(__name__)
 instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
 langs = []
+init_status, wakeup_status = False, False
 lock = threading.Lock()
 cb_thread = CallbackThread()
 
@@ -93,6 +96,29 @@ def broadcast(
         return responses_
 
 
+def load_ip_list(path):
+    global langs, instance_service_addrs
+    with open(path, "rt") as fp:
+        text = fp.read()
+    ip_list = re.findall(r"^\[(?P<lang>[A-Za-z]+)\]\=(?P<ip>[a-zA-Z0-9\.]+)",
+                         text.replace(' ', ''), flags=re.MULTILINE)
+    for lang, ip in ip_list:
+        instance_service_addrs[lang] = {
+            "addr": f"http://{ip}:6000",  # address of instance_service
+        }
+    langs = [lang for lang, ip in ip_list]
+
+
+@app.route(API_WAKEUP_ROUTE, methods=["POST"])
+def wakeup():
+    if not init_status:
+        iplist_path = request.args.get("iplist_path", "/home/stream/ip.list")
+        load_ip_list(iplist_path)
+        global wakeup_status
+        wakeup_status = True
+    return "Ok", 200
+
+
 @app.route(API_INFO_ROUTE, methods=["GET"])
 def info():
     """
@@ -121,7 +147,7 @@ def init():
             "original_media_url": "srt://localhost"
         }
     e.g.: {
-        "rus": {
+        "eng": {
             "host_url": "http://255.255.255.255:5000",
             "websocket_port": 1234,
             "password": "qwerty123",
@@ -131,48 +157,32 @@ def init():
     }
     :return:
     """
-    server_langs = request.args.get("server_langs", "")
-    server_langs = json.loads(server_langs)
+    global init_status
+    try:
+        server_langs = request.args.get("server_langs", "")
+        server_langs = json.loads(server_langs)
+    except:
+        return "Couldn't parse json", 500
 
     # validate input parameters before broadcasting them to servers
     status: ExecutionStatus = util.validate_init_params(server_langs)
     if not status:
         return status.to_http_status()
 
-    status = ExecutionStatus(status=True)
+    for lang in server_langs:
+        server_langs[lang]["obs_host"] = "localhost"
 
-    # in the following loop we build `server_lang` parameters for each lang and
-    # broadcast request for all servers
-    global instance_service_addrs  # dict of `"lang": {"addr": "address", "init": True/False}
-    global langs
-    langs = list(server_langs.keys())
-    requests_ = []
+    params = MultilangParams(server_langs, langs=langs)
+    status = broadcast(
+        API_INIT_ROUTE,
+        "POST",
+        params=params,
+        param_name="server_langs",
+        return_status=True,
+        method_name="init",
+    )
 
-    for lang in langs:
-        lang_info = server_langs[lang]
-        # fill `instance_service_addrs`
-        instance_service_addrs[lang] = {
-            "addr": lang_info["host_url"].strip("/"),
-        }
-        # initialization for every instance service
-        # for now every obs app should be started locally with the instance_service
-        lang_info["obs_host"] = "localhost"
-
-        query_params = urlencode({"server_langs": json.dumps(lang_info)})
-
-        addr = instance_service_addrs.addr(lang)
-        request_ = f"{addr}{API_INIT_ROUTE}?{query_params}"
-
-        requests_.append(request_)
-
-    # post requests
-    responses_ = util.async_aiohttp_post_all(urls=requests_)
-
-    for lang, response in zip(langs, responses_):
-        if response.status_code != 200:
-            msg_ = f"E PYSERVER::init(): couldn't initialize server for {lang}, details: {response.text}"
-            print(msg_)
-            status.append_error(msg_)
+    init_status = True
 
     return status.to_http_status()
 
@@ -182,15 +192,34 @@ def get_init():
     """
     :return:
     """
-    responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
-    data = {}
-    for lang, response in responses.items():
-        try:
-            data[lang] = json.loads(response.text)["server_langs"]
-        except json.JSONDecodeError:
-            data[lang] = "#"
+    if init_status:
+        responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
+        data = {}
+        for lang, response in responses.items():
+            try:
+                data[lang] = json.loads(response.text)["server_langs"]
+            except json.JSONDecodeError:
+                data[lang] = "#"
 
-    return json.dumps(data), 200
+        return json.dumps(data), 200
+    else:
+        # server_langs_default:
+        # {
+        #     "obs_host": "localhost",
+        #     "host_url": "",
+        #     "websocket_port": 4439,
+        #     "password": "",
+        #     "original_media_url": "",
+        # }
+        server_langs_default = server.ServerSettings.default().get_subject(server.SUBJECT_SERVER_LANGS)  # dict
+        data = {}
+        for lang in instance_service_addrs:
+            addr = instance_service_addrs.addr(lang)
+            server_langs = server_langs_default.copy()
+            server_langs["host_url"] = addr
+            server_langs.pop("obs_host")
+            data[lang] = server_langs
+        return json.dumps(data), 200
 
 
 @app.route(API_CLEANUP_ROUTE, methods=["POST"])
@@ -206,6 +235,9 @@ def cleanup():
             msg_ = f"E PYSERVER::cleanup(): couldn't cleanup server for {lang}, details: {response.text}"
             print(msg_)
             status.append_error(msg_)
+
+    global init_status
+    init_status = False
 
     return status.to_http_status()
 
@@ -561,17 +593,28 @@ def healthcheck():
 
 @app.before_request
 def before_request():
-    lock.acquire()
+    if not wakeup_status:
+        if request.path != API_WAKEUP_ROUTE:
+            return f"The server is sleeping :) Tell the admin to wake it up."
+    else:  # if the server has already woken up
+        if not init_status and request.path not in (API_INIT_ROUTE, API_WAKEUP_ROUTE):
+            return f"{request.path} is not allowed before initialization"
 
 
 @app.after_request
-def apply_caching(response):
+def after_request(response):
     lock.release()
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Credentials"] = "true"
     response.headers["Access-Control-Allow-Methods"] = "GET,HEAD,OPTIONS,POST,PUT"
     response.headers["Access-Control-Allow-Headers"] = "Origin, X-Requested-With, Content-Type, Accept, Authorization"
     return response
+
+
+@app.errorhandler(Exception)
+def server_error(err):
+    print(f"E PYSERVER::server_error(): {err}")
+    return f"Something happened :(\n\nDetails:\n{err}", 500
 
 
 class HTTPSThread(threading.Thread):

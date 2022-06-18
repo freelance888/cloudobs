@@ -86,6 +86,11 @@ class OBS:
         Creates (if not been created) a scene called `scene_name` and sets it as a current scene.
         If it has been created, removes all the sources inside the scene and sets it as a current one.
         """
+        try:
+            self.set_mute(source_name="Desktop Audio", mute=True)
+        except Exception as ex:
+            print(f"W PYSERVER::OBS::setup_scene(): couldn't mute 'Desktop Audio', details: {ex}")
+
         scenes = self.client.call(
             obs.requests.GetSceneList()
         ).getScenes()  # [... {'name': '...', 'sources': [...]}, ...]
@@ -148,7 +153,6 @@ class OBS:
                 cb_type=CB_TYPE
             )
 
-
     def run_media(self, path, media_type='media', source_name=MEDIA_INPUT_NAME):
         """
         Mutes original media, adds and runs the media located at `path`, and appends a listener which removes
@@ -198,7 +202,7 @@ class OBS:
             self.media_cb_thread.delete_cb_type(cb_type=CB_TYPE)
 
         self.media_cb_thread.delete_cb_type(cb_type=CB_TYPE)  # clean callbacks queue
-        self.delete_source(source_name)                       # remove media, if any has been played before
+        self.delete_source(source_name)  # remove media, if any has been played before
 
         if self.transition_name == "Stinger":
             self._run_media(self.transition_path, TRANSITION_INPUT_NAME)
@@ -343,7 +347,7 @@ class OBS:
                 f"E PYSERVER::OBS::set_source_volume_db(): " f"datain: {response.datain}, dataout: {response.dataout}"
             )
 
-    def setup_sidechain(self, ratio=None, release_time=None, threshold=None):
+    def setup_sidechain(self, ratio=None, release_time=None, threshold=None, output_gain=None):
         """
         [{'enabled': True,
           'name': 'sidechain',
@@ -374,6 +378,8 @@ class OBS:
             filterSettings["release_time"] = release_time
         if threshold is not None:
             filterSettings["threshold"] = threshold
+        if output_gain is not None:
+            filterSettings["output_gain"] = output_gain
 
         if all([f["name"] != COMPRESSOR_FILTER_NAME for f in filters]):  # if no compressor input added before
             response = self.client.call(

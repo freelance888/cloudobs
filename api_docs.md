@@ -124,8 +124,13 @@
  - Accepts the following parameters:
    - `sidechain_settings` - json dictionary, e.g.:
     ```
-    {"lang": {"ratio": ..., "release_time": ..., "threshold": ...}, ...}
+    {"lang": {"ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...}, ...}
     ```
+   - Sidechain settings supports the following attributes:
+     - `ratio`
+     - `release_time`
+     - `threshold`
+     - `output_gain`
  - Note: you are not required to provide all sidechain params (ratio, release_time, ...).
    If some are not provided, default values will be used.
  - Note: you may specify sidechain settings for all languages,
