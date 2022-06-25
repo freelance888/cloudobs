@@ -1,16 +1,11 @@
 import re
 import threading
 import time
+import hashlib
 
 import aiohttp
 import asyncio
 from asgiref import sync
-
-
-class Response:
-    def __init__(self, text, status_code):
-        self.text = text
-        self.status_code = status_code
 
 
 def async_aiohttp_get_all(urls):
@@ -77,6 +72,22 @@ def validate_media_play_params(name, use_file_num):
     return ExecutionStatus(status=True)
 
 
+def generate_file_md5(filename, blocksize=2 ** 25):
+    m = hashlib.md5()
+    with open(filename, "rb") as f:
+        while True:
+            buf = f.read(blocksize)
+            if not buf:
+                break
+            m.update(buf)
+    return m.hexdigest()
+
+class Response:
+    def __init__(self, text, status_code):
+        self.text = text
+        self.status_code = status_code
+
+
 class ServiceAddrStorage:
     """
     TODO: save/load config to/from disk
@@ -99,42 +110,6 @@ class ServiceAddrStorage:
 
     def addr(self, lang):
         return self.dct[lang]["addr"]
-
-
-class GDriveFiles:
-    def __init__(self, with_lock=False):
-        self.filenames = dict()  # filename: bool - loaded
-        self.with_lock = with_lock
-        if self.with_lock:
-            self._lock = threading.Lock()
-
-    def __setitem__(self, key, value):
-        if not self.with_lock:
-            self.filenames[key] = value
-        with self._lock:
-            self.filenames[key] = value
-
-    def __getitem__(self, item):
-        if not self.with_lock:
-            return self.filenames[item]
-        with self._lock:
-            return self.filenames[item]
-
-    def __iter__(self):
-        self._n = 0
-        self._items = list(self.filenames.keys())
-        return self
-
-    def __next__(self):
-        if self._n < len(self.filenames):
-            result = self._items[self._n]  # (filename, b_state)
-            self._n += 1
-            return result
-        else:
-            raise StopIteration
-
-    def items(self):
-        return self.filenames.items()
 
 
 class MultilangParams:
@@ -203,6 +178,65 @@ class ExecutionStatus:
         return msg, code
 
 
+class DefaultDict:
+    def __init__(self, dict):
+        self.dict = dict
+
+    def __setitem__(self, key, value):
+        if key not in self.dict:
+            raise KeyError('No new keys allowed')
+        else:
+            self.dict[key] = value
+
+    def __getitem__(self, item):
+        return self.dict[item]
+
+    def keys(self):
+        return self.dict.keys()
+
+    def values(self):
+        return self.dict.values()
+
+    def items(self):
+        return self.dict.items()
+
+
+class GDriveFiles:
+    def __init__(self, with_lock=False):
+        self.filenames = dict()  # filename: bool - loaded
+        self.with_lock = with_lock
+        if self.with_lock:
+            self._lock = threading.Lock()
+
+    def __setitem__(self, key, value):
+        if not self.with_lock:
+            self.filenames[key] = value
+        with self._lock:
+            self.filenames[key] = value
+
+    def __getitem__(self, item):
+        if not self.with_lock:
+            return self.filenames[item]
+        with self._lock:
+            return self.filenames[item]
+
+    def __iter__(self):
+        self._n = 0
+        self._items = list(self.filenames.keys())
+        return self
+
+    def __next__(self):
+        if self._n < len(self.filenames):
+            result = self._items[self._n]  # (filename, b_state)
+            self._n += 1
+            return result
+        else:
+            raise StopIteration
+
+    def items(self):
+        return self.filenames.items()
+
+
 class CallbackThread(threading.Thread):
     def __init__(self):
         self.lock = threading.Lock()
@@ -259,26 +293,3 @@ class CallbackThread(threading.Thread):
                 foo()
         except BaseException as ex:
             print(f"E PYSERVER::CallbackThread::_invoke(): {ex}")
-
-class DefaultDict:
-    def __init__(self, dict):
-        self.dict = dict
-
-    def __setitem__(self, key, value):
-        if key not in self.dict:
-            raise KeyError('No new keys allowed')
-        else:
-            self.dict[key] = value
-
-    def __getitem__(self, item):
-        return self.dict[item]
-
-    def keys(self):
-        return self.dict.keys()
-
-    def values(self):
-        return self.dict.values()
-
-    def items(self):
-        return self.dict.items()
-

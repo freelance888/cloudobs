@@ -11,6 +11,7 @@ import threading
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from util import GDriveFiles
+from util import generate_file_md5
 
 b_init, drive_id, media_dir, api_key, sync_seconds = False, None, "", None, 2
 lock = threading.Lock()
@@ -51,7 +52,8 @@ class DriveSync(threading.Thread):
                                                      supportsAllDrives=True,
                                                      supportsTeamDrives=True,
                                                      includeItemsFromAllDrives=True,
-                                                     includeTeamDriveItems=True).execute()
+                                                     includeTeamDriveItems=True,
+                                                     fields="files(id,name,md5Checksum)").execute()
                         # if something went wrong
                         if "files" not in files:
                             raise Exception(f"Couldn't list files in specified driveId. Error: {files}")
@@ -63,10 +65,14 @@ class DriveSync(threading.Thread):
 
                         print(f"I PYSERVER::run_drive_sync(): Sync {len(files['files'])} files")
                         for fileinfo in files["files"]:
-                            fid, fname = fileinfo["id"], fileinfo["name"]
-                            # if such file is not found locally, download it
+                            fid, fname, fmd5Checksum = fileinfo["id"], fileinfo["name"], fileinfo["md5Checksum"]
+                            # if file already exists - check its md5
                             flocal = os.path.join(media_dir, fname)
-                            if not os.path.isfile(flocal):
+                            if not self.files[fname] and os.path.isfile(flocal):
+                                if generate_file_md5(flocal) == fmd5Checksum:
+                                    self.files[fname] = True
+
+                            if not self.files[fname]:
                                 request_ = service.files().get_media(fileId=fid)
 
                                 with io.FileIO(flocal, mode="w") as fh:
@@ -75,11 +81,11 @@ class DriveSync(threading.Thread):
                                     while not done:
                                         status, done = downloader.next_chunk()
                                         # print("Download %d%%." % int(status.progress() * 100))
+                                if generate_file_md5(flocal) == fmd5Checksum:
                                     self.files[fname] = True
-                                    print(
-                                        f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}, status: {status}")
-                            else:
-                                self.files[fname] = True
+                                    print(f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}, status: {status}")
+                                else:
+                                    print(f"E PYSERVER::run_drive_sync(): Couldn't verify checksum for {fname}")
             except Exception as ex:
                 print(f"E PYSERVER::run_drive_sync(): {ex}")
             time.sleep(sync_seconds)
