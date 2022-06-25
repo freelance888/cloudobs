@@ -49,7 +49,7 @@ app = Flask(__name__)
 instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
 langs = []
 init_status, wakeup_status = False, False
-lock = threading.Lock()
+# lock = threading.Lock()
 cb_thread = CallbackThread()
 
 
@@ -258,14 +258,13 @@ def media_schedule():
 
     def foo(name_):
         params = MultilangParams({"__all__": {"name": name_, "search_by_num": "1"}}, langs=langs)
-        with lock:
-            try:
-                _ = broadcast(
-                    API_MEDIA_PLAY_ROUTE, "POST", params=params,
-                    param_name="params", return_status=True, method_name="media_play"
-                )
-            except BaseException as ex:
-                print(f"E PYSERVER::common_service::media_schedule(): {ex}")
+        try:
+            _ = broadcast(
+                API_MEDIA_PLAY_ROUTE, "POST", params=params,
+                param_name="params", return_status=True, method_name="media_play"
+            )
+        except BaseException as ex:
+            print(f"E PYSERVER::common_service::media_schedule(): {ex}")
 
     for name, timestamp in schedule:
         cb_thread.append_callback(foo=foo, args=(name,), delay=timestamp)
@@ -603,7 +602,6 @@ def before_request():
 
 @app.after_request
 def after_request(response):
-    lock.release()
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Credentials"] = "true"
     response.headers["Access-Control-Allow-Methods"] = "GET,HEAD,OPTIONS,POST,PUT"
