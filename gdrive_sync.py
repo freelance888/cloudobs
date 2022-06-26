@@ -82,7 +82,7 @@ class DriveSync(threading.Thread):
 
                             if not self.files[fname]:
                                 time.sleep(random.randint(1, 5))
-                                request_ = service.files().export_media(fileId=fid)
+                                request_ = service.files().get_media(fileId=fid)
 
                                 with io.FileIO(flocal, mode="w") as fh:
                                     downloader = MediaIoBaseDownload(fh, request_)
