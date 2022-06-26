@@ -4,6 +4,7 @@ import io
 import json
 import os.path
 import time
+import random
 from flask import Flask
 from flask import request
 import threading
@@ -54,6 +55,7 @@ class DriveSync(threading.Thread):
                            'name': 'electron_edited.wav',
                            'mimeType': 'audio/wav'}]}
                         """
+                        time.sleep(random.randint(1, 5))
                         files = service.files().list(q=f"'{drive_id}' in parents",
                                                      supportsAllDrives=True,
                                                      supportsTeamDrives=True,
@@ -79,6 +81,7 @@ class DriveSync(threading.Thread):
                                     self.files[fname] = True
 
                             if not self.files[fname]:
+                                time.sleep(random.randint(1, 5))
                                 request_ = service.files().export_media(fileId=fid)
 
                                 with io.FileIO(flocal, mode="w") as fh:
