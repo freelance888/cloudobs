@@ -2,6 +2,7 @@ import re
 import threading
 import time
 import hashlib
+import sys
 
 import aiohttp
 import asyncio
@@ -81,6 +82,12 @@ def generate_file_md5(filename, blocksize=2 ** 25):
                 break
             m.update(buf)
     return m.hexdigest()
+
+
+def log(text):
+    print(text)
+    sys.stdout.flush()
+
 
 class Response:
     def __init__(self, text, status_code):

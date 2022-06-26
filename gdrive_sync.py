@@ -12,6 +12,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from util import GDriveFiles
 from util import generate_file_md5
+from util import log
 
 b_init, drive_id, media_dir, api_key, sync_seconds = False, None, "", None, 2
 lock = threading.Lock()
@@ -63,7 +64,7 @@ class DriveSync(threading.Thread):
                             if fname not in self.files:
                                 self.files[fname] = False
 
-                        print(f"I PYSERVER::run_drive_sync(): Sync {len(files['files'])} files")
+                        log(f"I PYSERVER::run_drive_sync(): Sync {len(files['files'])} files")
                         for fileinfo in files["files"]:
                             fid, fname, fmd5Checksum = fileinfo["id"], fileinfo["name"], fileinfo["md5Checksum"]
                             # if file already exists - check its md5
@@ -83,11 +84,11 @@ class DriveSync(threading.Thread):
                                         # print("Download %d%%." % int(status.progress() * 100))
                                 if generate_file_md5(flocal) == fmd5Checksum:
                                     self.files[fname] = True
-                                    print(f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}, status: {status}")
+                                    log(f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}, status: {status}")
                                 else:
-                                    print(f"E PYSERVER::run_drive_sync(): Couldn't verify checksum for {fname}")
+                                    log(f"E PYSERVER::run_drive_sync(): Couldn't verify checksum for {fname}")
             except Exception as ex:
-                print(f"E PYSERVER::run_drive_sync(): {ex}")
+                log(f"E PYSERVER::run_drive_sync(): {ex}")
             time.sleep(sync_seconds)
 
 
