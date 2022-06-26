@@ -5,6 +5,7 @@ import json
 import os.path
 import time
 import random
+import gdown
 from flask import Flask
 from flask import request
 import threading
@@ -81,18 +82,19 @@ class DriveSync(threading.Thread):
                                     self.files[fname] = True
 
                             if not self.files[fname]:
-                                time.sleep(random.randint(1, 5))
-                                request_ = service.files().get_media(fileId=fid)
-
-                                with io.FileIO(flocal, mode="w") as fh:
-                                    downloader = MediaIoBaseDownload(fh, request_)
-                                    done = False
-                                    while not done:
-                                        status, done = downloader.next_chunk()
-                                        # print("Download %d%%." % int(status.progress() * 100))
+                                gdown.download(id=fid, output=flocal, quiet=True)
+                                # time.sleep(random.randint(1, 5))
+                                # request_ = service.files().get_media(fileId=fid)
+                                #
+                                # with io.FileIO(flocal, mode="w") as fh:
+                                #     downloader = MediaIoBaseDownload(fh, request_)
+                                #     done = False
+                                #     while not done:
+                                #         status, done = downloader.next_chunk()
+                                #         # print("Download %d%%." % int(status.progress() * 100))
                                 if generate_file_md5(flocal) == fmd5Checksum:
                                     self.files[fname] = True
-                                    log(f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}, status: {status}")
+                                    log(f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}")
                                 else:
                                     log(f"E PYSERVER::run_drive_sync(): Couldn't verify checksum for {fname}")
             except Exception as ex:
