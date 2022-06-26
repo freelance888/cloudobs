@@ -10,6 +10,10 @@ import threading
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.errors import HttpError
 from util import GDriveFiles
 from util import generate_file_md5
 from util import log
@@ -18,12 +22,32 @@ b_init, drive_id, media_dir, api_key, sync_seconds = False, None, "", None, 2
 lock = threading.Lock()
 
 app = Flask(__name__)
-
+SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 class DriveSync(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.files = GDriveFiles(with_lock=True)
+        self.creds = None
+
+    def auth(self):
+        creds = None
+        # The file token.json stores the user's access and refresh tokens, and is
+        # created automatically when the authorization flow completes for the first
+        # time.
+        if os.path.exists('token.json'):
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        # If there are no (valid) credentials available, let the user log in.
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file('/home/stream/credentials.json', SCOPES)
+                creds = flow.run_local_server(port=0)
+            # Save the credentials for the next run
+            with open('token.json', 'w') as token:
+                token.write(creds.to_json())
+        self.creds = creds
 
     def run(self):
         """
@@ -39,7 +63,9 @@ class DriveSync(threading.Thread):
                     time.sleep(sync_seconds)
                     continue
                 with lock:
-                    with build("drive", "v3", developerKey=api_key) as service:
+                    self.auth()
+                    #with build("drive", "v3", developerKey=api_key) as service:
+                    with build("drive", "v3", credentials=self.creds) as service:
                         # list the drive files, the response is like the following structure:
                         """
                         {'kind': 'drive#fileList',
@@ -74,7 +100,7 @@ class DriveSync(threading.Thread):
                                     self.files[fname] = True
 
                             if not self.files[fname]:
-                                request_ = service.files().get_media(fileId=fid)
+                                request_ = service.files().export_media(fileId=fid)
 
                                 with io.FileIO(flocal, mode="w") as fh:
                                     downloader = MediaIoBaseDownload(fh, request_)
