@@ -98,6 +98,8 @@ def broadcast(
 
 def load_ip_list(path):
     global langs, instance_service_addrs
+    instance_service_addrs = util.ServiceAddrStorage()
+
     with open(path, "rt") as fp:
         text = fp.read()
     ip_list = re.findall(r"^\[(?P<lang>[A-Za-z]+)\]\=(?P<ip>[a-zA-Z0-9\.]+)",
@@ -111,11 +113,10 @@ def load_ip_list(path):
 
 @app.route(API_WAKEUP_ROUTE, methods=["POST"])
 def wakeup():
-    if not init_status:
-        iplist_path = request.args.get("iplist_path", "/home/stream/ip.list")
-        load_ip_list(iplist_path)
-        global wakeup_status
-        wakeup_status = True
+    iplist_path = request.args.get("iplist_path", "/home/stream/ip.list")
+    load_ip_list(iplist_path)
+    global wakeup_status
+    wakeup_status = True
     return "Ok", 200
 
 
