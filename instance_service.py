@@ -82,6 +82,7 @@ def wakeup():
     if not wakeup_status:
         obs_server = server.Server()
         wakeup_status = True
+    return "Ok", 200
 
 
 @app.route(API_INIT_ROUTE, methods=["POST"])
