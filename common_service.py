@@ -606,7 +606,7 @@ def before_request():
         if request.path != API_WAKEUP_ROUTE:
             return f"The server is sleeping :) Tell the admin to wake it up."
     else:  # if the server has already woken up
-        if not init_status and request.path not in (API_INIT_ROUTE, API_WAKEUP_ROUTE):
+        if not init_status and request.path not in (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE):
             return f"{request.path} is not allowed before initialization"
 
 
