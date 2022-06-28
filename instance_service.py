@@ -25,6 +25,7 @@ from config import API_TS_VOLUME_ROUTE
 from config import API_GDRIVE_SYNC
 from config import API_GDRIVE_FILES
 from config import API_INFO_ROUTE
+from config import API_WAKEUP_ROUTE
 from util import ExecutionStatus
 
 load_dotenv()
@@ -63,6 +64,7 @@ class GDriveHelper:
 app = Flask(__name__)
 obs_server: server.Server = None
 gdrive_helper: GDriveHelper = GDriveHelper()
+wakeup_status = False
 
 
 @app.route(API_INFO_ROUTE, methods=["GET"])
@@ -71,6 +73,15 @@ def info():
     :return:
     """
     return json.dumps(obs_server.settings.to_dict()), 200
+
+
+@app.route(API_WAKEUP_ROUTE, methods=["POST"])
+def wakeup():
+    global wakeup_status
+    global obs_server
+    if not wakeup_status:
+        obs_server = server.Server()
+        wakeup_status = True
 
 
 @app.route(API_INIT_ROUTE, methods=["POST"])
@@ -100,8 +111,8 @@ def init():
         del obs_server
         obs_server = None
 
-    obs_server = server.Server(server_langs=server_langs)
-    status: ExecutionStatus = obs_server.initialize()
+    obs_server = server.Server()
+    status: ExecutionStatus = obs_server.initialize(server_langs=server_langs)
 
     return status.to_http_status()
 
@@ -423,6 +434,13 @@ def get_gdrive_files():
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
     return '', 200
+
+
+@app.before_request
+def before_request():
+    if not wakeup_status:
+        if request.path not in (API_WAKEUP_ROUTE,):
+            return f"The server is sleeping :) Tell the admin to wake it up."
 
 
 if __name__ == "__main__":

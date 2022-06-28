@@ -148,8 +148,18 @@ class ServerSettings:
 
 
 class Server:
-    def __init__(self, server_langs):
+    def __init__(self):
+        self.settings = ServerSettings()
+
+        self.obs_instance: obs.OBS = None
+        self.obs_client = None
+        self.is_initialized = False
+
+        self.media_dir = MEDIA_DIR
+
+    def initialize(self, server_langs):
         """
+        establish connections, initialize obs controllers, setup scenes, create original media sources
         :param server_langs:
             {
                 "obs_host": "localhost",
@@ -158,23 +168,11 @@ class Server:
                 "password": "qwerty123",
                 "original_media_url": "srt://localhost"
             }
-        :return:
+        :return: Status
         """
-        self.settings = ServerSettings()
         for k, v in server_langs.items():
             self.settings.set(SUBJECT_SERVER_LANGS, k, v)
 
-        self.obs_instance: obs.OBS = None
-        self.obs_client = None
-        self.is_initialized = False
-
-        self.media_dir = MEDIA_DIR
-
-    def initialize(self):
-        """
-        establish connections, initialize obs controllers, setup scenes, create original media sources
-        :return: True/False, error message
-        """
         status = self._establish_connections(verbose=True)
 
         if not status:

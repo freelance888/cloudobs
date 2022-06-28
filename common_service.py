@@ -115,6 +115,14 @@ def load_ip_list(path):
 def wakeup():
     iplist_path = request.args.get("iplist_path", "/home/stream/ip.list")
     load_ip_list(iplist_path)
+
+    status = broadcast(
+        API_WAKEUP_ROUTE,
+        "POST",
+        return_status=True,
+        method_name="wakeup",
+    )
+
     global wakeup_status
     wakeup_status = True
     return "Ok", 200
@@ -130,6 +138,7 @@ def info():
     for lang, response in responses.items():
         try:
             data[lang] = json.loads(response.text)
+            data[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs[lang]
         except json.JSONDecodeError:
             data[lang] = "#"
 
