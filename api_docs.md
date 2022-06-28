@@ -13,7 +13,61 @@
      ```
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
 ### `GET /init`
- - Returns current `server_lang` variable of the server (see `POST /init`)
+ - Returns current `server_lang` variable of the server (see `GET /info`)
+### `GET /info`
+ - Returns current server state.
+ - Has the following format:
+```
+{
+    "lang": {
+        "server_langs": {
+            "obs_host": "localhost",
+            "host_url": "http://255.255.255.255:6000",
+            "websocket_port": 4439,
+            "password": "",
+            "original_media_url": "",
+        },
+        "stream_settings": {
+            "server": "",
+            "key": "",
+        },
+        "stream_on": {
+            "value": False,             # this parameters points if the stream is on
+        },
+        "media_schedule": {
+            #TBA
+        },
+        "ts_offset": {
+            "value": 4000,
+        },
+        "ts_volume": {
+            "value": 0,
+        },
+        "source_volume": {
+            "value": 0,
+        },
+        "sidechain": {
+            "ratio": 32,
+            "release_time": 1000,
+            "threshold": -30.0,
+            "output_gain": -10.0,
+        },
+        "transition": {
+            "transition_name": "Cut",
+            "path": "",
+            "transition_point": 3600,
+        },
+        "gdrive_settings": {
+            "drive_id": "",
+            "media_dir": "",
+            "api_key": "",
+            "sync_seconds": 0,
+            "gdrive_sync_addr": "",
+            "objvers": "",
+        }
+    }
+}
+```
 ### `POST /cleanup`
  - Cleans up the server: stop streaming -> reset scenes -> close obs connections
 ### `POST /media/schedule`
