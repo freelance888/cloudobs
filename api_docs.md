@@ -14,9 +14,14 @@
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
 ### `GET /init`
  - Returns current `server_lang` variable of the server (see `GET /info`)
+ - Works even if the server was not initialized, in this case the function
+   returns data with `host_url` filled.
 ### `GET /info`
  - Returns current server state.
- - Has the following format:
+ - Works even if the server was not initialized, in this case the function
+   returns data with `host_url` filled, plus default values are filled for
+   all parameters.
+ - Has the following format (*default values are specified*):
 ```
 {
     "lang": {
