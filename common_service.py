@@ -207,7 +207,7 @@ def get_init():
         data = {}
         for lang, response in responses.items():
             try:
-                data[lang] = json.loads(response.text)["server_langs"]
+                data[lang] = json.loads(response.text)[server.SUBJECT_SERVER_LANGS]
                 data[lang]["host_url"] = instance_service_addrs.addr(lang)
             except json.JSONDecodeError:
                 data[lang] = "#"

@@ -79,9 +79,9 @@ def info():
 def wakeup():
     global wakeup_status
     global obs_server
-    if not wakeup_status:
-        obs_server = server.Server()
-        wakeup_status = True
+    # if not wakeup_status:
+    obs_server = server.Server()
+    wakeup_status = True
     return "Ok", 200
 
 
