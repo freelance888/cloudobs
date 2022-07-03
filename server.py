@@ -280,6 +280,24 @@ class Server:
 
         return status
 
+    def stop_media(self):
+        """
+        :return:
+        """
+        if not self.is_initialized:
+            return ExecutionStatus(status=False, message="The server was not initialized yet")
+
+        status = ExecutionStatus(status=True)
+
+        try:
+            self.obs_instance.stop_media()
+        except BaseException as ex:
+            msg_ = f"E PYSERVER::Server::run_media(): couldn't stop media. Details: {ex}"
+            print(msg_)
+            status.append_error(msg_)
+
+        return status
+
     def set_stream_settings(self, stream_settings):
         """
         :param stream_settings: dictionary,

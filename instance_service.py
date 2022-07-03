@@ -176,6 +176,20 @@ def media_play():
     return status.to_http_status()
 
 
+@app.route(API_MEDIA_PLAY_ROUTE, methods=["DELETE"])
+def media_play():
+    """
+    Stops any media played
+    :return:
+    """
+    if obs_server is None:
+        return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
+
+    status: ExecutionStatus = obs_server.stop_media()
+
+    return status.to_http_status()
+
+
 @app.route(API_SET_STREAM_SETTINGS_ROUTE, methods=["POST"])
 def set_stream_settings():
     """

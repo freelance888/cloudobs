@@ -302,6 +302,20 @@ def media_play():
     return status.to_http_status()
 
 
+@app.route(API_MEDIA_PLAY_ROUTE, methods=["DELETE"])
+def media_play_delete():
+    """
+    Stops any media played
+    :return:
+    """
+
+    status = broadcast(
+        API_MEDIA_PLAY_ROUTE, "DELETE", return_status=True, method_name="media_play"
+    )
+
+    return status.to_http_status()
+
+
 @app.route(API_SET_STREAM_SETTINGS_ROUTE, methods=["POST"])
 def set_stream_settings():
     """

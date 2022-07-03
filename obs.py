@@ -153,7 +153,7 @@ class OBS:
                 cb_type=CB_TYPE
             )
 
-    def run_media(self, path, media_type='media', source_name=MEDIA_INPUT_NAME):
+    def run_media(self, path, media_type="media", source_name=MEDIA_INPUT_NAME):
         """
         Mutes original media, adds and runs the media located at `path`, and appends a listener which removes
         the media when it has finished. Fires Exception when couldn't add or mute a source.
@@ -213,6 +213,18 @@ class OBS:
             self.set_ts_mute(False)  # unmute teamspeak
 
         self.media_cb_thread.append_callback(media_play_foo, self.transition_point / 1000, cb_type=CB_TYPE)
+
+    def stop_media(self, source_name=MEDIA_INPUT_NAME):
+        """
+        Stop playing media
+        """
+        CB_TYPE = "media"
+
+        self.delete_source(source_name=source_name)
+        self.delete_source(source_name=TRANSITION_INPUT_NAME)
+        self.set_source_mute(False)
+        self.set_ts_mute(False)
+        self.media_cb_thread.delete_cb_type(cb_type=CB_TYPE)
 
     def setup_ts_sound(self):
         """
