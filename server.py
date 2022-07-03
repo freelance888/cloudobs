@@ -121,10 +121,12 @@ class ServerSettings:
         return self._settings[subject][attribute]
 
     def to_dict(self):
-        return {
+        result = {
             subject: self.get_subject(subject)
             for subject in self.subjects
         }
+        result[SUBJECT_SERVER_LANGS].pop("obs_host")
+        return result
 
     def is_modified(self, subject):
         if subject not in self._settings:
