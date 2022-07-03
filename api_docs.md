@@ -99,6 +99,8 @@
  - Note: you may set `params` for all languages,
    specifying `__all__` as a lang code, e.g.: `{"__all__": ...}`
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
+### `DELETE /media/play`
+ - Stops playing media
 ### `POST /stream/settings`
  - Sets streaming destination settings
  - Accepts the following parameters:
