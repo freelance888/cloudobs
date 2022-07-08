@@ -26,7 +26,6 @@
 {
     "lang": {
         "server_langs": {
-            "obs_host": "localhost",
             "host_url": "http://255.255.255.255:6000",
             "websocket_port": 4439,
             "password": "",
@@ -75,6 +74,24 @@
 ```
 ### `POST /cleanup`
  - Cleans up the server: stop streaming -> reset scenes -> close obs connections
+### `GET /media/schedule`
+ - Returns current media schedule
+ - Has the following format:
+```
+{
+  id_1: {
+    "name": "...",
+    "timestamp": ...,
+    "is_enabled": true/false,
+    "is_played": true/false  # this attribute shows if the 
+                             # video was already played
+  },
+  id_2: {
+    ...
+  },
+  ...
+}
+```
 ### `POST /media/schedule`
  - Schedules media play
  - Accepts the following parameters:
@@ -84,6 +101,15 @@
    ```
  - `timestamp` - floating-point number, in seconds
  - name media-file name, used `search_by_num=1` (see `POST /media/play`)
+### `PUT /media/schedule`
+ - Updates media schedule
+ - Accepts the following parameters:
+   - `id` - schedule id, required (see `GET /media/schedule`)
+   - `name` - new video name, optional
+   - `timestamp` - new timestamp, optional
+   - `is_enabled` - enables/disables specified schedule, optional
+### `DELETE /media/schedule`
+ - Removes current media schedule
 ### `POST /media/play`
  - Plays media (video/audio)
  - Accepts the following parameters:

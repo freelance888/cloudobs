@@ -49,6 +49,7 @@ class ServerSettings:
                 "objvers": "",
             },
             SUBJECT_MEDIA_SCHEDULE: {
+                "value": None,  # list of [id, name, timestamp, is_enabled, is_played]
                 "objvers": "",
             },
             SUBJECT_TS_OFFSET: {
@@ -658,6 +659,10 @@ class Server:
         else:
             self.obs_instance.stop_streaming()
         self.settings.activate(SUBJECT_STREAM_ON)
+
+    def activate_schedule(self):
+        if not self.settings.is_modified(subject=SUBJECT_MEDIA_SCHEDULE):
+            return
 
     def activate_ts_offset(self):
         if not self.settings.is_modified(subject=SUBJECT_TS_OFFSET):

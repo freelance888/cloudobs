@@ -27,6 +27,7 @@ from config import API_GDRIVE_SYNC
 from config import API_GDRIVE_FILES
 from config import API_INFO_ROUTE
 from util import ExecutionStatus, MultilangParams, CallbackThread, GDriveFiles
+from scheduler import MediaScheduler
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR")
@@ -51,6 +52,7 @@ langs = []
 init_status, wakeup_status = False, False
 # lock = threading.Lock()
 cb_thread = CallbackThread()
+media_scheduler = MediaScheduler()
 
 
 def broadcast(
@@ -135,10 +137,14 @@ def info():
     """
     responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
     data = {}
+    schedule = media_scheduler.get_schedule()
+
     for lang, response in responses.items():
         try:
             data[lang] = json.loads(response.text)
             data[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
+
+            data[lang][server.SUBJECT_MEDIA_SCHEDULE] = "#" if schedule is None else schedule
         except json.JSONDecodeError:
             data[lang] = "#"
 
@@ -253,6 +259,54 @@ def cleanup():
     return status.to_http_status()
 
 
+@app.route("", methods=["GET"])
+def get_media_schedule():
+    """
+    :return: dictionary:
+    {
+      id_1: {
+        "name": "...",
+        "timestamp": ...,
+        "is_enabled": true/false,
+        "is_played": true/false  # добавил еще is_played, показывает, было ли это видео уже проиграно
+      },
+      id_2: {
+        ...
+      },
+      ...
+    }
+    """
+    return ExecutionStatus(True, message=json.dumps(media_scheduler.get_schedule())).to_http_status()
+
+
+# PUT /media/schedule?id=...&is_enabled=False&name=...&timestamp=...
+@app.route("/media/schedule", methods=["PUT"])
+def update_media_schedule():
+    """
+    Query parameters:
+    id: schedule id,
+    name: schedule id,
+    timestamp: new timestamp,
+    is_enabled: schedule id
+    :return:
+    """
+    id_ = request.args.get("id", None)
+    if id_ is None:
+        return ExecutionStatus(False, message="Please specify schedule id").to_http_status()
+    name = request.args.get("name", None)
+    timestamp = request.args.get("timestamp", None)
+    is_enabled = request.args.get("is_enabled", None)
+
+    status = media_scheduler.modify_schedule(id_=id_, name=name, timestamp=timestamp, is_enabled=is_enabled)
+
+    return status.to_http_status()
+
+
+@app.route("/media/schedule", methods=["DELETE"])
+def delete_media_schedule():
+    return media_scheduler.delete_schedule().to_http_status()
+
+
 @app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["POST"])
 def media_schedule():
     """
@@ -265,22 +319,24 @@ def media_schedule():
     """
     schedule = request.args.get("schedule", None)
     schedule = json.loads(schedule)
-    cb_thread.clean_callbacks()
 
-    def foo(name_):
-        params = MultilangParams({"__all__": {"name": name_, "search_by_num": "1"}}, langs=langs)
+    def foo(id_, name, timestamp, is_enabled, is_played):
+        if not is_enabled or is_played:
+            return False
+        params = MultilangParams({"__all__": {"name": name, "search_by_num": "1"}}, langs=langs)
         try:
             _ = broadcast(
                 API_MEDIA_PLAY_ROUTE, "POST", params=params,
                 param_name="params", return_status=True, method_name="media_play"
             )
+            return True
         except BaseException as ex:
             print(f"E PYSERVER::common_service::media_schedule(): {ex}")
+            return False
 
-    for name, timestamp in schedule:
-        cb_thread.append_callback(foo=foo, args=(name,), delay=timestamp)
+    status = media_scheduler.create_schedule(schedule=schedule, foo=foo)
 
-    return ExecutionStatus(True).to_http_status()
+    return status.to_http_status()
 
 
 @app.route(API_MEDIA_PLAY_ROUTE, methods=["POST"])
