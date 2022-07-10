@@ -177,7 +177,7 @@ def media_play():
 
 
 @app.route(API_MEDIA_PLAY_ROUTE, methods=["DELETE"])
-def media_play():
+def delete_media_play():
     """
     Stops any media played
     :return:
