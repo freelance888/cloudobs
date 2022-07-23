@@ -29,8 +29,13 @@ from config import API_WAKEUP_ROUTE
 from util import ExecutionStatus
 
 load_dotenv()
-# MEDIA_DIR = os.getenv('MEDIA_DIR')
-
+DEFAULT_MEDIA_DIR = os.getenv('MEDIA_DIR', '/home/stream/content')
+DEFAULT_API_KEY = os.getenv('GDRIVE_API_KEY', '')
+DEFAULT_SYNC_SECONDS = os.getenv('GDRIVE_SYNC_SECONDS', 60)
+try:
+    DEFAULT_SYNC_SECONDS = int(DEFAULT_SYNC_SECONDS)
+except:
+    DEFAULT_SYNC_SECONDS = 60
 
 # Setup Sentry
 # ------------
@@ -99,6 +104,8 @@ def init():
     :return:
     """
     server_langs = request.args.get("server_langs", "")
+    if not server_langs:
+        return ExecutionStatus(False, "server_langs not specified").to_http_status()
     server_langs = json.loads(server_langs)
 
     global obs_server
@@ -386,23 +393,29 @@ def setup_gdrive_sync():
     e.g. {'drive_id': ..., 'media_dir': ..., 'api_key': ..., 'sync_seconds': ..., gdrive_sync_addr: ...}
     :return:
     """
+    # check if gdrive_settings is specified
     gdrive_settings = request.args.get("gdrive_settings", None)
+    if not gdrive_settings:
+        return ExecutionStatus(False, "gdrive_settings not specified").to_http_status()
     gdrive_settings = json.loads(gdrive_settings)
-
-    media_dir_settings = gdrive_settings['media_dir']
-    obs_server.set_media_dir(media_dir_settings)
+    # drive_id should also be specified
+    if "drive_id" not in gdrive_settings:
+        return ExecutionStatus(False, "drive_id not specified").to_http_status()
+    # tell obs_server where the media will be stored
+    media_dir = gdrive_settings['media_dir'] if 'media_dir' in gdrive_settings else DEFAULT_MEDIA_DIR
+    obs_server.set_media_dir(media_dir)
 
     status: ExecutionStatus = ExecutionStatus()
 
     drive_id = gdrive_settings['drive_id']
-    media_dir = gdrive_settings['media_dir'] if 'media_dir' in gdrive_settings else '/home/stream/content'
-    api_key = gdrive_settings['api_key']
-    sync_seconds = gdrive_settings['sync_seconds']
+    api_key = gdrive_settings['api_key'] if 'api_key' in gdrive_settings else DEFAULT_API_KEY
+    sync_seconds = gdrive_settings['sync_seconds'] if 'sync_seconds' in gdrive_settings else DEFAULT_SYNC_SECONDS
     gdrive_sync_addr = gdrive_settings[
         'gdrive_sync_addr'] if 'gdrive_sync_addr' in gdrive_settings else 'http://localhost:7000'
 
     gdrive_sync_addr = gdrive_sync_addr.rstrip('/')
 
+    # build a query
     query_params = urlencode({
         'drive_id': drive_id,
         'media_dir': media_dir,
@@ -435,6 +448,9 @@ def get_gdrive_files():
     """
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
+
+    if "addr" not in gdrive_helper.worker:
+        return ExecutionStatus(False, "Google drive was not initialized yet").to_http_status()
 
     addr = gdrive_helper.worker["addr"]
     response_ = requests.get(f"{addr}/files")
