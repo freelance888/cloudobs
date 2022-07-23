@@ -173,8 +173,11 @@ class Server:
             }
         :return: Status
         """
-        for k, v in server_langs.items():
-            self.settings.set(SUBJECT_SERVER_LANGS, k, v)
+        try:
+            for k, v in server_langs.items():
+                self.settings.set(SUBJECT_SERVER_LANGS, k, v)
+        except Exception as ex:
+            return ExecutionStatus(False, f"E PYSERVER::Server::initialize(), details: {ex}")
 
         status = self._establish_connections(verbose=True)
 

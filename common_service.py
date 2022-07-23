@@ -259,7 +259,7 @@ def cleanup():
     return status.to_http_status()
 
 
-@app.route("", methods=["GET"])
+@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["GET"])
 def get_media_schedule():
     """
     :return: dictionary:
@@ -280,7 +280,7 @@ def get_media_schedule():
 
 
 # PUT /media/schedule?id=...&is_enabled=False&name=...&timestamp=...
-@app.route("/media/schedule", methods=["PUT"])
+@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["PUT"])
 def update_media_schedule():
     """
     Query parameters:
@@ -302,7 +302,7 @@ def update_media_schedule():
     return status.to_http_status()
 
 
-@app.route("/media/schedule", methods=["DELETE"])
+@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["DELETE"])
 def delete_media_schedule():
     return media_scheduler.delete_schedule().to_http_status()
 
