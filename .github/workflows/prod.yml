@@ -62,7 +62,7 @@ jobs:
         echo "${ENV_FILE}" > .env
         rsync -a -v --progress --delete --quiet .env docker-compose.yml ${{ github.event.repository.name }}.tar ${PROD_HOST}:~
         ssh ${PROD_HOST} docker load --input ${{ github.event.repository.name }}.tar
-        ssh ${PROD_HOST} "docker-compose down && docker-compose up -d && sleep 10 && docker-compose ls"
+        ssh ${PROD_HOST} "docker-compose down && docker-compose up -d && sleep 10 && docker-compose ps"
 
   # debug:
   #   runs-on: ubuntu-latest
