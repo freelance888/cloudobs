@@ -12,7 +12,7 @@ on:
     types: PROD_DEPLOY
 
 env:
-    PROD_HOST: control@${{ secrets.PROD_HOST_IP }}
+    PROD_HOST: app@${{ secrets.PROD_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
     ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
 
