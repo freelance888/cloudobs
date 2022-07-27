@@ -3,9 +3,9 @@ name: PROD | Build and Deploy
 on:
   workflow_dispatch:
   push:
-    branches: [ "feature/adding-cicd" ]
+    branches: main
   pull_request:
-    branches: [ "feature/adding-cicd" ]
+    branches: main
 
 
   repository_dispatch:
