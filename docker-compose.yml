@@ -10,7 +10,7 @@ services:
     expose:
       - '5000'
     volumes:
-      -  sa.json:/app/sa.json
+      - ./sa.json:/app/sa.json
 
   ui:
     image: cloudobs-client:latest

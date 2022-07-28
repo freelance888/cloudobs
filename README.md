@@ -20,7 +20,7 @@ python3 instance_service.py
 ### Native
 ```
 docker build -t $(basename $(pwd)) . --no-cache
-docker run -p 3000:3000 $(basename $(pwd))
+docker run -d -p 3000:3000 $(basename $(pwd))
 ```
 
 ### Docker Compose for server and ui
