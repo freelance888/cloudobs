@@ -60,7 +60,8 @@ jobs:
         echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
         ssh ${PROD_HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}:*" -q) &
         echo "${ENV_FILE}" > .env
-        rsync -a -v --progress --delete --quiet .env docker-compose.yml ${{ github.event.repository.name }}.tar ${PROD_HOST}:~
+        echo "${SA_FILE}" > sa.json
+        rsync -a -v --progress --delete --quiet sa.json .env docker-compose.yml ${{ github.event.repository.name }}.tar ${PROD_HOST}:~
         ssh ${PROD_HOST} docker load --input ${{ github.event.repository.name }}.tar
         ssh ${PROD_HOST} "docker-compose down && docker-compose up -d && sleep 10 && docker-compose ps"
 
