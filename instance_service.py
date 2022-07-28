@@ -80,6 +80,22 @@ def info():
     return json.dumps(obs_server.settings.to_dict()), 200
 
 
+@app.route(API_INFO_ROUTE, methods=["POST"])
+def info():
+    """
+    :return:
+    """
+    info_ = request.args.get("info", "")
+    if not info_:
+        return "Please specify `info`", 500
+    try:
+        info_ = json.loads(info_)
+    except Exception as ex:
+        return f"Error while parsing json, details: {ex}"
+
+    return obs_server.set_info(info_).to_http_status()
+
+
 @app.route(API_WAKEUP_ROUTE, methods=["POST"])
 def wakeup():
     global wakeup_status
