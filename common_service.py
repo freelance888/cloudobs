@@ -26,11 +26,15 @@ from config import API_TS_VOLUME_ROUTE
 from config import API_GDRIVE_SYNC
 from config import API_GDRIVE_FILES
 from config import API_INFO_ROUTE
+from config import API_PULL_SHEETS
+from config import API_PUSH_SHEETS
 from util import ExecutionStatus, MultilangParams, CallbackThread, GDriveFiles
 from scheduler import MediaScheduler
+from google_sheets import OBSGoogleSheets
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR")
+SERVICE_FILE_DIR = os.getenv("SERVICE_FILE_DIR", "service_account.json")
 
 # Setup Sentry
 # ------------
@@ -53,16 +57,15 @@ init_status, wakeup_status = False, False
 # lock = threading.Lock()
 cb_thread = CallbackThread()
 media_scheduler = MediaScheduler()
+sheets = OBSGoogleSheets()
 
 
-def broadcast(
-        api_route,
-        http_method,
-        params: util.MultilangParams = None,
-        param_name="params",
-        return_status=False,
-        method_name="broadcast",
-):
+def broadcast(api_route,
+              http_method,
+              params: util.MultilangParams = None,
+              param_name="params",
+              return_status=False,
+              method_name="broadcast"):
     requests_ = {}  # lang: request
     responses_ = {}  # lang: response
 
@@ -113,6 +116,104 @@ def load_ip_list(path):
     langs = [lang for lang, ip in ip_list]
 
 
+def sync_from_sheets():
+    try:
+        params = sheets.to_multilang_params()
+        for lang in params:
+            params[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
+    except Exception as ex:
+        msg_ = f"Something happened while preparing for synchronization the server from Google Sheets. " \
+               f"Details: {ex}"
+        print(msg_)
+        return ExecutionStatus(False, msg_)
+    status = broadcast(
+        api_route=API_INFO_ROUTE,
+        http_method="POST",
+        params=params,
+        param_name="info",
+        return_status=True,
+        method_name="init_from_sheets"
+    )
+    return status
+
+
+def init_from_server_langs(server_langs):
+    # validate input parameters before broadcasting them to servers
+    status: ExecutionStatus = util.validate_init_params(server_langs)
+    if not status:
+        return status
+
+    for lang in server_langs:
+        server_langs[lang]["obs_host"] = "localhost"
+
+    params = MultilangParams(server_langs, langs=langs)
+    status = broadcast(
+        API_INIT_ROUTE,
+        "POST",
+        params=params,
+        param_name="server_langs",
+        return_status=True,
+        method_name="init_from_server_langs",
+    )
+    return status
+
+
+def init_from_sheets(sheet_url, worksheet_name):
+    try:
+        sheets.set_sheet(sheet_url, worksheet_name)
+    except Exception as ex:
+        msg_ = f"Something happened while setting up Google Sheets. Details: {ex}"
+        print(msg_)
+        return ExecutionStatus(False, msg_)
+    pull_sheets()
+
+
+def get_info(fillna: object = "#"):
+    responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
+    data = {}
+    schedule = media_scheduler.get_schedule()
+
+    for lang, response in responses.items():
+        try:
+            data[lang] = json.loads(response.text)
+            data[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
+
+            data[lang][server.SUBJECT_MEDIA_SCHEDULE] = "#" if schedule is None else schedule
+        except json.JSONDecodeError:
+            if fillna:
+                data[lang] = fillna
+    return data
+
+
+def pull_sheets():
+    """
+    pull - means pull data from Google Sheets to the server
+    """
+    if not sheets.ok():
+        return ExecutionStatus(False, "Something happened with Google Sheets object")
+    try:
+        sheets.pull()
+    except Exception as ex:
+        return ExecutionStatus(False, f"Couldn't pull data from Google Sheets. Details: {ex}")
+    return sync_from_sheets()
+
+
+def push_sheets():
+    """
+    push - means push data from the server to Google Sheets
+    """
+    if not sheets.ok():
+        return ExecutionStatus(False, "Something happened with Google Sheets object")
+    try:
+        info_ = get_info(fillna=False)
+        for lang, info__ in info_.items():
+            sheets.from_info(lang, info__)
+        sheets.push()
+    except Exception as ex:
+        return ExecutionStatus(False, f"Couldn't push data to Google Sheets. Details: {ex}")
+    return ExecutionStatus(True, "Ok")
+
+
 @app.route(API_WAKEUP_ROUTE, methods=["POST"])
 def wakeup():
     iplist_path = request.args.get("iplist_path", "/home/stream/ip.list")
@@ -135,20 +236,7 @@ def info():
     """
     :return:
     """
-    responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
-    data = {}
-    schedule = media_scheduler.get_schedule()
-
-    for lang, response in responses.items():
-        try:
-            data[lang] = json.loads(response.text)
-            data[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
-
-            data[lang][server.SUBJECT_MEDIA_SCHEDULE] = "#" if schedule is None else schedule
-        except json.JSONDecodeError:
-            data[lang] = "#"
-
-    return json.dumps(data), 200
+    return json.dumps(get_info()), 200
 
 
 @app.route(API_INIT_ROUTE, methods=["POST"])
@@ -174,33 +262,20 @@ def init():
     :return:
     """
     global init_status
-    try:
-        server_langs = request.args.get("server_langs", "")
-        server_langs = json.loads(server_langs)
-    except:
-        return "Couldn't parse json", 500
 
-    # validate input parameters before broadcasting them to servers
-    status: ExecutionStatus = util.validate_init_params(server_langs)
-    if not status:
-        return status.to_http_status()
-
-    for lang in server_langs:
-        server_langs[lang]["obs_host"] = "localhost"
-
-    params = MultilangParams(server_langs, langs=langs)
-    status = broadcast(
-        API_INIT_ROUTE,
-        "POST",
-        params=params,
-        param_name="server_langs",
-        return_status=True,
-        method_name="init",
-    )
-
-    init_status = True
-
-    return status.to_http_status()
+    if request.args.get("server_langs", ""):
+        server_langs = request.args.get("server_langs")
+        try:
+            server_langs = json.loads(server_langs)
+        except:
+            return ExecutionStatus(False, "Couldn't parse json").to_http_status()
+        return init_from_server_langs(server_langs).to_http_status()
+    elif request.args.get("sheet_url", "") and request.args.get("worksheet_name", ""):
+        sheet_url = request.args.get("sheet_url")
+        worksheet_name = request.args.get("worksheet_name")
+        return init_from_sheets(sheet_url, worksheet_name).to_http_status()
+    else:
+        return ExecutionStatus(False, "Invalid parameters list").to_http_status()
 
 
 @app.route(API_INIT_ROUTE, methods=["GET"])
@@ -237,6 +312,16 @@ def get_init():
             server_langs.pop("obs_host")
             data[lang] = server_langs
         return json.dumps(data), 200
+
+
+@app.route(API_PULL_SHEETS, methods=["POST"])
+def api_pull_sheets():
+    return pull_sheets().to_http_status()
+
+
+@app.route(API_PUSH_SHEETS, methods=["POST"])
+def api_push_sheets():
+    return push_sheets().to_http_status()
 
 
 @app.route(API_CLEANUP_ROUTE, methods=["POST"])

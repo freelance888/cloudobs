@@ -102,8 +102,12 @@ class ServerSettings:
             raise KeyError(f"Invalid subject attribute \"{subject}.{attribute}\"")
         if attribute == "objvers":
             raise KeyError(f"Explicit \"objvers\" modification is not allowed")
-        self._settings[subject][attribute] = value
-        self._settings[subject]["objvers"] = "M"
+
+        if self._settings[subject][attribute] == value:  # if the value is the same
+            pass
+        else:
+            self._settings[subject][attribute] = value
+            self._settings[subject]["objvers"] = "M"
 
     def get_subject(self, subject):
         if subject not in self._settings:
@@ -160,6 +164,19 @@ class Server:
 
         self.media_dir = MEDIA_DIR
 
+    def set_info(self, info):
+        status = ExecutionStatus(status=True)
+        try:
+            for subject, data in info.items():  # for each subject
+                for k, v in data.items():  # for each key-value pair
+                    self.settings.set(subject, k, v)
+            self.activate()
+        except BaseException as ex:
+            msg_ = f"E PYSERVER::Server::set_info(): couldn't activate settings. Details: {ex}"
+            status.append_error(msg_)
+            print(msg_)
+        return status
+
     def initialize(self, server_langs):
         """
         establish connections, initialize obs controllers, setup scenes, create original media sources
@@ -173,27 +190,15 @@ class Server:
             }
         :return: Status
         """
+        status = ExecutionStatus(status=True)
         try:
             for k, v in server_langs.items():
                 self.settings.set(SUBJECT_SERVER_LANGS, k, v)
+            self.activate()
         except Exception as ex:
-            return ExecutionStatus(False, f"E PYSERVER::Server::initialize(), details: {ex}")
-
-        status = self._establish_connections(verbose=True)
-
-        if not status:
-            self.drop_connections()
-            return status
-
-        status = self._initialize_obs_controllers(verbose=True)
-
-        if not status:
-            self.drop_connections()
-            return status
-
-        self.is_initialized = True
-        self.settings.activate(SUBJECT_SERVER_LANGS)
-        self.activate()
+            msg_ = f"E PYSERVER::Server::initialize(), details: {ex}"
+            print(msg_)
+            status.append_error(msg_)
         return status
 
     def cleanup(self):
@@ -633,6 +638,7 @@ class Server:
         return status
 
     def activate(self):
+        self.activate_server_langs()
         if not self.settings.is_active(SUBJECT_SERVER_LANGS):
             raise RuntimeError("E PYSERVER::Server::activate(): attempt to activate config without initialization")
         self.activate_stream_settings()
@@ -644,6 +650,27 @@ class Server:
         self.activate_sidechain()
         self.activate_transition()
         # TODO: GDRIVE
+
+    def activate_server_langs(self):
+        if not self.settings.is_modified(subject=SUBJECT_SERVER_LANGS):
+            return
+        self.drop_connections()
+
+        status = self._establish_connections(verbose=True)
+
+        if not status:
+            self.drop_connections()
+            return status
+
+        status = self._initialize_obs_controllers(verbose=True)
+
+        if not status:
+            self.drop_connections()
+            return status
+
+        self.is_initialized = True
+        self.settings.activate(SUBJECT_SERVER_LANGS)
+        return status
 
     def activate_stream_settings(self):
         if not self.settings.is_modified(subject=SUBJECT_STREAM_SETTINGS):

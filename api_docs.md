@@ -72,6 +72,11 @@
     }
 }
 ```
+### `POST /sheets/pull`
+ - Pulls data from Google Sheets (only available if the server was initialized using
+   Google Sheets url) and synchronizes the server according to the sheets dataframe.
+### `POST /sheets/push`
+ - Pushes data from the server to Google Sheets
 ### `POST /cleanup`
  - Cleans up the server: stop streaming -> reset scenes -> close obs connections
 ### `GET /media/schedule`
