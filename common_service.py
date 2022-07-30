@@ -34,7 +34,6 @@ from google_sheets import OBSGoogleSheets
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR")
-SERVICE_FILE_DIR = os.getenv("SERVICE_ACCOUNT_FILE", "service_account.json")
 COMMON_SERVICE_PORT = int(os.getenv("COMMON_SERVICE_PORT", 5000))
 
 # Setup Sentry

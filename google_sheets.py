@@ -18,7 +18,7 @@ SERVICE_FILE = os.getenv("SERVICE_ACCOUNT_FILE")
 class OBSGoogleSheets:
     def __init__(self):
         self.service_file = SERVICE_FILE
-        self.gc = pygsheets.authorize(self.service_file)
+        self.gc = pygsheets.authorize(service_account_file=self.service_file)
 
         self.sheet = None
         self.ws = None
