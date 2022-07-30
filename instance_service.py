@@ -73,7 +73,7 @@ wakeup_status = False
 
 
 @app.route(API_INFO_ROUTE, methods=["GET"])
-def info():
+def get_info():
     """
     :return:
     """
@@ -81,7 +81,7 @@ def info():
 
 
 @app.route(API_INFO_ROUTE, methods=["POST"])
-def info():
+def post_info():
     """
     :return:
     """
