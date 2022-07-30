@@ -220,6 +220,7 @@ def wakeup():
     Query parameters:
      - iplist - json list of [... [lang_code, ip_address], ...]
     """
+    # validate parameters
     iplist = request.args.get("iplist", "")
     if not iplist:
         return ExecutionStatus(False, "Please specify `iplist` parameter").to_http_status()
@@ -232,11 +233,20 @@ def wakeup():
     except Exception as ex:
         return ExecutionStatus(False, f"Something happened. Details: {ex}").to_http_status()
 
+    # fill metadata
+    global langs, instance_service_addrs
+    instance_service_addrs = util.ServiceAddrStorage()
     for lst in iplist:
+        # check the list structure
         if not isinstance(lst, list) or len(lst) != 2:
             return ExecutionStatus(False, "`iplist` entry should also be a list with length 2").to_http_status()
+        lang, ip = lst
+        instance_service_addrs[lang] = {
+            "addr": f"http://{ip}:6000",  # address of instance_service
+        }
+    langs = [lang for lang, ip in iplist]
 
-
+    # broadcast wakeup to minions
     status = broadcast(
         API_WAKEUP_ROUTE,
         "POST",
@@ -244,6 +254,7 @@ def wakeup():
         method_name="wakeup",
     )
 
+    # the server has woken up
     global wakeup_status
     wakeup_status = True
     return "Ok", 200
