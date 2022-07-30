@@ -35,6 +35,7 @@ from google_sheets import OBSGoogleSheets
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR")
 SERVICE_FILE_DIR = os.getenv("SERVICE_FILE_DIR", "service_account.json")
+COMMON_SERVICE_PORT = int(os.getenv("COMMON_SERVICE_PORT", 5000))
 
 # Setup Sentry
 # ------------
@@ -816,7 +817,7 @@ class HTTPSThread(threading.Thread):
         self.app = app
 
     def run(self) -> None:
-        self.app.run("0.0.0.0", 5001, ssl_context='adhoc')
+        self.app.run("0.0.0.0", COMMON_SERVICE_PORT + 1, ssl_context='adhoc')
 
 
 _thread = HTTPSThread(app)
@@ -824,4 +825,4 @@ _thread = HTTPSThread(app)
 if __name__ == "__main__":
     cb_thread.start()
     _thread.start()
-    app.run("0.0.0.0", 5000)
+    app.run("0.0.0.0", COMMON_SERVICE_PORT)
