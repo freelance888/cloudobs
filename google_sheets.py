@@ -8,7 +8,7 @@ import re
 from util import MultilangParams
 
 load_dotenv()
-MEDIA_DIR = os.getenv("GDRIVE_MEDIA_DIR", "/home/stream/content")
+MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
 API_KEY = os.getenv("GDRIVE_API_KEY", "")
 SYNC_SECONDS = int(os.getenv("GDRIVE_SYNC_SECONDS", 120))
 GDRIVE_SYNC_ADDR = "http://localhost:7000"

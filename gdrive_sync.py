@@ -9,6 +9,7 @@ import gdown
 from flask import Flask
 from flask import request
 import threading
+from dotenv import load_dotenv
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -20,11 +21,13 @@ from util import GDriveFiles
 from util import generate_file_md5
 from util import log
 
+load_dotenv()
+MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
+SYNC_SECONDS = int(os.getenv("GDRIVE_SYNC_SECONDS", 120))
 b_init, drive_id, media_dir, api_key, sync_seconds = False, None, "", None, 2
 lock = threading.Lock()
 
 app = Flask(__name__)
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 class DriveSync(threading.Thread):
     def __init__(self):
@@ -108,9 +111,9 @@ def init():
 
     with lock:
         drive_id = request.args.get("drive_id", "")
-        media_dir = request.args.get("media_dir", "/home/stream/content")
+        media_dir = request.args.get("media_dir", MEDIA_DIR)
         api_key = request.args.get("api_key", "")
-        sync_seconds = request.args.get("sync_seconds", "120")
+        sync_seconds = request.args.get("sync_seconds", SYNC_SECONDS)
 
         media_dir = os.path.join(media_dir, 'media')
         sync_seconds = max(1, int(sync_seconds))
