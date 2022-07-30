@@ -320,3 +320,4 @@ cython_debug/
 # Config
 # ------
 #.env
+sa.json
