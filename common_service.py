@@ -216,9 +216,37 @@ def push_sheets():
 
 @app.route(API_WAKEUP_ROUTE, methods=["POST"])
 def wakeup():
-    iplist_path = request.args.get("iplist_path", "/home/stream/ip.list")
-    load_ip_list(iplist_path)
+    """
+    Query parameters:
+     - iplist - json list of [... [lang_code, ip_address], ...]
+    """
+    # validate parameters
+    iplist = request.args.get("iplist", "")
+    if not iplist:
+        return ExecutionStatus(False, "Please specify `iplist` parameter").to_http_status()
+    try:
+        iplist = json.loads(iplist)
+        if not isinstance(iplist, list):
+            return ExecutionStatus(False, "`iplist` should be a list object. Please refer to docs").to_http_status()
+    except json.JSONDecodeError as ex:
+        return ExecutionStatus(False, f"JSON decode error. Details: {ex}").to_http_status()
+    except Exception as ex:
+        return ExecutionStatus(False, f"Something happened. Details: {ex}").to_http_status()
 
+    # fill metadata
+    global langs, instance_service_addrs
+    instance_service_addrs = util.ServiceAddrStorage()
+    for lst in iplist:
+        # check the list structure
+        if not isinstance(lst, list) or len(lst) != 2:
+            return ExecutionStatus(False, "`iplist` entry should also be a list with length 2").to_http_status()
+        lang, ip = lst
+        instance_service_addrs[lang] = {
+            "addr": f"http://{ip}:6000",  # address of instance_service
+        }
+    langs = [lang for lang, ip in iplist]
+
+    # broadcast wakeup to minions
     status = broadcast(
         API_WAKEUP_ROUTE,
         "POST",
@@ -226,6 +254,7 @@ def wakeup():
         method_name="wakeup",
     )
 
+    # the server has woken up
     global wakeup_status
     wakeup_status = True
     return "Ok", 200
