@@ -11,6 +11,9 @@
         "original_media_url": "srt://localhost"  # rtmp/srt source url
      }     
      ```
+   - `sheet_url` - google sheet url (`server_langs` should not be specified)
+   - `worksheet_name` - google sheet worksheet name, (should be specified along 
+     with `sheet_url`)
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
 ### `GET /init`
  - Returns current `server_lang` variable of the server (see `GET /info`)
