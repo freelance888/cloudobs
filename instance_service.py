@@ -29,7 +29,7 @@ from config import API_WAKEUP_ROUTE
 from util import ExecutionStatus
 
 load_dotenv()
-DEFAULT_MEDIA_DIR = os.getenv('MEDIA_DIR', '/home/stream/content')
+DEFAULT_MEDIA_DIR = os.getenv('MEDIA_DIR', './content')
 DEFAULT_API_KEY = os.getenv('GDRIVE_API_KEY', '')
 DEFAULT_SYNC_SECONDS = os.getenv('GDRIVE_SYNC_SECONDS', 60)
 try:
@@ -417,43 +417,8 @@ def setup_gdrive_sync():
     # drive_id should also be specified
     if "drive_id" not in gdrive_settings:
         return ExecutionStatus(False, "drive_id not specified").to_http_status()
-    # tell obs_server where the media will be stored
-    media_dir = gdrive_settings['media_dir'] if 'media_dir' in gdrive_settings else DEFAULT_MEDIA_DIR
-    obs_server.set_media_dir(media_dir)
 
-    status: ExecutionStatus = ExecutionStatus()
-
-    drive_id = gdrive_settings['drive_id']
-    api_key = gdrive_settings['api_key'] if 'api_key' in gdrive_settings else DEFAULT_API_KEY
-    sync_seconds = gdrive_settings['sync_seconds'] if 'sync_seconds' in gdrive_settings else DEFAULT_SYNC_SECONDS
-    gdrive_sync_addr = gdrive_settings[
-        'gdrive_sync_addr'] if 'gdrive_sync_addr' in gdrive_settings else 'http://localhost:7000'
-
-    gdrive_sync_addr = gdrive_sync_addr.rstrip('/')
-
-    # build a query
-    query_params = urlencode({
-        'drive_id': drive_id,
-        'media_dir': media_dir,
-        'api_key': api_key,
-        'sync_seconds': sync_seconds
-    })
-
-    response_ = requests.post(f"{gdrive_sync_addr}/init?{query_params}")
-    if response_.status_code != 200:
-        msg_ = f"E PYSERVER::setup_gdrive_sync(): Details: {response_.text}"
-        print(msg_)
-        status.append_error(msg_)
-
-    gdrive_helper.set_worker(
-        addr=gdrive_sync_addr,
-        drive_id=drive_id,
-        media_dir=media_dir,
-        api_key=api_key,
-        sync_seconds=sync_seconds,
-    )
-
-    return status.to_http_status()
+    obs_server.setup_gdrive(gdrive_settings).to_http_status()
 
 
 @app.route(API_GDRIVE_FILES, methods=["GET"])

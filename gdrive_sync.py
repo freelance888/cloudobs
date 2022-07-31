@@ -115,8 +115,11 @@ def init():
         api_key = request.args.get("api_key", "")
         sync_seconds = request.args.get("sync_seconds", SYNC_SECONDS)
 
-        media_dir = os.path.join(media_dir, 'media')
-        sync_seconds = max(1, int(sync_seconds))
+        media_dir = os.path.join(media_dir, "media")
+        sync_seconds = max(10, int(sync_seconds))
+
+        if not drive_id:
+            drive_id = "#"
 
         b_init = True
         os.system(f"mkdir -p {media_dir}")

@@ -4,6 +4,8 @@ import re
 
 import obswebsocket as obsws
 from dotenv import load_dotenv
+from urllib.parse import urlencode
+import requests
 
 import obs
 from util import ExecutionStatus
@@ -11,7 +13,9 @@ from util import MultilangParams
 from util import DefaultDict
 
 load_dotenv()
-BASE_MEDIA_DIR = '/home/stream/content'  # default value, overwritten by gdrive_sync initialization
+BASE_MEDIA_DIR = os.getenv('MEDIA_DIR', './content')
+DEFAULT_API_KEY = os.getenv('GDRIVE_API_KEY', '')
+DEFAULT_SYNC_SECONDS = int(os.getenv('GDRIVE_SYNC_SECONDS', 60))
 MEDIA_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 
@@ -559,12 +563,35 @@ class Server:
             status.append_error(msg_)
         return status
 
+    def setup_gdrive(self, gdrive_settings):
+        """
+        :param gdrive_settings: gdrive settings dictionary,
+        e.g. {'drive_id': ..., 'media_dir': ..., 'api_key': ..., 'sync_seconds': ..., gdrive_sync_addr: ...}
+        :return:
+        """
+        if not self.is_initialized:
+            return ExecutionStatus(status=False, message="The server was not initialized yet")
+
+        status = ExecutionStatus(status=True)
+
+        try:
+            for k, v in gdrive_settings.items():
+                self.settings.set(SUBJECT_GDRIVE_SETTINGS, attribute=k, value=v)
+            self.activate()
+        except BaseException as ex:
+            msg_ = f"E PYSERVER::Server::setup_gdrive(): couldn't set gdrive_settings. Details: {ex}"
+            print(msg_)
+            status.append_error(msg_)
+        return status
+
     def set_media_dir(self, media_dir):
         """
         :param dir_settings
         :return:
         """
         self.media_dir = media_dir
+        if not os.path.isdir(self.media_dir):
+            os.system(f"mkdir -p {self.media_dir}")
 
     def _establish_connections(self, verbose=True):
         """
@@ -649,7 +676,7 @@ class Server:
         self.activate_source_volume()
         self.activate_sidechain()
         self.activate_transition()
-        # TODO: GDRIVE
+        self.activate_gdrive()
 
     def activate_server_langs(self):
         if not self.settings.is_modified(subject=SUBJECT_SERVER_LANGS):
@@ -732,3 +759,34 @@ class Server:
         self.obs_instance.setup_transition(transition_name=transition_settings["transition_name"],
                                            transition_settings=transition_settings)
         self.settings.activate(SUBJECT_TRANSITION)
+
+    def activate_gdrive(self):
+        if not self.settings.is_modified(subject=SUBJECT_GDRIVE_SETTINGS):
+            return
+        gdrive_settings = self.settings.get_subject(SUBJECT_GDRIVE_SETTINGS)
+
+        # set media dir
+        media_dir = gdrive_settings["media_dir"] if "media_dir" in gdrive_settings else BASE_MEDIA_DIR
+        self.set_media_dir(media_dir)
+
+        drive_id = gdrive_settings["drive_id"]
+        api_key = gdrive_settings["api_key"] if "api_key" in gdrive_settings else DEFAULT_API_KEY
+        sync_seconds = gdrive_settings["sync_seconds"] if "sync_seconds" in gdrive_settings else DEFAULT_SYNC_SECONDS
+        gdrive_sync_addr = gdrive_settings["gdrive_sync_addr"] \
+                            if "gdrive_sync_addr" in gdrive_settings else "http://localhost:7000"
+        gdrive_sync_addr = gdrive_sync_addr.rstrip("/")
+
+        # build a query
+        query_params = urlencode({
+            "drive_id": drive_id,
+            "media_dir": media_dir,
+            "api_key": api_key,
+            "sync_seconds": sync_seconds
+        })
+
+        response_ = requests.post(f"{gdrive_sync_addr}/init?{query_params}")
+        if response_.status_code != 200:
+            msg_ = f"E PYSERVER::activate_gdrive(): Details: {response_.text}"
+            raise RuntimeError(msg_)
+
+        self.settings.activate(SUBJECT_GDRIVE_SETTINGS)
