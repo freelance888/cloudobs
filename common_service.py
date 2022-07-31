@@ -161,11 +161,12 @@ def init_from_server_langs(server_langs):
 def init_from_sheets(sheet_url, worksheet_name):
     try:
         sheets.set_sheet(sheet_url, worksheet_name)
+        pull_sheets()
+        return ExecutionStatus(True)
     except Exception as ex:
         msg_ = f"Something happened while setting up Google Sheets. Details: {ex}"
         print(msg_)
         return ExecutionStatus(False, msg_)
-    pull_sheets()
 
 
 def get_info(fillna: object = "#"):
