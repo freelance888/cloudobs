@@ -418,7 +418,7 @@ def setup_gdrive_sync():
     if "drive_id" not in gdrive_settings:
         return ExecutionStatus(False, "drive_id not specified").to_http_status()
 
-    obs_server.setup_gdrive(gdrive_settings).to_http_status()
+    return obs_server.setup_gdrive(gdrive_settings).to_http_status()
 
 
 @app.route(API_GDRIVE_FILES, methods=["GET"])
