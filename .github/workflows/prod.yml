@@ -15,6 +15,7 @@ env:
     PROD_HOST: app@${{ secrets.PROD_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
     ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+    SA_FILE: ${{ secrets.SA_FILE }}
 
 jobs:
 
