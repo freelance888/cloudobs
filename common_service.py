@@ -292,6 +292,7 @@ def init():
     :return:
     """
     global init_status
+    init_status = False
 
     if request.args.get("server_langs", ""):
         server_langs = request.args.get("server_langs")
@@ -299,13 +300,17 @@ def init():
             server_langs = json.loads(server_langs)
         except:
             return ExecutionStatus(False, "Couldn't parse json").to_http_status()
-        return init_from_server_langs(server_langs).to_http_status()
+        status = init_from_server_langs(server_langs)
     elif request.args.get("sheet_url", "") and request.args.get("worksheet_name", ""):
         sheet_url = request.args.get("sheet_url")
         worksheet_name = request.args.get("worksheet_name")
-        return init_from_sheets(sheet_url, worksheet_name).to_http_status()
+        status = init_from_sheets(sheet_url, worksheet_name)
     else:
         return ExecutionStatus(False, "Invalid parameters list").to_http_status()
+
+    if status:
+        init_status = True
+    return status.to_http_status()
 
 
 @app.route(API_INIT_ROUTE, methods=["GET"])
