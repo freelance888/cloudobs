@@ -18,7 +18,7 @@ SERVICE_FILE = os.getenv("SERVICE_ACCOUNT_FILE")
 class OBSGoogleSheets:
     def __init__(self):
         self.service_file = SERVICE_FILE
-        self.gc = pygsheets.authorize(self.service_file)
+        self.gc = pygsheets.authorize(service_account_file=self.service_file)
 
         self.sheet = None
         self.ws = None
@@ -97,7 +97,10 @@ class OBSGoogleSheets:
             target_server = self._get_value(lang, "target_server")
             target_key = self._get_value(lang, "target_key")
             gdrive_folder_id = self._get_value(lang, "gdrive_folder_id")
-            gdrive_folder_url = f"https://drive.google.com/drive/u/0/folders/{gdrive_folder_id}"
+            if gdrive_folder_id:
+                gdrive_folder_url = f"https://drive.google.com/drive/u/0/folders/{gdrive_folder_id}"
+            else:
+                gdrive_folder_url = ""
             data.append([lang, source_url, target_server, target_key, gdrive_folder_url])
         return pd.DataFrame(data, columns=["lang", "source_url", "target_server", "target_key", "gdrive_folder_url"])
 
