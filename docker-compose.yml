@@ -7,7 +7,7 @@ services:
     image: cloudobs:latest
     env_file:
       - ./.env
-    expose:
+    ports:
       - '5000'
     volumes:
       - ./sa.json:/app/sa.json
