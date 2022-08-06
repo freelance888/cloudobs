@@ -45,10 +45,14 @@ class MediaScheduler:
                 }
                 for i, (name, timestamp) in enumerate(schedule)
             }
+
+            def timestamp_foo(timestamp):
+                return lambda: timestamp
+
             for id_, data in self.schedule.items():
                 self.cb_thread.append_callback(foo=foo_wrap,
                                                args=(id_, data["name"]),
-                                               delay=lambda: self.schedule[id_]["timestamp"])
+                                               delay=timestamp_foo(self.schedule[id_]["timestamp"]))
             return ExecutionStatus(True, message="Ok")
         except ValueError as ex:
             msg = f"The schedule structure is invalid, required [..., [name, timestamp], ...]. Details: {ex}"
@@ -68,9 +72,9 @@ class MediaScheduler:
             if timestamp:
                 self.schedule[id_]["timestamp"] = timestamp
             if is_enabled is not None:
-                self.schedule[id_]["is_enabled"] = is_enabled
+                self.schedule[id_]["is_enabled"] = bool(is_enabled)
             if is_played is not None:
-                self.schedule[id_]["is_played"] = is_played
+                self.schedule[id_]["is_played"] = bool(is_played)
             return ExecutionStatus(True, message="Ok")
         except BaseException as ex:
             msg = f"Something happened, details: {ex}"
