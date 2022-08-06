@@ -39,7 +39,7 @@ class MediaScheduler:
             self.schedule = {
                 i: {
                     "name": name,
-                    "timestamp": timestamp,
+                    "timestamp": float(timestamp),
                     "is_enabled": True,
                     "is_played": False
                 }
@@ -47,7 +47,7 @@ class MediaScheduler:
             }
 
             def timestamp_foo(id_):
-                return lambda: self.schedule[id_]["timestamp"]
+                return lambda: int(self.schedule[id_]["timestamp"])
 
             for id_, data in self.schedule.items():
                 self.cb_thread.append_callback(foo=foo_wrap,
@@ -70,7 +70,7 @@ class MediaScheduler:
             if name:
                 self.schedule[id_]["name"] = name
             if timestamp:
-                self.schedule[id_]["timestamp"] = timestamp
+                self.schedule[id_]["timestamp"] = float(timestamp)
             if is_enabled is not None:
                 self.schedule[id_]["is_enabled"] = bool(is_enabled)
             if is_played is not None:
