@@ -25,7 +25,11 @@ class MediaScheduler:
         """
         self.cb_thread.clean_callbacks()
 
-        def foo_wrap(id_, name, timestamp, is_enabled, is_played):
+        def foo_wrap(id_, name):
+            timestamp = self.schedule[id_]["timestamp"]
+            is_enabled = self.schedule[id_]["is_enabled"]
+            is_played = self.schedule[id_]["is_played"]
+
             result = foo(id_, name, timestamp, is_enabled, is_played)
             if result:
                 self.schedule[id_]["is_played"] = True
@@ -43,11 +47,8 @@ class MediaScheduler:
             }
             for id_, data in self.schedule.items():
                 self.cb_thread.append_callback(foo=foo_wrap,
-                                               args=(id_, data["name"],
-                                                     data["timestamp"],
-                                                     data["is_enabled"],
-                                                     data["is_played"]),
-                                               delay=data["timestamp"])
+                                               args=(id_, data["name"]),
+                                               delay=lambda: self.schedule[id_]["timestamp"])
             return ExecutionStatus(True, message="Ok")
         except ValueError as ex:
             msg = f"The schedule structure is invalid, required [..., [name, timestamp], ...]. Details: {ex}"
