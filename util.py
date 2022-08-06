@@ -254,7 +254,7 @@ class CallbackThread(threading.Thread):
     def append_callback(self, foo, delay, args=None, cb_type="none"):
         """
         :param foo:
-        :param delay: delay in seconds
+        :param delay: delay in seconds, or callable
         :return:
         """
         with self.lock:
@@ -287,7 +287,11 @@ class CallbackThread(threading.Thread):
     def _check_callback(self, cb):
         if cb["__done__"]:
             return
-        if (time.time() - cb["__time__"]) >= cb["delay"]:
+        if callable(cb["delay"]):
+            delay = cb["delay"]()
+        else:
+            delay = cb["delay"]
+        if (time.time() - cb["__time__"]) >= delay:
             self._invoke(cb)
             cb["__done__"] = True
 

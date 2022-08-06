@@ -25,7 +25,11 @@ class MediaScheduler:
         """
         self.cb_thread.clean_callbacks()
 
-        def foo_wrap(id_, name, timestamp, is_enabled, is_played):
+        def foo_wrap(id_, name):
+            timestamp = self.schedule[id_]["timestamp"]
+            is_enabled = self.schedule[id_]["is_enabled"]
+            is_played = self.schedule[id_]["is_played"]
+
             result = foo(id_, name, timestamp, is_enabled, is_played)
             if result:
                 self.schedule[id_]["is_played"] = True
@@ -35,19 +39,20 @@ class MediaScheduler:
             self.schedule = {
                 i: {
                     "name": name,
-                    "timestamp": timestamp,
+                    "timestamp": float(timestamp),
                     "is_enabled": True,
                     "is_played": False
                 }
                 for i, (name, timestamp) in enumerate(schedule)
             }
+
+            def timestamp_foo(id_):
+                return lambda: int(self.schedule[id_]["timestamp"])
+
             for id_, data in self.schedule.items():
                 self.cb_thread.append_callback(foo=foo_wrap,
-                                               args=(id_, data["name"],
-                                                     data["timestamp"],
-                                                     data["is_enabled"],
-                                                     data["is_played"]),
-                                               delay=data["timestamp"])
+                                               args=(id_, data["name"]),
+                                               delay=timestamp_foo(id_))
             return ExecutionStatus(True, message="Ok")
         except ValueError as ex:
             msg = f"The schedule structure is invalid, required [..., [name, timestamp], ...]. Details: {ex}"
@@ -65,11 +70,11 @@ class MediaScheduler:
             if name:
                 self.schedule[id_]["name"] = name
             if timestamp:
-                self.schedule[id_]["timestamp"] = timestamp
+                self.schedule[id_]["timestamp"] = float(timestamp)
             if is_enabled is not None:
-                self.schedule[id_]["is_enabled"] = is_enabled
+                self.schedule[id_]["is_enabled"] = bool(is_enabled)
             if is_played is not None:
-                self.schedule[id_]["is_played"] = is_played
+                self.schedule[id_]["is_played"] = bool(is_played)
             return ExecutionStatus(True, message="Ok")
         except BaseException as ex:
             msg = f"Something happened, details: {ex}"
