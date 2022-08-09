@@ -4,7 +4,7 @@ import time
 
 import obswebsocket as obs
 import obswebsocket.requests
-from util import CallbackThread
+from util.util import CallbackThread
 
 ORIGINAL_STREAM_SOURCE_NAME = "original_stream"
 TS_INPUT_NAME = "ts_input"

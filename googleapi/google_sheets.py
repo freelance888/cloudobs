@@ -1,11 +1,11 @@
 import pygsheets
 import pandas as pd
-from server import ServerSettings
-import server
+from media.server import ServerSettings
+from media import server
 from dotenv import load_dotenv
 import os
 import re
-from util import MultilangParams
+from util.util import MultilangParams
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
