@@ -1,5 +1,5 @@
-from util import CallbackThread
-from util import ExecutionStatus
+from util.util import CallbackThread
+from util.util import ExecutionStatus
 from threading import Lock
 
 

@@ -1,32 +1,30 @@
 import json
 import os
 import time
-import threading
 
 from dotenv import load_dotenv
 from flask import Flask
 from flask import request
 import requests
-from urllib.parse import urlencode
 
-import server
-from config import API_CLEANUP_ROUTE
-from config import API_INIT_ROUTE
-from config import API_MEDIA_SCHEDULE_ROUTE
-from config import API_MEDIA_PLAY_ROUTE
-from config import API_SET_STREAM_SETTINGS_ROUTE
-from config import API_SIDECHAIN_ROUTE
-from config import API_SOURCE_VOLUME_ROUTE
-from config import API_STREAM_START_ROUTE
-from config import API_STREAM_STOP_ROUTE
-from config import API_TRANSITION_ROUTE
-from config import API_TS_OFFSET_ROUTE
-from config import API_TS_VOLUME_ROUTE
-from config import API_GDRIVE_SYNC
-from config import API_GDRIVE_FILES
-from config import API_INFO_ROUTE
-from config import API_WAKEUP_ROUTE
-from util import ExecutionStatus
+from media import server
+from util.config import API_CLEANUP_ROUTE
+from util.config import API_INIT_ROUTE
+from util.config import API_MEDIA_SCHEDULE_ROUTE
+from util.config import API_MEDIA_PLAY_ROUTE
+from util.config import API_SET_STREAM_SETTINGS_ROUTE
+from util.config import API_SIDECHAIN_ROUTE
+from util.config import API_SOURCE_VOLUME_ROUTE
+from util.config import API_STREAM_START_ROUTE
+from util.config import API_STREAM_STOP_ROUTE
+from util.config import API_TRANSITION_ROUTE
+from util.config import API_TS_OFFSET_ROUTE
+from util.config import API_TS_VOLUME_ROUTE
+from util.config import API_GDRIVE_SYNC
+from util.config import API_GDRIVE_FILES
+from util.config import API_INFO_ROUTE
+from util.config import API_WAKEUP_ROUTE
+from util.util import ExecutionStatus
 
 load_dotenv()
 DEFAULT_MEDIA_DIR = os.getenv('MEDIA_DIR', './content')
