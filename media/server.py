@@ -14,8 +14,8 @@ load_dotenv()
 BASE_MEDIA_DIR = os.getenv('MEDIA_DIR', './content')
 DEFAULT_API_KEY = os.getenv('GDRIVE_API_KEY', '')
 DEFAULT_SYNC_SECONDS = int(os.getenv('GDRIVE_SYNC_SECONDS', 60))
-MEDIA_DIR = os.path.join(BASE_MEDIA_DIR, "")
-TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "")
+MEDIA_DIR = os.path.join(BASE_MEDIA_DIR, "media")
+TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 
 SUBJECT_SERVER_LANGS = "server_langs"
 SUBJECT_STREAM_SETTINGS = "stream_settings"
@@ -582,7 +582,7 @@ class Server:
             status.append_error(msg_)
         return status
 
-    def set_media_dir(self, medimedia_dira_dir):
+    def set_media_dir(self, media_dir):
         """
         :param dir_settings
         :return:
