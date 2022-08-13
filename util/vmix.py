@@ -1,7 +1,7 @@
 class SourceSelector:
     def __init__(self):
-        self.ip_list = ["127.0.0.1"]
-        self.active_ip = "127.0.0.1"
+        self.ip_list = ["*"]
+        self.active_ip = "*"
 
     def set_ip_list(self, ip_list):
         self.ip_list = list(set(ip_list))
@@ -21,3 +21,9 @@ class SourceSelector:
         return dict((
             (ip, ip == self.get_active_ip()) for ip in self.get_ip_list()
         ))
+
+    def is_allowed(self, ip):
+        active_ip = self.get_active_ip()
+        if active_ip == "*":
+            return True
+        return active_ip == ip
