@@ -249,7 +249,7 @@ class Server:
 
         use_file_num, name = params["search_by_num"], params["name"]
         media_type = params['media_type'] if 'media_type' in params else 'media'
-        media_dir = os.path.join(self.media_dir, "")
+        media_dir = os.path.join(self.media_dir, "media")
 
         # search for the file
         if use_file_num:
@@ -582,7 +582,7 @@ class Server:
             status.append_error(msg_)
         return status
 
-    def set_media_dir(self, media_dir):
+    def set_media_dir(self, medimedia_dira_dir):
         """
         :param dir_settings
         :return:
