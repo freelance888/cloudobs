@@ -17,9 +17,9 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
-from util import GDriveFiles
-from util import generate_file_md5
-from util import log
+from util.util import GDriveFiles
+from util.util import generate_file_md5
+from util.util import log
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")

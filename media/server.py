@@ -7,17 +7,15 @@ from dotenv import load_dotenv
 from urllib.parse import urlencode
 import requests
 
-import obs
-from util import ExecutionStatus
-from util import MultilangParams
-from util import DefaultDict
+from media import obs
+from util.util import ExecutionStatus
 
 load_dotenv()
 BASE_MEDIA_DIR = os.getenv('MEDIA_DIR', './content')
 DEFAULT_API_KEY = os.getenv('GDRIVE_API_KEY', '')
 DEFAULT_SYNC_SECONDS = int(os.getenv('GDRIVE_SYNC_SECONDS', 60))
-MEDIA_DIR = os.path.join(BASE_MEDIA_DIR, "media")
-TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "media")
+MEDIA_DIR = os.path.join(BASE_MEDIA_DIR, "")
+TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "")
 
 SUBJECT_SERVER_LANGS = "server_langs"
 SUBJECT_STREAM_SETTINGS = "stream_settings"
@@ -251,7 +249,7 @@ class Server:
 
         use_file_num, name = params["search_by_num"], params["name"]
         media_type = params['media_type'] if 'media_type' in params else 'media'
-        media_dir = os.path.join(self.media_dir, "media")
+        media_dir = os.path.join(self.media_dir, "")
 
         # search for the file
         if use_file_num:

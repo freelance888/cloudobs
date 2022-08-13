@@ -8,29 +8,31 @@ from dotenv import load_dotenv
 from flask import Flask
 from flask import request
 
-import server
-import util
-from config import API_CLEANUP_ROUTE
-from config import API_WAKEUP_ROUTE
-from config import API_INIT_ROUTE
-from config import API_MEDIA_SCHEDULE_ROUTE
-from config import API_MEDIA_PLAY_ROUTE
-from config import API_SET_STREAM_SETTINGS_ROUTE
-from config import API_SIDECHAIN_ROUTE
-from config import API_SOURCE_VOLUME_ROUTE
-from config import API_STREAM_START_ROUTE
-from config import API_STREAM_STOP_ROUTE
-from config import API_TRANSITION_ROUTE
-from config import API_TS_OFFSET_ROUTE
-from config import API_TS_VOLUME_ROUTE
-from config import API_GDRIVE_SYNC
-from config import API_GDRIVE_FILES
-from config import API_INFO_ROUTE
-from config import API_PULL_SHEETS
-from config import API_PUSH_SHEETS
-from util import ExecutionStatus, MultilangParams, CallbackThread, GDriveFiles
-from scheduler import MediaScheduler
-from google_sheets import OBSGoogleSheets
+from media import server
+from util.config import API_CLEANUP_ROUTE
+from util.config import API_WAKEUP_ROUTE
+from util.config import API_INIT_ROUTE
+from util.config import API_MEDIA_SCHEDULE_ROUTE
+from util.config import API_MEDIA_PLAY_ROUTE
+from util.config import API_SET_STREAM_SETTINGS_ROUTE
+from util.config import API_SIDECHAIN_ROUTE
+from util.config import API_SOURCE_VOLUME_ROUTE
+from util.config import API_STREAM_START_ROUTE
+from util.config import API_STREAM_STOP_ROUTE
+from util.config import API_TRANSITION_ROUTE
+from util.config import API_TS_OFFSET_ROUTE
+from util.config import API_TS_VOLUME_ROUTE
+from util.config import API_GDRIVE_SYNC
+from util.config import API_GDRIVE_FILES
+from util.config import API_INFO_ROUTE
+from util.config import API_PULL_SHEETS
+from util.config import API_PUSH_SHEETS
+from util.config import API_VMIX_PLAYERS, API_VMIX_ACTIVE_PLAYER
+from util.util import ExecutionStatus, MultilangParams, CallbackThread
+from util.vmix import SourceSelector
+import util.util as util
+from media.scheduler import MediaScheduler
+from googleapi.google_sheets import OBSGoogleSheets
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR")
@@ -54,10 +56,10 @@ app = Flask(__name__)
 instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
 langs = []
 init_status, wakeup_status = False, False
-# lock = threading.Lock()
 cb_thread = CallbackThread()
 media_scheduler = MediaScheduler()
 sheets = OBSGoogleSheets()
+vmix_selector = SourceSelector()
 
 
 def broadcast(api_route,
@@ -789,6 +791,61 @@ def get_gdrive_files():
     return json.dumps(result), 200
 
 
+@app.route(API_VMIX_PLAYERS, methods=["POST"])
+def post_vmix_players():
+    """
+    Sets vmix ip addresses list
+    Query parameters:
+     - ip_list - json list of ip. E.g.: ["1.2.3.4", "3.4.5.6"]
+    """
+    ip_list = request.args.get("ip_list", None)
+    if ip_list is None:
+        return ExecutionStatus(False, "Please specify `ip_list`").to_http_status()
+    try:
+        ip_list = json.loads(ip_list)
+    except json.JSONDecodeError as ex:
+        return ExecutionStatus(False, f"Couldn't parse `ip_list`. Details: {ex}").to_http_status()
+    for ip in ip_list:
+        if not isinstance(ip, str):
+            return ExecutionStatus(False, f"`ip_list` entries should be strings. Got \"{ip}\"").to_http_status()
+
+    vmix_selector.set_ip_list(ip_list)
+    return ExecutionStatus(True, "Ok").to_http_status()
+
+
+@app.route(API_VMIX_PLAYERS, methods=["GET"])
+def get_vmix_players():
+    """
+    Returns current vmix players
+    """
+    return ExecutionStatus(True, json.dumps(vmix_selector.dump_dict())).to_http_status()
+
+
+@app.route(API_VMIX_ACTIVE_PLAYER, methods=["POST"])
+def post_active_vmix_player():
+    """
+    Selects active vmix player.
+    Query parameters:
+     - ip - ip address string
+    """
+    ip = request.args.get("ip", None)
+    if ip is None or not ip:
+        return ExecutionStatus(False, "Please specify `ip`").to_http_status()
+    try:
+        vmix_selector.set_active_ip(ip)
+    except BaseException as ex:
+        return ExecutionStatus(False, f"Something happened. Details: {ex}").to_http_status()
+    return ExecutionStatus(True).to_http_status()
+
+
+@app.route(API_VMIX_ACTIVE_PLAYER, methods=["GET"])
+def get_active_vmix_player():
+    """
+    Returns current active vmix player
+    """
+    return ExecutionStatus(True, vmix_selector.get_active_ip()).to_http_status()
+
+
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
     return '', 200
@@ -802,6 +859,10 @@ def before_request():
     else:  # if the server has already woken up
         if not init_status and request.path not in (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE):
             return f"{request.path} is not allowed before initialization"
+
+    if request.path == API_MEDIA_PLAY_ROUTE:
+        if not vmix_selector.is_allowed(request.remote_addr):
+            return f"This API is not allowed from \"{request.remote_addr}\""
 
 
 @app.after_request
