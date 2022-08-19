@@ -28,7 +28,7 @@ jobs:
 
     - name: Build the Docker image
       run: |
-        env
+        echo $PROD_HOST | base64
         exit
         docker build -t ${{ github.event.repository.name }} . --no-cache
         docker save ${{ github.event.repository.name }} > ${{ github.event.repository.name }}.tar
@@ -43,39 +43,19 @@ jobs:
           docker-compose.yml
         retention-days: 2
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-
-    - name: Restoring docker image from artifacts
-      uses: actions/download-artifact@v3
-      with:
-        name: docker-image
-
-    - name: Uploading artifact to the server
-      run: |
-        ls -1
-        which rsync || ( apt-get update -y && apt-get install rsync -y )
-        which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
-        eval $(ssh-agent -s)
-        echo "${PRIVATE_SSH_KEY}" | tr -d '\r' | ssh-add - > /dev/null
-        mkdir -p ~/.ssh
-        chmod 700 ~/.ssh
-        echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-        ssh ${PROD_HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}:*" -q) &
-        echo "${ENV_FILE}" > .env
-        echo "${SA_FILE}" > sa.json
-        rsync -a -v --progress --delete --quiet sa.json .env docker-compose.yml ${{ github.event.repository.name }}.tar ${PROD_HOST}:~
-        ssh ${PROD_HOST} docker load --input ${{ github.event.repository.name }}.tar
-        ssh ${PROD_HOST} "docker-compose down && docker-compose up -d && sleep 10 && docker-compose ps"
-
-  # debug:
+  # deploy:
   #   runs-on: ubuntu-latest
+  #   needs: build
   #   steps:
+
+  #   - name: Restoring docker image from artifacts
+  #     uses: actions/download-artifact@v3
+  #     with:
+  #       name: docker-image
 
   #   - name: Uploading artifact to the server
   #     run: |
+  #       ls -1
   #       which rsync || ( apt-get update -y && apt-get install rsync -y )
   #       which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
   #       eval $(ssh-agent -s)
@@ -83,7 +63,27 @@ jobs:
   #       mkdir -p ~/.ssh
   #       chmod 700 ~/.ssh
   #       echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-  #       ssh ${PROD_HOST} docker system prune -af &
-  #       rsync -a -v --progress --delete --quiet docker-compose.yaml ${{ github.event.repository.name }}.tar ${PROD_HOST}:~
-  #       ssh ${PROD_HOST} docker load ${{ github.event.repository.name }}.tar
-  #       ssh ${PROD_HOST} "docker-compose down && docker-compose up -d && sleep 10 && docker-compose ls"
+  #       ssh ${PROD_HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}:*" -q) &
+  #       echo "${ENV_FILE}" > .env
+  #       echo "${SA_FILE}" > sa.json
+  #       rsync -a -v --progress --delete --quiet sa.json .env docker-compose.yml ${{ github.event.repository.name }}.tar ${PROD_HOST}:~
+  #       ssh ${PROD_HOST} docker load --input ${{ github.event.repository.name }}.tar
+  #       ssh ${PROD_HOST} "docker-compose down && docker-compose up -d && sleep 10 && docker-compose ps"
+
+  # # debug:
+  # #   runs-on: ubuntu-latest
+  # #   steps:
+
+  # #   - name: Uploading artifact to the server
+  # #     run: |
+  # #       which rsync || ( apt-get update -y && apt-get install rsync -y )
+  # #       which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
+  # #       eval $(ssh-agent -s)
+  # #       echo "${PRIVATE_SSH_KEY}" | tr -d '\r' | ssh-add - > /dev/null
+  # #       mkdir -p ~/.ssh
+  # #       chmod 700 ~/.ssh
+  # #       echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+  # #       ssh ${PROD_HOST} docker system prune -af &
+  # #       rsync -a -v --progress --delete --quiet docker-compose.yaml ${{ github.event.repository.name }}.tar ${PROD_HOST}:~
+  # #       ssh ${PROD_HOST} docker load ${{ github.event.repository.name }}.tar
+  # #       ssh ${PROD_HOST} "docker-compose down && docker-compose up -d && sleep 10 && docker-compose ls"
