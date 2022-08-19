@@ -3,7 +3,9 @@ name: PROD | Build and Deploy
 on:
   workflow_dispatch:
   push:
-    branches: main
+    branches:
+    - main
+    - feature/updating-pipeline
   pull_request:
     branches: main
 
@@ -26,6 +28,8 @@ jobs:
 
     - name: Build the Docker image
       run: |
+        env
+        exit
         docker build -t ${{ github.event.repository.name }} . --no-cache
         docker save ${{ github.event.repository.name }} > ${{ github.event.repository.name }}.tar
         ls -1
