@@ -759,6 +759,7 @@ class Server:
         self.settings.activate(SUBJECT_TRANSITION)
 
     def activate_gdrive(self):
+        self.settings.is_active(subject=SUBJECT_GDRIVE_SETTINGS)
         if not self.settings.is_modified(subject=SUBJECT_GDRIVE_SETTINGS):
             return
         gdrive_settings = self.settings.get_subject(SUBJECT_GDRIVE_SETTINGS)

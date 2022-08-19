@@ -279,3 +279,33 @@
        ```
        {"lang": [... [filename, true/false - at least loaded on one server (or not)], ...]}
        ```
+### `GET /vmix/players`
+ - Returns posted vmix players (ip addresses which are allowed to play video)
+ - Returns a dictionary with the format `{... ip: allowed, ...}`, e.g.:
+```
+{
+   "1.2.3.4": true,
+   "1.2.3.5": false
+}
+```
+ - Note that if active ip is set to `"*"` this route will return all ip addresses
+   allowed to play video
+### `POST /vmix/players`
+ - Posts vmix players ip addresses
+ - Accepts the following parameters:
+   - `ip_list` - list of ip addresses, e.g.:
+     ```
+     ["1.2.3.4", "1.2.3.5"]
+     ```
+ - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
+### `GET /vmix/players/active`
+ - Returns current active vmix player (if not specified yet -> `"*"` is returned).
+ - E.g.: `1.2.3.4`, or `*`
+### `POST /vmix/players/active`
+ - Sets active vmix player
+ - Accepts the following parameters:
+   - `ip` - ip address
+ - if `ip` is not in the list posted using `POST /vmix/players` - exception is 
+   raised
+ - `ip` also can be set to `*` -> this allows all ip addresses to play video
+ - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
