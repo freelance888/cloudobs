@@ -1,16 +1,17 @@
 class SourceSelector:
     def __init__(self):
-        self.ip_list = ["*"]
+        self.ip_list = []
         self.active_ip = "*"
 
     def set_ip_list(self, ip_list):
         self.ip_list = list(set(ip_list))
+        self.set_active_ip("*")
 
     def get_ip_list(self):
         return self.ip_list
 
     def set_active_ip(self, ip):
-        if ip not in self.ip_list:
+        if ip not in self.ip_list and ip != "*":
             raise KeyError("Invalid ip address")
         self.active_ip = ip
 
@@ -19,7 +20,7 @@ class SourceSelector:
 
     def dump_dict(self):
         return dict((
-            (ip, ip == self.get_active_ip()) for ip in self.get_ip_list()
+            (ip, ip == self.get_active_ip() or self.get_active_ip() == "*") for ip in self.get_ip_list()
         ))
 
     def is_allowed(self, ip):
