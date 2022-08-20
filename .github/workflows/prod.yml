@@ -14,10 +14,11 @@ on:
     types: PROD_DEPLOY
 
 env:
-    PROD_HOST: app@${{ secrets.PROD_HOST_IP }}
-    PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
+    HOST: app@${{ secrets.PROD_HOST_IP }}
+    PRIVATE_SSH_KEY: ${{ secrets.PROD_PRIVATE_SSH_KEY }}
     ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
-    SA_FILE: ${{ secrets.SA_FILE }}
+    SA_FILE: ${{ secrets.PROD_SA_FILE }}
+    ENVIRONMENT: prod
 
 jobs:
 
@@ -28,10 +29,8 @@ jobs:
 
     - name: Build the Docker image
       run: |
-        echo $PROD_HOST | base64
-        exit
-        docker build -t ${{ github.event.repository.name }} . --no-cache
-        docker save ${{ github.event.repository.name }} > ${{ github.event.repository.name }}.tar
+        docker build -t ${{ github.event.repository.name }}-$ENVIRONMENT . --no-cache
+        docker save ${{ github.event.repository.name }}-$ENVIRONMENT > ${{ github.event.repository.name }}.tar
         ls -1
 
     - name: Saving docker image to artifacts
@@ -43,47 +42,32 @@ jobs:
           docker-compose.yml
         retention-days: 2
 
-  # deploy:
-  #   runs-on: ubuntu-latest
-  #   needs: build
-  #   steps:
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
 
-  #   - name: Restoring docker image from artifacts
-  #     uses: actions/download-artifact@v3
-  #     with:
-  #       name: docker-image
+    - name: Restoring docker image from artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-image
 
-  #   - name: Uploading artifact to the server
-  #     run: |
-  #       ls -1
-  #       which rsync || ( apt-get update -y && apt-get install rsync -y )
-  #       which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
-  #       eval $(ssh-agent -s)
-  #       echo "${PRIVATE_SSH_KEY}" | tr -d '\r' | ssh-add - > /dev/null
-  #       mkdir -p ~/.ssh
-  #       chmod 700 ~/.ssh
-  #       echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-  #       ssh ${PROD_HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}:*" -q) &
-  #       echo "${ENV_FILE}" > .env
-  #       echo "${SA_FILE}" > sa.json
-  #       rsync -a -v --progress --delete --quiet sa.json .env docker-compose.yml ${{ github.event.repository.name }}.tar ${PROD_HOST}:~
-  #       ssh ${PROD_HOST} docker load --input ${{ github.event.repository.name }}.tar
-  #       ssh ${PROD_HOST} "docker-compose down && docker-compose up -d && sleep 10 && docker-compose ps"
-
-  # # debug:
-  # #   runs-on: ubuntu-latest
-  # #   steps:
-
-  # #   - name: Uploading artifact to the server
-  # #     run: |
-  # #       which rsync || ( apt-get update -y && apt-get install rsync -y )
-  # #       which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
-  # #       eval $(ssh-agent -s)
-  # #       echo "${PRIVATE_SSH_KEY}" | tr -d '\r' | ssh-add - > /dev/null
-  # #       mkdir -p ~/.ssh
-  # #       chmod 700 ~/.ssh
-  # #       echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-  # #       ssh ${PROD_HOST} docker system prune -af &
-  # #       rsync -a -v --progress --delete --quiet docker-compose.yaml ${{ github.event.repository.name }}.tar ${PROD_HOST}:~
-  # #       ssh ${PROD_HOST} docker load ${{ github.event.repository.name }}.tar
-  # #       ssh ${PROD_HOST} "docker-compose down && docker-compose up -d && sleep 10 && docker-compose ls"
+    - name: Uploading artifact to the server
+      run: |
+        ls -1
+        which rsync || ( apt-get update -y && apt-get install rsync -y )
+        which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
+        eval $(ssh-agent -s)
+        echo "${PRIVATE_SSH_KEY}" | tr -d '\r' | ssh-add - > /dev/null
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+        ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}:*" -q) &
+        echo "${ENV_FILE}" > .env
+        echo "${SA_FILE}" > sa.json
+        git clone git@github.com:ALLATRA-IT/cloudobs-infrastructure.git --depth 1
+        cp cloudobs-infrastructure/shared/files/docker-compose.yml ./docker-compose-${ENVIRONMENT}.yml
+        ls -1 docker-compose*
+        rsync -a -v --progress --delete --quiet sa.json .env docker-compose-${ENVIRONMENT}.yml ${{ github.event.repository.name }}.tar ${HOST}:~
+        ssh ${HOST} docker load --input ${{ github.event.repository.name }}.tar
+        ssh ${HOST} "docker compose -f docker-compose-${ENVIRONMENT}.yml down && ENVIRONMENT=prod BACKEND_PORT=5000 FRONTEND_PORT=3000 docker compose up -d -f docker-compose-${ENVIRONMENT}.yml && sleep 10 && docker-compose -f docker-compose-${ENVIRONMENT}.yml ps"
