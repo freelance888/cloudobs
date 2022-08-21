@@ -61,7 +61,7 @@ jobs:
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
         echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-        ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}:*" -q) &
+        ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}:*" -q) || true
         echo "${ENV_FILE}" > .env
         echo "${SA_FILE}" > sa.json
         git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
