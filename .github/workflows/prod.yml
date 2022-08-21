@@ -64,7 +64,7 @@ jobs:
         ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}:*" -q) &
         echo "${ENV_FILE}" > .env
         echo "${SA_FILE}" > sa.json
-        git clone git@github.com:ALLATRA-IT/cloudobs-infrastructure.git --depth 1
+        git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
         cp cloudobs-infrastructure/shared/files/docker-compose.yml ./docker-compose-${ENVIRONMENT}.yml
         ls -1 docker-compose*
         rsync -a -v --progress --delete --quiet sa.json .env docker-compose-${ENVIRONMENT}.yml ${{ github.event.repository.name }}.tar ${HOST}:~
