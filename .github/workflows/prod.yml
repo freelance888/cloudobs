@@ -15,9 +15,9 @@ on:
 
 env:
     HOST: app@${{ secrets.PROD_HOST_IP }}
-    PRIVATE_SSH_KEY: ${{ secrets.PROD_PRIVATE_SSH_KEY }}
+    PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
     ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
-    SA_FILE: ${{ secrets.PROD_SA_FILE }}
+    SA_FILE: ${{ secrets.SA_FILE }}
     ENVIRONMENT: prod
 
 jobs:
@@ -39,7 +39,6 @@ jobs:
         name: docker-image
         path: |
           ${{ github.event.repository.name }}.tar
-          docker-compose.yml
         retention-days: 2
 
   deploy:
