@@ -1,23 +1,18 @@
 name: DEV | Build and Deploy
 
 on:
-  workflow_dispatch:
   push:
     branches:
     - dev
   pull_request:
     branches: dev
 
-
-  repository_dispatch:
-    types: DEV_DEPLOY
-
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
     ENV_FILE: ${{ secrets.DEV_ENV_FILE }}
     SA_FILE: ${{ secrets.SA_FILE }}
-    ENVIRONMENT: prod
+    ENVIRONMENT: dev
     BACKEND_PORT: 5001
     FRONTEND_PORT: 3001
 
