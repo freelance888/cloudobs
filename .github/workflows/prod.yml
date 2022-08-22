@@ -55,7 +55,6 @@ jobs:
 
     - name: Uploading artifact to the server
       run: |
-        ls -1
         which rsync || ( apt-get update -y && apt-get install rsync -y )
         which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
         eval $(ssh-agent -s)
@@ -68,8 +67,8 @@ jobs:
         echo "${SA_FILE}" > sa.json
         git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
         cp cloudobs-infrastructure/shared/files/docker-compose.yml .
-        ls -1 docker-compose*
         printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
+        ls -1
         ssh ${HOST} "docker load --input ${{ github.event.repository.name }}.tar && mkdir -p ~/${ENVIRONMENT}"
         rsync -a -v --progress --delete --quiet sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
         ssh ${HOST} "docker load --input ~/${ENVIRONMENT}/${{ github.event.repository.name }}.tar"
