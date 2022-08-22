@@ -1,22 +1,21 @@
-name: PROD | Build and Deploy
+name: DEV | Build and Deploy
 
 on:
   workflow_dispatch:
   push:
     branches:
-    - main
-    - feature/updating-pipeline
+    - dev
   pull_request:
-    branches: main
+    branches: dev
 
 
   repository_dispatch:
-    types: PROD_DEPLOY
+    types: DEV_DEPLOY
 
 env:
-    HOST: app@${{ secrets.PROD_HOST_IP }}
+    HOST: app@${{ secrets.DEV_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
-    ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+    ENV_FILE: ${{ secrets.DEV_ENV_FILE }}
     SA_FILE: ${{ secrets.SA_FILE }}
     ENVIRONMENT: prod
     BACKEND_PORT: 5001
