@@ -69,8 +69,8 @@ jobs:
         git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
         cp cloudobs-infrastructure/shared/files/docker-compose.yml .
         ls -1 docker-compose*
-        printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose-env
+        printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
         ssh ${HOST} "docker load --input ${{ github.event.repository.name }}.tar && mkdir ~/${ENVIRONMENT}"
-        rsync -a -v --progress --delete --quiet sa.json .compose-env.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
+        rsync -a -v --progress --delete --quiet sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
         ssh ${HOST} "docker load --input ${{ github.event.repository.name }}.tar"
         ssh ${HOST} "docker compose down && docker compose --env-file .compose-env up -d && sleep 10 && docker compose ps"
