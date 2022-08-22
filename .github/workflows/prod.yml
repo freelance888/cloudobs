@@ -19,6 +19,8 @@ env:
     ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
     SA_FILE: ${{ secrets.SA_FILE }}
     ENVIRONMENT: prod
+    BACKEND_PORT: 5000
+    FRONTEND_PORT: 3000
 
 jobs:
 
@@ -53,6 +55,7 @@ jobs:
 
     - name: Uploading artifact to the server
       run: |
+        env
         ls -1
         which rsync || ( apt-get update -y && apt-get install rsync -y )
         which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
@@ -69,4 +72,4 @@ jobs:
         ls -1 docker-compose*
         rsync -a -v --progress --delete --quiet sa.json .env docker-compose-${ENVIRONMENT}.yml ${{ github.event.repository.name }}.tar ${HOST}:~
         ssh ${HOST} docker load --input ${{ github.event.repository.name }}.tar
-        ssh ${HOST} "docker compose -f docker-compose-${ENVIRONMENT}.yml down && ENVIRONMENT=prod BACKEND_PORT=5000 FRONTEND_PORT=3000 docker compose up -d -f docker-compose-${ENVIRONMENT}.yml && sleep 10 && docker-compose -f docker-compose-${ENVIRONMENT}.yml ps"
+        ssh ${HOST} "docker compose -f docker-compose-${ENVIRONMENT}.yml down && ENVIRONMENT=${ENVIRONMENT} BACKEND_PORT=${BACKEND_PORT} FRONTEND_PORT=${FRONTEND_PORT} docker compose up -d -f docker-compose-${ENVIRONMENT}.yml && sleep 10 && docker-compose -f docker-compose-${ENVIRONMENT}.yml ps"
