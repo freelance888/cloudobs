@@ -73,4 +73,4 @@ jobs:
         ssh ${HOST} "docker load --input ${{ github.event.repository.name }}.tar && mkdir -p ~/${ENVIRONMENT}"
         rsync -a -v --progress --delete --quiet sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
         ssh ${HOST} "docker load --input ~/${ENVIRONMENT}/${{ github.event.repository.name }}.tar"
-        ssh ${HOST} "docker compose down && docker compose --env-file ~/${ENVIRONMENT}/.compose-env up -d && sleep 10 && docker compose ps"
+        ssh ${HOST} "cd ~/${ENVIRONMENT} && docker compose down && docker compose --env-file .compose-env up -d && sleep 10 && docker compose ps"
