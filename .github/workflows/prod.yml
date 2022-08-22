@@ -70,6 +70,6 @@ jobs:
         cp cloudobs-infrastructure/shared/files/docker-compose.yml ./docker-compose-${ENVIRONMENT}.yml
         ls -1 docker-compose*
         printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose-env-${ENVIRONMENT}
-        rsync -a -v --progress --delete --quiet sa.json .env docker-compose-${ENVIRONMENT}.yml ${{ github.event.repository.name }}.tar ${HOST}:~
+        rsync -a -v --progress --delete --quiet sa.json .compose-env-${ENVIRONMENT} .env docker-compose-${ENVIRONMENT}.yml ${{ github.event.repository.name }}.tar ${HOST}:~
         ssh ${HOST} docker load --input ${{ github.event.repository.name }}.tar
         ssh ${HOST} "docker compose -f docker-compose-${ENVIRONMENT}.yml down && docker compose --env-file .compose-env-${ENVIRONMENT} -f docker-compose-${ENVIRONMENT}.yml up -d && sleep 10 && docker compose -f docker-compose-${ENVIRONMENT}.yml ps"
