@@ -1,0 +1,5 @@
+
+# https://python-poetry.org/docs/master/configuration/
+
+[virtualenvs]
+in-project = true
