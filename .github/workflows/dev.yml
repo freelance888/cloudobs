@@ -14,8 +14,8 @@ env:
     ENV_FILE: ${{ secrets.DEV_ENV_FILE }}
     SA_FILE: ${{ secrets.SA_FILE }}
     ENVIRONMENT: dev
-    BACKEND_PORT: 5001
-    FRONTEND_PORT: 3001
+    BACKEND_PORT: 5010
+    FRONTEND_PORT: 3010
 
 jobs:
 
