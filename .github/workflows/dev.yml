@@ -15,6 +15,7 @@ env:
     SA_FILE: ${{ secrets.SA_FILE }}
     ENVIRONMENT: dev
     BACKEND_PORT: 5010
+    BACKEND_HTTPS_PORT: 5011
     FRONTEND_PORT: 3010
 
 jobs:
@@ -62,7 +63,7 @@ jobs:
         echo "${SA_FILE}" > sa.json
         git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
         cp cloudobs-infrastructure/shared/files/docker-compose.yml .
-        printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
+        printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nBACKEND_HTTPS_PORT=${BACKEND_HTTPS_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
         ls -1a
         rsync -a -v --progress --delete --quiet sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
         ssh ${HOST} "docker load --input ~/${ENVIRONMENT}/${{ github.event.repository.name }}.tar && mkdir -p ~/${ENVIRONMENT}"
