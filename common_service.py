@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from urllib.parse import urlencode
 import threading
 
@@ -28,11 +29,13 @@ from util.config import API_INFO_ROUTE
 from util.config import API_PULL_SHEETS
 from util.config import API_PUSH_SHEETS
 from util.config import API_VMIX_PLAYERS, API_VMIX_ACTIVE_PLAYER
+from util.config import API_SERVER_MINIONS
 from util.util import ExecutionStatus, MultilangParams, CallbackThread
 from util.vmix import SourceSelector
 import util.util as util
 from media.scheduler import MediaScheduler
 from googleapi.google_sheets import OBSGoogleSheets
+from server.minions import Minions
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR")
@@ -60,6 +63,7 @@ cb_thread = CallbackThread()
 media_scheduler = MediaScheduler()
 sheets = OBSGoogleSheets()
 vmix_selector = SourceSelector()
+minions = Minions()
 
 
 def broadcast(api_route,
@@ -118,11 +122,29 @@ def load_ip_list(path):
     langs = [lang for lang, ip in ip_list]
 
 
+# ===== METHODS TO WORK WITH GOOGLE SHEETS ===== #
 def sync_from_sheets():
+    """
+    This function converts google sheets data to api request and
+    broadcasts it across all minions
+    """
     try:
+        langs = sheets.to_df()["lang"].values
+        # ip_list_for_provision - list of [..., [lang, ip], ...], only those ones which have been just deployed
+        # and provisioned
+        # deploy minions if they haven't been deployed yet
+        ip_list_for_provision = minions.ensure_langs(langs, wait_for_provision=True, provision_timeout=300)
+        # wake up those which were just deployed
+        wakeup_minions(ip_list_for_provision)
+        # pull broadcast-related parameters from google sheets
         params = sheets.to_multilang_params()
         for lang in params:
             params[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
+    except TimeoutError as ex:
+        msg_ = f"Provisioning timeout, please check if the deployment server works properly. " \
+               f"Details: {ex}"
+        print(msg_)
+        return ExecutionStatus(False, msg_)
     except Exception as ex:
         msg_ = f"Something happened while preparing for synchronization the server from Google Sheets. " \
                f"Details: {ex}"
@@ -140,6 +162,12 @@ def sync_from_sheets():
 
 
 def init_from_server_langs(server_langs):
+    """
+    This function takes in old `server_langs` parameter and broadcasts it across minions.
+    Made for old versions compatibility.
+    :param server_langs:
+    :return:
+    """
     # validate input parameters before broadcasting them to servers
     status: ExecutionStatus = util.validate_init_params(server_langs)
     if not status:
@@ -161,6 +189,12 @@ def init_from_server_langs(server_langs):
 
 
 def init_from_sheets(sheet_url, worksheet_name):
+    """
+    This function sets up google sheets object and synchronizes the server considering google sheets data.
+    :param sheet_url: url of a public google sheets doc
+    :param worksheet_name: a worksheet name
+    :return:
+    """
     try:
         sheets.set_sheet(sheet_url, worksheet_name)
         pull_sheets()
@@ -172,6 +206,11 @@ def init_from_sheets(sheet_url, worksheet_name):
 
 
 def get_info(fillna: object = "#"):
+    """
+    This function fetches `GET /info` from miniones
+    :param fillna:
+    :return:
+    """
     responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
     data = {}
     schedule = media_scheduler.get_schedule()
@@ -217,8 +256,36 @@ def push_sheets():
     return ExecutionStatus(True, "Ok")
 
 
+def wakeup_minions(iplist):
+    """
+    :param iplist: list of [..., [lang, ip], ...]
+    :return:
+    """
+    global langs, instance_service_addrs
+    instance_service_addrs = util.ServiceAddrStorage()
+    for lst in iplist:
+        # check the list structure
+        if not isinstance(lst, list) or len(lst) != 2:
+            return ExecutionStatus(False, "`iplist` entry should also be a list with length of 2")
+        lang, ip = lst
+        instance_service_addrs[lang] = {
+            "addr": f"http://{ip}:6000",  # address of instance_service
+        }
+    langs = [lang for lang, ip in iplist]
+
+    # broadcast wakeup to minions
+    return broadcast(
+        API_WAKEUP_ROUTE,
+        "POST",
+        return_status=True,
+        method_name="wakeup",
+    )  # returns ExecutionStatus
+
+
+# ========== API ROUTES ========== #
+
 @app.route(API_WAKEUP_ROUTE, methods=["POST"])
-def wakeup():
+def wakeup_route():
     """
     Query parameters:
      - iplist - json list of [... [lang_code, ip_address], ...]
@@ -230,37 +297,19 @@ def wakeup():
     try:
         iplist = json.loads(iplist)
         if not isinstance(iplist, list):
-            return ExecutionStatus(False, "`iplist` should be a list object. Please refer to docs").to_http_status()
+            return ExecutionStatus(False, "`iplist` should be a list object. Please refer to the docs").to_http_status()
     except json.JSONDecodeError as ex:
         return ExecutionStatus(False, f"JSON decode error. Details: {ex}").to_http_status()
     except Exception as ex:
         return ExecutionStatus(False, f"Something happened. Details: {ex}").to_http_status()
 
     # fill metadata
-    global langs, instance_service_addrs
-    instance_service_addrs = util.ServiceAddrStorage()
-    for lst in iplist:
-        # check the list structure
-        if not isinstance(lst, list) or len(lst) != 2:
-            return ExecutionStatus(False, "`iplist` entry should also be a list with length 2").to_http_status()
-        lang, ip = lst
-        instance_service_addrs[lang] = {
-            "addr": f"http://{ip}:6000",  # address of instance_service
-        }
-    langs = [lang for lang, ip in iplist]
-
-    # broadcast wakeup to minions
-    status = broadcast(
-        API_WAKEUP_ROUTE,
-        "POST",
-        return_status=True,
-        method_name="wakeup",
-    )
+    status = wakeup_minions(iplist)
 
     # the server has woken up
     global wakeup_status
-    wakeup_status = True
-    return "Ok", 200
+    wakeup_status = status.status
+    status.to_http_status()
 
 
 @app.route(API_INFO_ROUTE, methods=["GET"])
@@ -844,6 +893,15 @@ def get_active_vmix_player():
     Returns current active vmix player
     """
     return ExecutionStatus(True, vmix_selector.get_active_ip()).to_http_status()
+
+
+@app.route(API_SERVER_MINIONS, methods=["POST"])
+def post_server_minions():
+    """
+    request parameters:
+     - langs
+    :return: Dict like: {"lang_code": {"ip": "address", "status": true/false, "error_msg": ""}}
+    """
 
 
 @app.route('/healthcheck', methods=['GET'])
