@@ -14,6 +14,10 @@
    - `sheet_url` - google sheet url (`server_langs` should not be specified)
    - `worksheet_name` - google sheet worksheet name, (should be specified along 
      with `sheet_url`)
+   - `force_deploy_minions` - specifies if the server should force redeploy 
+     minions. Usually it deploys minions only if the server was not woken up 
+     (if you have not called `POST /wakeup` route yet). So that if you set 
+     `force_deploy_minions=true` -> the server will redeploy minions.
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
 ### `GET /init`
  - Returns current `server_lang` variable of the server (see `GET /info`)

@@ -1,27 +1,28 @@
 import os, sys, time
 
-SA_DEPLOY_IP = ""
-CMD_HCLOUD_LIST = "ssh user@{ip} " \
+SA_DEPLOY_IP = "65.109.3.38"
+CMD_HCLOUD_LIST = "ssh -o StrictHostKeyChecking=no user@{ip} " \
                   "\"hcloud context list\""
-CMD_HCLOUD_USE = "ssh user@{ip} " \
+CMD_HCLOUD_USE = "ssh -o StrictHostKeyChecking=no user@{ip} " \
                  "\"hcloud context use {name}\""
-CMD_CREATE_VM = "ssh user@{ip} " \
+CMD_CREATE_VM = "ssh -o StrictHostKeyChecking=no user@{ip} " \
                 "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
                 "./init.sh --create-vm {num_vms}\""
-CMD_GET_IP = "ssh user@{ip} " \
+CMD_GET_IP = "ssh -o StrictHostKeyChecking=no user@{ip} " \
              "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
              "./init.sh --getip\""
-CMD_DELETE_VMS = "ssh user@{ip} " \
+CMD_DELETE_VMS = "ssh -o StrictHostKeyChecking=no user@{ip} " \
                  "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
                  "./init.sh -d\""
-CMD_UPLOAD_FILES = "ssh user@{ip} " \
+CMD_UPLOAD_FILES = "ssh -o StrictHostKeyChecking=no user@{ip} -t 'bash -ic " \
                    "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                   "./init.sh --upload-files\""
-CMD_PROVISION = "ssh user@{ip} " \
+                   "./init.sh --upload-files\"'"
+CMD_PROVISION = "ssh -o StrictHostKeyChecking=no user@{ip} -t 'bash -ic " \
                 "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                "./init.sh --provision\""
-CMD_UPLOAD_IP_LIST = "scp {ip_list} user@{ip}:/home/user/cloudobs-infrastructure-main/shared/scripts/ip.list"
-CMD_CHECK_PROVISION = "ssh stream@{ip} cat ~/PROVISION_STATUS"
+                "./init.sh --provision\"'"
+CMD_UPLOAD_IP_LIST = "scp -o StrictHostKeyChecking=no " \
+                     "{ip_list} user@{ip}:/home/user/cloudobs-infrastructure-main/shared/scripts/ip.list"
+CMD_CHECK_PROVISION = "ssh -o StrictHostKeyChecking=no stream@{ip} cat /home/stream/PROVISION_STATUS"
 IP_LIST_EXAMPLE_PATH = "./ip.list.example"
 
 
@@ -61,7 +62,7 @@ class IPDict:
         return self._ip_list[ip]
 
     def get_lang_ip(self, lang):
-        for ip, _lang in self._ip_list:
+        for ip, _lang in self._ip_list.items():
             if _lang == lang:
                 return ip
         raise KeyError(f"Lang: {lang}")
@@ -145,12 +146,11 @@ class SSHContext:
         # ./init.sh --upload-files
         cmd = CMD_UPLOAD_FILES.format(ip=self.ip)
         with os.popen(cmd, "r") as fp:
-            fp.read()  # wait until it ends
+            _ = fp.read()  # wait until it ends
         # ./init.sh --provision
         cmd = CMD_PROVISION.format(ip=self.ip)
         with os.popen(cmd, "r") as fp:
-            fp.read()  # wait until it ends
-        self.wait_until_provision(ip_list)
+            _ = fp.read()  # wait until it ends
 
     def check_provision(self, ip):
         """
@@ -162,16 +162,7 @@ class SSHContext:
         cmd = CMD_CHECK_PROVISION.format(ip=ip)
         with os.popen(cmd, "r") as fp:
             status = fp.read()  # wait until it is finished
-        return status == "DONE"
-
-    def wait_until_provision(self, ip_list, timeout=300):
-        """
-        :param ip_list: list of [..., [lang, ip], ...]
-        :param timeout:
-        :return:
-        """
-        # TODO
-        pass
+        return "DONE" in status
 
     def upload_ip_list(self, ip_list):
         """
@@ -190,9 +181,9 @@ class SSHContext:
         with open("./ip.list", "wt") as fp:
             fp.write(ip_list)
         # upload ip.list file onto the server
-        cmd = CMD_UPLOAD_IP_LIST.format(ip_list=ip_list, ip=self.ip)
+        cmd = CMD_UPLOAD_IP_LIST.format(ip_list="./ip.list", ip=self.ip)
         with os.popen(cmd, "r") as fp:
-            fp.read()  # wait until it ends
+            _ = fp.read()  # wait until it ends
 
 
 class Minions:
@@ -256,10 +247,12 @@ class Minions:
 
     def wait_until_provision(self, timeout=300):
         time_start = time.time()
-        while not all([status for lang, status in self.check_provision().items()]):
+        provision_status = self.check_provision()
+        while not all([status for lang, status in provision_status.items()]):
             time.sleep(10)
-            if time.time() - time_start > timeout:
+            if (time.time() - time_start) > timeout:
                 raise TimeoutError("Provision timeout")
+            provision_status = self.check_provision()
 
     def check_provision(self):
         """

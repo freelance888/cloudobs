@@ -80,7 +80,7 @@ def broadcast(api_route,
     for lang in langs_:
         addr = instance_service_addrs.addr(lang)  # get server address
         request_ = f"{addr}{api_route}"  # create requests
-        if params is not None:  # add query params if needed
+        if params is not None and param_name is not None:  # add query params if needed
             params_json = json.dumps(params[lang])
             query_params = urlencode({param_name: params_json})
             request_ = request_ + "?" + query_params
@@ -123,19 +123,20 @@ def load_ip_list(path):
 
 
 # ===== METHODS TO WORK WITH GOOGLE SHEETS ===== #
-def sync_from_sheets():
+def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
     """
     This function converts google sheets data to api request and
     broadcasts it across all minions
     """
     try:
-        langs = sheets.to_df()["lang"].values
-        # ip_list_for_provision - list of [..., [lang, ip], ...], only those ones which have been just deployed
-        # and provisioned
-        # deploy minions if they haven't been deployed yet
-        ip_list_for_provision = minions.ensure_langs(langs, wait_for_provision=True, provision_timeout=300)
-        # wake up those which were just deployed
-        wakeup_minions(ip_list_for_provision)
+        if (deploy_minions and not wakeup_status) or force_deploy_minions:
+            langs = sheets.to_df()["lang"].values
+            # ip_list_for_provision - list of [..., [lang, ip], ...], only those ones which have been just deployed
+            # and provisioned
+            # deploy minions if they haven't been deployed yet
+            ip_list_for_provision = minions.ensure_langs(langs, wait_for_provision=True, provision_timeout=500)
+            # wake up those which were just deployed
+            wakeup_minions(ip_list_for_provision)
         # pull broadcast-related parameters from google sheets
         params = sheets.to_multilang_params()
         for lang in params:
@@ -188,7 +189,7 @@ def init_from_server_langs(server_langs):
     return status
 
 
-def init_from_sheets(sheet_url, worksheet_name):
+def init_from_sheets(sheet_url, worksheet_name, force_deploy_minions=False):
     """
     This function sets up google sheets object and synchronizes the server considering google sheets data.
     :param sheet_url: url of a public google sheets doc
@@ -197,7 +198,7 @@ def init_from_sheets(sheet_url, worksheet_name):
     """
     try:
         sheets.set_sheet(sheet_url, worksheet_name)
-        pull_sheets()
+        pull_sheets(deploy_minions=True, force_deploy_minions=force_deploy_minions)
         return ExecutionStatus(True)
     except Exception as ex:
         msg_ = f"Something happened while setting up Google Sheets. Details: {ex}"
@@ -227,7 +228,7 @@ def get_info(fillna: object = "#"):
     return data
 
 
-def pull_sheets():
+def pull_sheets(deploy_minions=False, force_deploy_minions=False):
     """
     pull - means pull data from Google Sheets to the server
     """
@@ -237,7 +238,7 @@ def pull_sheets():
         sheets.pull()
     except Exception as ex:
         return ExecutionStatus(False, f"Couldn't pull data from Google Sheets. Details: {ex}")
-    return sync_from_sheets()
+    return sync_from_sheets(deploy_minions=deploy_minions, force_deploy_minions=force_deploy_minions)
 
 
 def push_sheets():
@@ -274,12 +275,18 @@ def wakeup_minions(iplist):
     langs = [lang for lang, ip in iplist]
 
     # broadcast wakeup to minions
-    return broadcast(
+    status = broadcast(
         API_WAKEUP_ROUTE,
         "POST",
         return_status=True,
         method_name="wakeup",
     )  # returns ExecutionStatus
+
+    # the server has woken up
+    global wakeup_status
+    wakeup_status = status.status
+
+    return status
 
 
 # ========== API ROUTES ========== #
@@ -303,13 +310,7 @@ def wakeup_route():
     except Exception as ex:
         return ExecutionStatus(False, f"Something happened. Details: {ex}").to_http_status()
 
-    # fill metadata
-    status = wakeup_minions(iplist)
-
-    # the server has woken up
-    global wakeup_status
-    wakeup_status = status.status
-    status.to_http_status()
+    return wakeup_minions(iplist).to_http_status()
 
 
 @app.route(API_INFO_ROUTE, methods=["GET"])
@@ -340,6 +341,7 @@ def init():
         },
         "eng": ...
     }
+    force_deploy_minions: bool
     :return:
     """
     global init_status
@@ -353,9 +355,12 @@ def init():
             return ExecutionStatus(False, "Couldn't parse json").to_http_status()
         status = init_from_server_langs(server_langs)
     elif request.args.get("sheet_url", "") and request.args.get("worksheet_name", ""):
+        force_deploy_minions = request.args.get("force_deploy_minions", "false")
+        force_deploy_minions = json.loads(force_deploy_minions)
+
         sheet_url = request.args.get("sheet_url")
         worksheet_name = request.args.get("worksheet_name")
-        status = init_from_sheets(sheet_url, worksheet_name)
+        status = init_from_sheets(sheet_url, worksheet_name, force_deploy_minions=force_deploy_minions)
     else:
         return ExecutionStatus(False, "Invalid parameters list").to_http_status()
 
@@ -912,7 +917,7 @@ def healthcheck():
 @app.before_request
 def before_request():
     if not wakeup_status:
-        if request.path != API_WAKEUP_ROUTE:
+        if request.path not in (API_WAKEUP_ROUTE, API_INIT_ROUTE):
             return f"The server is sleeping :) Tell the admin to wake it up."
     else:  # if the server has already woken up
         if not init_status and request.path not in (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE):
