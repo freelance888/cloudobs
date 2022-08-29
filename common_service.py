@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from urllib.parse import urlencode
 import threading
 
@@ -28,11 +29,13 @@ from util.config import API_INFO_ROUTE
 from util.config import API_PULL_SHEETS
 from util.config import API_PUSH_SHEETS
 from util.config import API_VMIX_PLAYERS, API_VMIX_ACTIVE_PLAYER
+from util.config import API_SERVER_MINIONS
 from util.util import ExecutionStatus, MultilangParams, CallbackThread
 from util.vmix import SourceSelector
 import util.util as util
 from media.scheduler import MediaScheduler
 from googleapi.google_sheets import OBSGoogleSheets
+from server.minions import Minions
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR")
@@ -60,6 +63,7 @@ cb_thread = CallbackThread()
 media_scheduler = MediaScheduler()
 sheets = OBSGoogleSheets()
 vmix_selector = SourceSelector()
+minions = Minions()
 
 
 def broadcast(api_route,
@@ -76,7 +80,7 @@ def broadcast(api_route,
     for lang in langs_:
         addr = instance_service_addrs.addr(lang)  # get server address
         request_ = f"{addr}{api_route}"  # create requests
-        if params is not None:  # add query params if needed
+        if params is not None and param_name is not None:  # add query params if needed
             params_json = json.dumps(params[lang])
             query_params = urlencode({param_name: params_json})
             request_ = request_ + "?" + query_params
@@ -118,11 +122,30 @@ def load_ip_list(path):
     langs = [lang for lang, ip in ip_list]
 
 
-def sync_from_sheets():
+# ===== METHODS TO WORK WITH GOOGLE SHEETS ===== #
+def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
+    """
+    This function converts google sheets data to api request and
+    broadcasts it across all minions
+    """
     try:
+        if (deploy_minions and not wakeup_status) or force_deploy_minions:
+            langs = sheets.to_df()["lang"].values
+            # ip_list_for_provision - list of [..., [lang, ip], ...], only those ones which have been just deployed
+            # and provisioned
+            # deploy minions if they haven't been deployed yet
+            ip_list_for_provision = minions.ensure_langs(langs, wait_for_provision=True, provision_timeout=500)
+            # wake up those which were just deployed
+            wakeup_minions(ip_list_for_provision)
+        # pull broadcast-related parameters from google sheets
         params = sheets.to_multilang_params()
         for lang in params:
             params[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
+    except TimeoutError as ex:
+        msg_ = f"Provisioning timeout, please check if the deployment server works properly. " \
+               f"Details: {ex}"
+        print(msg_)
+        return ExecutionStatus(False, msg_)
     except Exception as ex:
         msg_ = f"Something happened while preparing for synchronization the server from Google Sheets. " \
                f"Details: {ex}"
@@ -140,6 +163,12 @@ def sync_from_sheets():
 
 
 def init_from_server_langs(server_langs):
+    """
+    This function takes in old `server_langs` parameter and broadcasts it across minions.
+    Made for old versions compatibility.
+    :param server_langs:
+    :return:
+    """
     # validate input parameters before broadcasting them to servers
     status: ExecutionStatus = util.validate_init_params(server_langs)
     if not status:
@@ -160,10 +189,16 @@ def init_from_server_langs(server_langs):
     return status
 
 
-def init_from_sheets(sheet_url, worksheet_name):
+def init_from_sheets(sheet_url, worksheet_name, force_deploy_minions=False):
+    """
+    This function sets up google sheets object and synchronizes the server considering google sheets data.
+    :param sheet_url: url of a public google sheets doc
+    :param worksheet_name: a worksheet name
+    :return:
+    """
     try:
         sheets.set_sheet(sheet_url, worksheet_name)
-        pull_sheets()
+        pull_sheets(deploy_minions=True, force_deploy_minions=force_deploy_minions)
         return ExecutionStatus(True)
     except Exception as ex:
         msg_ = f"Something happened while setting up Google Sheets. Details: {ex}"
@@ -172,6 +207,11 @@ def init_from_sheets(sheet_url, worksheet_name):
 
 
 def get_info(fillna: object = "#"):
+    """
+    This function fetches `GET /info` from miniones
+    :param fillna:
+    :return:
+    """
     responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
     data = {}
     schedule = media_scheduler.get_schedule()
@@ -188,7 +228,7 @@ def get_info(fillna: object = "#"):
     return data
 
 
-def pull_sheets():
+def pull_sheets(deploy_minions=False, force_deploy_minions=False):
     """
     pull - means pull data from Google Sheets to the server
     """
@@ -198,7 +238,7 @@ def pull_sheets():
         sheets.pull()
     except Exception as ex:
         return ExecutionStatus(False, f"Couldn't pull data from Google Sheets. Details: {ex}")
-    return sync_from_sheets()
+    return sync_from_sheets(deploy_minions=deploy_minions, force_deploy_minions=force_deploy_minions)
 
 
 def push_sheets():
@@ -217,32 +257,17 @@ def push_sheets():
     return ExecutionStatus(True, "Ok")
 
 
-@app.route(API_WAKEUP_ROUTE, methods=["POST"])
-def wakeup():
+def wakeup_minions(iplist):
     """
-    Query parameters:
-     - iplist - json list of [... [lang_code, ip_address], ...]
+    :param iplist: list of [..., [lang, ip], ...]
+    :return:
     """
-    # validate parameters
-    iplist = request.args.get("iplist", "")
-    if not iplist:
-        return ExecutionStatus(False, "Please specify `iplist` parameter").to_http_status()
-    try:
-        iplist = json.loads(iplist)
-        if not isinstance(iplist, list):
-            return ExecutionStatus(False, "`iplist` should be a list object. Please refer to docs").to_http_status()
-    except json.JSONDecodeError as ex:
-        return ExecutionStatus(False, f"JSON decode error. Details: {ex}").to_http_status()
-    except Exception as ex:
-        return ExecutionStatus(False, f"Something happened. Details: {ex}").to_http_status()
-
-    # fill metadata
     global langs, instance_service_addrs
     instance_service_addrs = util.ServiceAddrStorage()
     for lst in iplist:
         # check the list structure
         if not isinstance(lst, list) or len(lst) != 2:
-            return ExecutionStatus(False, "`iplist` entry should also be a list with length 2").to_http_status()
+            return ExecutionStatus(False, "`iplist` entry should also be a list with length of 2")
         lang, ip = lst
         instance_service_addrs[lang] = {
             "addr": f"http://{ip}:6000",  # address of instance_service
@@ -255,12 +280,37 @@ def wakeup():
         "POST",
         return_status=True,
         method_name="wakeup",
-    )
+    )  # returns ExecutionStatus
 
     # the server has woken up
     global wakeup_status
-    wakeup_status = True
-    return "Ok", 200
+    wakeup_status = status.status
+
+    return status
+
+
+# ========== API ROUTES ========== #
+
+@app.route(API_WAKEUP_ROUTE, methods=["POST"])
+def wakeup_route():
+    """
+    Query parameters:
+     - iplist - json list of [... [lang_code, ip_address], ...]
+    """
+    # validate parameters
+    iplist = request.args.get("iplist", "")
+    if not iplist:
+        return ExecutionStatus(False, "Please specify `iplist` parameter").to_http_status()
+    try:
+        iplist = json.loads(iplist)
+        if not isinstance(iplist, list):
+            return ExecutionStatus(False, "`iplist` should be a list object. Please refer to the docs").to_http_status()
+    except json.JSONDecodeError as ex:
+        return ExecutionStatus(False, f"JSON decode error. Details: {ex}").to_http_status()
+    except Exception as ex:
+        return ExecutionStatus(False, f"Something happened. Details: {ex}").to_http_status()
+
+    return wakeup_minions(iplist).to_http_status()
 
 
 @app.route(API_INFO_ROUTE, methods=["GET"])
@@ -291,6 +341,7 @@ def init():
         },
         "eng": ...
     }
+    force_deploy_minions: bool
     :return:
     """
     global init_status
@@ -304,9 +355,12 @@ def init():
             return ExecutionStatus(False, "Couldn't parse json").to_http_status()
         status = init_from_server_langs(server_langs)
     elif request.args.get("sheet_url", "") and request.args.get("worksheet_name", ""):
+        force_deploy_minions = request.args.get("force_deploy_minions", "false")
+        force_deploy_minions = json.loads(force_deploy_minions)
+
         sheet_url = request.args.get("sheet_url")
         worksheet_name = request.args.get("worksheet_name")
-        status = init_from_sheets(sheet_url, worksheet_name)
+        status = init_from_sheets(sheet_url, worksheet_name, force_deploy_minions=force_deploy_minions)
     else:
         return ExecutionStatus(False, "Invalid parameters list").to_http_status()
 
@@ -846,6 +900,15 @@ def get_active_vmix_player():
     return ExecutionStatus(True, vmix_selector.get_active_ip()).to_http_status()
 
 
+@app.route(API_SERVER_MINIONS, methods=["POST"])
+def post_server_minions():
+    """
+    request parameters:
+     - langs
+    :return: Dict like: {"lang_code": {"ip": "address", "status": true/false, "error_msg": ""}}
+    """
+
+
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
     return '', 200
@@ -854,7 +917,7 @@ def healthcheck():
 @app.before_request
 def before_request():
     if not wakeup_status:
-        if request.path != API_WAKEUP_ROUTE:
+        if request.path not in (API_WAKEUP_ROUTE, API_INIT_ROUTE):
             return f"The server is sleeping :) Tell the admin to wake it up."
     else:  # if the server has already woken up
         if not init_status and request.path not in (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE):
