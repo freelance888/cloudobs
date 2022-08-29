@@ -207,6 +207,9 @@ class DefaultDict:
     def items(self):
         return self.dict.items()
 
+    def to_dict(self):
+        return self.dict.copy()
+
 
 class GDriveFiles:
     def __init__(self, with_lock=False):

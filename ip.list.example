@@ -1,0 +1,6 @@
+declare -A IPLANG
+IPLANG=(
+{placeholder}
+# [Abk]=0.0.0.0
+# [Abq]=0.0.0.0
+)

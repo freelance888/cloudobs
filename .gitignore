@@ -322,3 +322,5 @@ cython_debug/
 #.env
 sa.json
 restart.sh
+ip.list
+docker-compose.yml
