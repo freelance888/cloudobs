@@ -285,22 +285,29 @@
        ```
 ### `GET /vmix/players`
  - Returns posted vmix players (ip addresses which are allowed to play video)
- - Returns a dictionary with the format `{... ip: allowed, ...}`, e.g.:
+ - Returns a list of dicts with the format `{"ip": "...", "label": "...", 
+   "active": true/false}`, e.g.:
 ```
-{
-   "1.2.3.4": true,
-   "1.2.3.5": false
-}
+[
+   {"ip": "1.2.3.4", "label": "Локация 1", "active": true},
+   {"ip": "1.2.3.5", "label": "Локация 2", "active": false},
+   {"ip": "1.2.3.6", "label": "Локация 3", "active": false}
+]
 ```
  - Note that if active ip is set to `"*"` this route will return all ip addresses
    allowed to play video
 ### `POST /vmix/players`
  - Posts vmix players ip addresses
  - Accepts the following parameters:
-   - `ip_list` - list of ip addresses, e.g.:
-     ```
-     ["1.2.3.4", "1.2.3.5"]
-     ```
+   - `ip_list` - list of dicts with the format `{"ip": "...", "label": "..."}`, 
+     e.g.:
+```
+[
+   {"ip": "1.2.3.4", "label": "Локация 1"},
+   {"ip": "1.2.3.5", "label": "Локация 2"},
+   {"ip": "1.2.3.6", "label": "Локация 3"}
+]
+```
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
 ### `GET /vmix/players/active`
  - Returns current active vmix player (if not specified yet -> `"*"` is returned).
