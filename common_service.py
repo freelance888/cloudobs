@@ -835,6 +835,8 @@ def get_gdrive_files():
 
     for lang_, files_ in data.items():
         lang = lang_ if return_details else "__all__"
+        if files_ == "#":
+            continue
         for filename, loaded in files_:
             files = result[lang]
             # condition, if the file has been loaded at least on one server
@@ -850,7 +852,15 @@ def post_vmix_players():
     """
     Sets vmix ip addresses list
     Query parameters:
-     - ip_list - json list of ip. E.g.: ["1.2.3.4", "3.4.5.6"]
+     - `ip_list` - list of dicts with the format `{"ip": "...", "label": "..."}`,
+     e.g.:
+    ```
+    [
+       {"ip": "1.2.3.4", "label": "Локация 1"},
+       {"ip": "1.2.3.5", "label": "Локация 2"},
+       {"ip": "1.2.3.6", "label": "Локация 3"}
+    ]
+    ```
     """
     ip_list = request.args.get("ip_list", None)
     if ip_list is None:
@@ -859,9 +869,6 @@ def post_vmix_players():
         ip_list = json.loads(ip_list)
     except json.JSONDecodeError as ex:
         return ExecutionStatus(False, f"Couldn't parse `ip_list`. Details: {ex}").to_http_status()
-    for ip in ip_list:
-        if not isinstance(ip, str):
-            return ExecutionStatus(False, f"`ip_list` entries should be strings. Got \"{ip}\"").to_http_status()
 
     vmix_selector.set_ip_list(ip_list)
     return ExecutionStatus(True, "Ok").to_http_status()
@@ -898,15 +905,6 @@ def get_active_vmix_player():
     Returns current active vmix player
     """
     return ExecutionStatus(True, vmix_selector.get_active_ip()).to_http_status()
-
-
-@app.route(API_SERVER_MINIONS, methods=["POST"])
-def post_server_minions():
-    """
-    request parameters:
-     - langs
-    :return: Dict like: {"lang_code": {"ip": "address", "status": true/false, "error_msg": ""}}
-    """
 
 
 @app.route('/healthcheck', methods=['GET'])

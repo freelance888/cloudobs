@@ -428,10 +428,12 @@ def get_gdrive_files():
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
 
-    if "addr" not in gdrive_helper.worker:
+    gdrive_settings = obs_server.settings.get_subject(server.SUBJECT_GDRIVE_SETTINGS)
+
+    if "drive_id" not in gdrive_settings:
         return ExecutionStatus(False, "Google drive was not initialized yet").to_http_status()
 
-    addr = gdrive_helper.worker["addr"]
+    addr = gdrive_settings["gdrive_sync_addr"]
     response_ = requests.get(f"{addr}/files")
     if response_.status_code != 200:
         msg_ = f"E PYSERVER::get_gdrive_files(): Details: {response_.text}"
