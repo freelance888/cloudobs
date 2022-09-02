@@ -47,6 +47,8 @@ cloudobs          latest    310b6bcc7d97   46 minutes ago   394MB
 
 * Then start compose
 ```
-docker-compose up -d
+git clone git@github.com:ALLATRA-IT/cloudobs-infrastructure.git --depth 1
+cp cloudobs-infrastructure/shared/files/docker-compose.yml .
+ENVIRONMENT=prod BACKEND_PORT=5000 FRONTEND_PORT=3000 docker compose up -d
 ```
 * Open http://localhost:3003
