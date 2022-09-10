@@ -17,12 +17,10 @@ CMD_GET_IP = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
              "./init.sh --getip"
 CMD_DELETE_VMS = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
                  "./init.sh -d"
-CMD_UPLOAD_FILES = "bash -ic " \
-                   "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                   "./init.sh --upload-files\""
-CMD_PROVISION = "bash -ic " \
-                "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                "./init.sh --provision\""
+CMD_UPLOAD_FILES = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
+                   "./init.sh --upload-files"
+CMD_PROVISION = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
+                "./init.sh --provision"
 CMD_UPLOAD_IP_LIST = "cp {ip_list} /home/user/cloudobs-infrastructure-main/shared/scripts/ip.list"
 CMD_CHECK_PROVISION = "ssh -o StrictHostKeyChecking=no stream@{ip} cat /home/stream/PROVISION_STATUS"
 IP_LIST_EXAMPLE_PATH = "./ip.list.example"
@@ -199,7 +197,7 @@ def provision():
     ip_list = json.loads(ip_list)
     cmd_context.provision(ip_list)
 
-    return ExecutionStatus(True, json.dumps("Ok")).to_http_status().to_http_status()
+    return ExecutionStatus(True, json.dumps("Ok")).to_http_status()
 
 
 @app.route("/minions/check_provision", methods=["GET"])
