@@ -107,6 +107,14 @@ class DriveSync(threading.Thread):
 
 @app.route('/init', methods=['POST'])
 def init():
+    """
+    Query parameters:
+     - drive_id - google drive id
+     - media_dir - target media directory
+     - api_key - google api key
+     - sync_seconds
+    :return:
+    """
     global drive_id, media_dir, api_key, sync_seconds, b_init
 
     with lock:
