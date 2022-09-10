@@ -1,29 +1,12 @@
 import os, sys, time
+from dotenv import load_dotenv
+import json
+import requests
+from urllib.parse import urlencode
 
-SA_DEPLOY_IP = "65.109.3.38"
-CMD_HCLOUD_LIST = "ssh -o StrictHostKeyChecking=no user@{ip} " \
-                  "\"hcloud context list\""
-CMD_HCLOUD_USE = "ssh -o StrictHostKeyChecking=no user@{ip} " \
-                 "\"hcloud context use {name}\""
-CMD_CREATE_VM = "ssh -o StrictHostKeyChecking=no user@{ip} " \
-                "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                "./init.sh --create-vm {num_vms}\""
-CMD_GET_IP = "ssh -o StrictHostKeyChecking=no user@{ip} " \
-             "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-             "./init.sh --getip\""
-CMD_DELETE_VMS = "ssh -o StrictHostKeyChecking=no user@{ip} " \
-                 "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                 "./init.sh -d\""
-CMD_UPLOAD_FILES = "ssh -o StrictHostKeyChecking=no user@{ip} -t 'bash -ic " \
-                   "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                   "./init.sh --upload-files\"'"
-CMD_PROVISION = "ssh -o StrictHostKeyChecking=no user@{ip} -t 'bash -ic " \
-                "\"cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                "./init.sh --provision\"'"
-CMD_UPLOAD_IP_LIST = "scp -o StrictHostKeyChecking=no " \
-                     "{ip_list} user@{ip}:/home/user/cloudobs-infrastructure-main/shared/scripts/ip.list"
-CMD_CHECK_PROVISION = "ssh -o StrictHostKeyChecking=no stream@{ip} cat /home/stream/PROVISION_STATUS"
-IP_LIST_EXAMPLE_PATH = "./ip.list.example"
+load_dotenv()
+SA_DEPLOY_IP = os.getenv("SA_DEPLOY_IP", None)
+SA_DEPLOY_PORT = os.getenv("SA_DEPLOY_PORT", None)
 
 
 class IPDict:
@@ -84,106 +67,50 @@ class SSHContext:
     def __init__(self, ip):
         self.ip = ip
 
+    def request(self, api, method, params=None):
+        """
+        :param api: function name, e.g.: "hcloud_context_list"
+        :param method: http method, available values: ["POST", "GET"]
+        :param params: dict
+        :return:
+        """
+        if params:
+            params = urlencode(params)
+            request = f"http://{SA_DEPLOY_IP}:{SA_DEPLOY_PORT}/minions/{api}?{params}"
+        else:
+            request = f"http://{SA_DEPLOY_IP}:{SA_DEPLOY_PORT}/minions/{api}"
+
+        if method == "POST":
+            response = requests.post(request)
+        elif method == "GET":
+            response = requests.get(request)
+        else:
+            raise ValueError(f"Method: {method}")
+
+        if response.status_code != 200:
+            raise RuntimeError(f"E PYSERVER::SSHContext::request: {response.text}")
+        return json.loads(response.text)
+
     def hcloud_context_list(self):
-        # form a shell command
-        cmd = CMD_HCLOUD_LIST.format(ip=self.ip)
-        with os.popen(cmd) as fp:
-            # read result
-            result = fp.read()
-            # if none returned, mostly that means we couldn't establish connection
-            if not result:
-                raise RuntimeError(f"E PYSERVER::SSHContext::hcloud_list(): "
-                                   f"Couldn't execute `hcloud context list` command. \nIP: {self.ip}")
-            #
-            lines = result.split('\n')
-            if len(lines) <= 1:
-                raise RuntimeError(f"E PYSERVER::SSHContext::hcloud_list(): "
-                                   f"`hcloud context list` returned no context. Please check if "
-                                   f"you have configured tokens. \nIP: {self.ip}, \nOutput: {result}")
-            # `hcloud context list` prints out two columns of data (ACTIVE MAME)
-            # skip first entry since this is a header
-            lines = [line.split() for line in lines][1:]
-            lines = [[len(line) == 2, line[-1]] for line in lines if
-                     line]  # len(line) == 2 => that means ACTIVE context
-        return lines
+        return self.request("hcloud_context_list", "GET")
 
     def hcloud_context_use(self, name):
-        # form a shell command
-        cmd = CMD_HCLOUD_USE.format(ip=self.ip, name=name)
-        with os.popen(cmd) as fp:
-            pass
+        return self.request("hcloud_context_use", "POST", {"name": name})
 
     def create_vm(self, total_num_vms):
-        # form a shell command
-        cmd = CMD_CREATE_VM.format(ip=self.ip, num_vms=total_num_vms)
-        with os.popen(cmd) as fp:
-            create_vm_result = fp.read()
-        return self.get_ip()
+        return self.request("create_vm", "POST", {"count": json.dumps(total_num_vms)})
 
     def get_ip(self):
-        # form a shell command
-        cmd = CMD_GET_IP.format(ip=self.ip)
-        with os.popen(cmd) as fp:
-            result = fp.read().split('\n')
-        return [x for x in result if x]
+        return self.request("get_ip", "GET")
 
     def delete_vms(self):
-        # form a shell command
-        cmd = CMD_DELETE_VMS.format(ip=self.ip)
-        with os.popen(cmd) as fp:
-            result = fp.read()
+        return self.request("delete_vms", "POST")
 
     def provision(self, ip_list):
-        """
-        :param ip_list: list of [..., [lang, ip], ...]
-        :return:
-        """
-        # TODO: log function
-        print(f"PYSERVER::Minions::provision(): Provisioning the following langs: {[lang for lang, _ in ip_list]}")
-        sys.stdout.flush()
-
-        self.upload_ip_list(ip_list)
-        # ./init.sh --upload-files
-        cmd = CMD_UPLOAD_FILES.format(ip=self.ip)
-        with os.popen(cmd, "r") as fp:
-            _ = fp.read()  # wait until it ends
-        # ./init.sh --provision
-        cmd = CMD_PROVISION.format(ip=self.ip)
-        with os.popen(cmd, "r") as fp:
-            _ = fp.read()  # wait until it ends
+        return self.request("provision", "POST", {"ip_list": json.dumps(ip_list)})
 
     def check_provision(self, ip):
-        """
-        Checks provision status for given ip address (minion ip address).
-        What the function does is it only checks the local `~/PROVISION_STATUS` file on a minion
-        with an `ip` specified.
-        :return: True/False
-        """
-        cmd = CMD_CHECK_PROVISION.format(ip=ip)
-        with os.popen(cmd, "r") as fp:
-            status = fp.read()  # wait until it is finished
-        return "DONE" in status
-
-    def upload_ip_list(self, ip_list):
-        """
-        :param ip_list: list of [..., [lang, ip], ...]
-        :return:
-        """
-        # form a placeholder in the followind format:
-        #   [lang]=ip
-        #   [Eng]=1.2.3.4
-        #   ...
-        placeholder = "\n".join([f"  [{lang}]={ip}" for lang, ip in ip_list])
-        # read the template to form ip.list file
-        with open(IP_LIST_EXAMPLE_PATH, "rt") as fp:
-            template = fp.read()
-        ip_list = template.format(placeholder=placeholder)
-        with open("./ip.list", "wt") as fp:
-            fp.write(ip_list)
-        # upload ip.list file onto the server
-        cmd = CMD_UPLOAD_IP_LIST.format(ip_list="./ip.list", ip=self.ip)
-        with os.popen(cmd, "r") as fp:
-            _ = fp.read()  # wait until it ends
+        return self.request("check_provision", "GET", {"ip": ip})
 
 
 class Minions:
