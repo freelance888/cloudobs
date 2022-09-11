@@ -198,8 +198,7 @@ def init_from_sheets(sheet_url, worksheet_name, force_deploy_minions=False):
     """
     try:
         sheets.set_sheet(sheet_url, worksheet_name)
-        pull_sheets(deploy_minions=True, force_deploy_minions=force_deploy_minions)
-        return ExecutionStatus(True)
+        return pull_sheets(deploy_minions=True, force_deploy_minions=force_deploy_minions)
     except Exception as ex:
         msg_ = f"Something happened while setting up Google Sheets. Details: {ex}"
         print(msg_)

@@ -160,6 +160,8 @@ class Minions:
                 self.ip_dict.set_ip_lang(ip, lang)  # bind a lang to an ip
                 ip_list_for_provision.append([lang, ip])
 
+        # TODO: check for minions have been started
+        time.sleep(10)
         self.ssh_context.provision(ip_list_for_provision)  # do provision for those servers
         # if needed to wait until provision
         if wait_for_provision:
