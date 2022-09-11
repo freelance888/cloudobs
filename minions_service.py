@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 
 from flask import Flask
 from flask import request
@@ -30,40 +31,52 @@ class CMDContext:
     def __init__(self):
         pass
 
+    def popen(self, cmd, num_retries=3):
+        count_attempts = 0
+
+        while count_attempts <= num_retries:
+            with os.popen(cmd) as fp:
+                result = fp.read()
+                return_code = fp.close()
+                if return_code is None:
+                    return_code = 0
+                count_attempts += 1
+
+                if return_code == 0:
+                    return result
+
+                time.sleep(5)
+        raise RuntimeError(f"Cannot execute command: \"{cmd}\"")
+
     def hcloud_context_list(self):
         # form a shell command
         cmd = CMD_HCLOUD_LIST
-        with os.popen(cmd) as fp:
-            # read result
-            result = fp.read()
-            # if none returned, mostly that means we couldn't establish connection
-            if not result:
-                raise RuntimeError(f"E PYSERVER::CMDContext::hcloud_list(): "
-                                   f"Couldn't execute `hcloud context list` command.")
-            #
-            lines = result.split('\n')
-            if len(lines) <= 1:
-                raise RuntimeError(f"E PYSERVER::CMDContext::hcloud_list(): "
-                                   f"`hcloud context list` returned no context. Please check if "
-                                   f"you have configured tokens, \nOutput: {result}")
-            # `hcloud context list` prints out two columns of data (ACTIVE MAME)
-            # skip first entry since this is a header
-            lines = [line.split() for line in lines][1:]
-            lines = [[len(line) == 2, line[-1]] for line in lines if
-                     line]  # len(line) == 2 => that means ACTIVE context
+        result = self.popen(cmd)
+        # if none returned, mostly that means we couldn't establish connection
+        if not result:
+            raise RuntimeError(f"E PYSERVER::CMDContext::hcloud_list(): "
+                               f"Couldn't execute `hcloud context list` command.")
+        #
+        lines = result.split('\n')
+        if len(lines) <= 1:
+            raise RuntimeError(f"E PYSERVER::CMDContext::hcloud_list(): "
+                               f"`hcloud context list` returned no context. Please check if "
+                               f"you have configured tokens, \nOutput: {result}")
+        # `hcloud context list` prints out two columns of data (ACTIVE MAME)
+        # skip first entry since this is a header
+        lines = [line.split() for line in lines][1:]
+        lines = [[len(line) == 2, line[-1]] for line in lines if line]  # len(line) == 2 => that means ACTIVE context
         return lines  # returns a list of [... [[active], ip], ...] -- `active` variable is only filled in active ip
 
     def hcloud_context_use(self, name):
         # form a shell command
         cmd = CMD_HCLOUD_USE.format(name=name)
-        with os.popen(cmd) as fp:
-            _ = fp.read()  # wait until finish
+        self.popen(cmd)
 
     def create_vm(self, total_num_vms):
         # form a shell command
         cmd = CMD_CREATE_VM.format(num_vms=total_num_vms)
-        with os.popen(cmd) as fp:
-            _ = fp.read()
+        self.popen(cmd)
         return self.get_ip()
 
     def get_ip(self):
@@ -72,15 +85,13 @@ class CMDContext:
         """
         # form a shell command
         cmd = CMD_GET_IP
-        with os.popen(cmd) as fp:
-            result = fp.read().split('\n')
+        result = self.popen(cmd).split("\n")
         return [x for x in result if x]
 
     def delete_vms(self):
         # form a shell command
         cmd = CMD_DELETE_VMS
-        with os.popen(cmd) as fp:
-            _ = fp.read()
+        self.popen(cmd)
 
     def provision(self, ip_list):
         """
@@ -94,12 +105,10 @@ class CMDContext:
         self.upload_ip_list(ip_list)
         # ./init.sh --upload-files
         cmd = CMD_UPLOAD_FILES
-        with os.popen(cmd, "r") as fp:
-            _ = fp.read()  # wait until it ends
+        self.popen(cmd)
         # ./init.sh --provision
         cmd = CMD_PROVISION
-        with os.popen(cmd, "r") as fp:
-            _ = fp.read()  # wait until it ends
+        self.popen(cmd)
 
     def check_provision(self, ip):
         """
@@ -109,8 +118,7 @@ class CMDContext:
         :return: True/False
         """
         cmd = CMD_CHECK_PROVISION.format(ip=ip)
-        with os.popen(cmd, "r") as fp:
-            status = fp.read()  # wait until it is finished
+        status = self.popen(cmd)
         return "DONE" in status
 
     def upload_ip_list(self, ip_list):
@@ -122,6 +130,7 @@ class CMDContext:
         #   [lang]=ip
         #   [Eng]=1.2.3.4
         #   ...
+        print("IP LIST: ", ip_list)
         placeholder = "\n".join([f"  [{lang}]={ip}" for lang, ip in ip_list])
         # read the template to form ip.list file
         with open(IP_LIST_EXAMPLE_PATH, "rt") as fp:
@@ -131,8 +140,7 @@ class CMDContext:
             fp.write(ip_list)
         # upload ip.list file onto the server
         cmd = CMD_UPLOAD_IP_LIST.format(ip_list="./ip.list")
-        with os.popen(cmd, "r") as fp:
-            _ = fp.read()  # wait until it ends
+        self.popen(cmd)
 
 
 @app.route("/minions/hcloud_context_list", methods=["GET"])
