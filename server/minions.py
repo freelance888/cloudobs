@@ -62,6 +62,12 @@ class IPDict:
         """
         return [lang for ip, lang in self._ip_list.items() if lang]
 
+    def ip_list(self):
+        """
+        :return: list of [... [lang, ip], ...]
+        """
+        return [[lang, ip] for ip, lang in self._ip_list.items()]
+
 
 class SSHContext:
     def __init__(self, ip):
@@ -172,7 +178,11 @@ class Minions:
                 for lang, ip in ip_list_for_provision:
                     self.ip_dict.remove_lang(lang)
                 raise ex
-        return ip_list_for_provision
+        return self.ip_dict.ip_list()
+
+    def cleanup(self):
+        for lang in self.ip_dict.list_langs():
+            self.ip_dict.remove_lang(lang)
 
     def wait_until_provision(self, timeout=300):
         time_start = time.time()

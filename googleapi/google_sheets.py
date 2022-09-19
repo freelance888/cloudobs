@@ -5,6 +5,7 @@ from media import server
 from dotenv import load_dotenv
 import os
 import re
+from datetime import datetime
 from util.util import MultilangParams
 
 load_dotenv()
@@ -177,3 +178,49 @@ class OBSGoogleSheets:
         self._set_value(lang, "api_key", API_KEY)
         self._set_value(lang, "sync_seconds", SYNC_SECONDS)
         self._set_value(lang, "gdrive_sync_addr", GDRIVE_SYNC_ADDR)
+
+class TimingGoogleSheets:
+    def __init__(self):
+        self.service_file = SERVICE_FILE
+        self.gc = pygsheets.authorize(service_account_file=self.service_file)
+
+        self.sheet = None
+        self.ws = None
+
+        self._ok = False
+        self.timing_df = None
+
+    def cleanup(self):
+        self._ok = False
+
+    def ok(self):
+        return self._ok
+
+    def set_sheet(self, sheet_url, worksheet_name):
+        self.sheet = self.gc.open_by_url(sheet_url)
+        self.ws = self.sheet.worksheet_by_title(worksheet_name)
+        self._ok = True
+
+    def pull(self):
+        """
+        df - dataframe, e.g.:
+        timestamp   name
+        0:12:00     01_video.mp4
+        05:10:12    02_video.mp4
+        12:01:01    03_video.mp4
+        """
+        df = self.ws.get_as_df()  # load data from google sheets
+
+        def to_seconds(ts_str):
+            if not re.fullmatch(r"\d{1,2}\:\d{2}\:\d{2}", ts_str):
+                raise f"Timestamp has invalid format: {ts_str}"
+            r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})", ts_str)
+            hour, minute, second = r.group("hour"), r.group("minute"), r.group("second")
+            hour, minute, second = int(hour), int(minute), int(second)
+
+            return hour * 3600 + minute * 60 + second * 1
+
+        df["timestamp"] = df["timestamp"].apply(to_seconds)
+        df = df[["timestamp", "name"]]
+
+        self.timing_df = df

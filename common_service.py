@@ -13,7 +13,7 @@ from media import server
 from util.config import API_CLEANUP_ROUTE
 from util.config import API_WAKEUP_ROUTE
 from util.config import API_INIT_ROUTE
-from util.config import API_MEDIA_SCHEDULE_ROUTE
+from util.config import API_MEDIA_SCHEDULE_ROUTE, API_MEDIA_SCHEDULE_SETUP, API_MEDIA_SCHEDULE_PULL
 from util.config import API_MEDIA_PLAY_ROUTE
 from util.config import API_SET_STREAM_SETTINGS_ROUTE
 from util.config import API_SIDECHAIN_ROUTE
@@ -35,6 +35,7 @@ from util.vmix import SourceSelector
 import util.util as util
 from media.scheduler import MediaScheduler
 from googleapi.google_sheets import OBSGoogleSheets
+from googleapi.google_sheets import TimingGoogleSheets
 from server.minions import Minions
 
 load_dotenv()
@@ -62,6 +63,7 @@ init_status, wakeup_status = False, False
 cb_thread = CallbackThread()
 media_scheduler = MediaScheduler()
 sheets = OBSGoogleSheets()
+timing_sheets = TimingGoogleSheets()
 vmix_selector = SourceSelector()
 minions = Minions()
 
@@ -134,9 +136,9 @@ def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
             # ip_list_for_provision - list of [..., [lang, ip], ...], only those ones which have been just deployed
             # and provisioned
             # deploy minions if they haven't been deployed yet
-            ip_list_for_provision = minions.ensure_langs(langs, wait_for_provision=True, provision_timeout=500)
+            ip_list = minions.ensure_langs(langs, wait_for_provision=True, provision_timeout=500)
             # wake up those which were just deployed
-            wakeup_minions(ip_list_for_provision)
+            wakeup_minions(ip_list)
         # pull broadcast-related parameters from google sheets
         params = sheets.to_multilang_params()
         for lang in params:
@@ -262,6 +264,7 @@ def wakeup_minions(iplist):
     :return:
     """
     global langs, instance_service_addrs
+    # TODO
     instance_service_addrs = util.ServiceAddrStorage()
     for lst in iplist:
         # check the list structure
@@ -486,18 +489,51 @@ def delete_media_schedule():
     return media_scheduler.delete_schedule().to_http_status()
 
 
+@app.route(API_MEDIA_SCHEDULE_SETUP, methods=["POST"])
+def setup_media_schedule():
+    """
+    Query parameters:
+    sheet_url: google sheets url
+    sheet_name: google sheet name
+    """
+    sheet_url = request.args.get("sheet_url", None)
+    sheet_name = request.args.get("sheet_name", None)
+
+    if not sheet_url or not sheet_name:
+        return ExecutionStatus(False, "Please specify both `sheet_url` and `sheet_name`").to_http_status()
+
+    timing_sheets.set_sheet(sheet_url, sheet_name)
+    if not timing_sheets.ok():
+        return ExecutionStatus(False, "Something went bad. Couldn't initialize Timing Google sheets").to_http_status()
+
+    return ExecutionStatus(True).to_http_status()
+
+
+@app.route(API_MEDIA_SCHEDULE_PULL, methods=["POST"])
+def pull_media_schedule():
+    if not timing_sheets.ok():
+        return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
+    try:
+        timing_sheets.pull()
+    except Exception as ex:
+        return ExecutionStatus(False, f"Couldn't pull Timing. Details: {ex}").to_http_status()
+    return ExecutionStatus(True).to_http_status()
+
+
 @app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["POST"])
 def media_schedule():
     """
     Query parameters:
-    schedule: schedule list,
-    e.g. [..., [name, timestamp], ...]
-     - path - media name
-     - timestamp - relative timestamp in seconds
-    :return:
+    sheet_url: google sheets url
+    sheet_name: google sheet name
     """
-    schedule = request.args.get("schedule", None)
-    schedule = json.loads(schedule)
+    if not timing_sheets.ok():
+        return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
+    if timing_sheets.timing_df is None:
+        return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
+
+    data = timing_sheets.timing_df.values  # [... [timestamp, name], ...]
+    schedule = [[name, timestamp] for timestamp, name in data]
 
     def foo(id_, name, timestamp, is_enabled, is_played):
         if not is_enabled or is_played:
