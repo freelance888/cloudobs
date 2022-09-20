@@ -437,58 +437,6 @@ def cleanup():
     return status.to_http_status()
 
 
-@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["GET"])
-def get_media_schedule():
-    """
-    :return: dictionary:
-    {
-      id_1: {
-        "name": "...",
-        "timestamp": ...,
-        "is_enabled": true/false,
-        "is_played": true/false  # добавил еще is_played, показывает, было ли это видео уже проиграно
-      },
-      id_2: {
-        ...
-      },
-      ...
-    }
-    """
-    return ExecutionStatus(True, message=json.dumps(media_scheduler.get_schedule())).to_http_status()
-
-
-# PUT /media/schedule?id=...&is_enabled=False&name=...&timestamp=...
-@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["PUT"])
-def update_media_schedule():
-    """
-    Query parameters:
-    id: schedule id,
-    name: schedule id,
-    timestamp: new timestamp,
-    is_enabled: schedule id
-    :return:
-    """
-    id_ = request.args.get("id", None)
-    if id_ is None:
-        return ExecutionStatus(False, message="Please specify schedule id").to_http_status()
-    try:
-        id_ = int(id_)
-    except:
-        return ExecutionStatus(False, message="Invalid `id`")
-    name = request.args.get("name", None)
-    timestamp = request.args.get("timestamp", None)
-    is_enabled = request.args.get("is_enabled", None)
-
-    status = media_scheduler.modify_schedule(id_=id_, name=name, timestamp=timestamp, is_enabled=is_enabled)
-
-    return status.to_http_status()
-
-
-@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["DELETE"])
-def delete_media_schedule():
-    return media_scheduler.delete_schedule().to_http_status()
-
-
 @app.route(API_MEDIA_SCHEDULE_SETUP, methods=["POST"])
 def setup_media_schedule():
     """
@@ -506,17 +454,6 @@ def setup_media_schedule():
     if not timing_sheets.ok():
         return ExecutionStatus(False, "Something went bad. Couldn't initialize Timing Google sheets").to_http_status()
 
-    return ExecutionStatus(True).to_http_status()
-
-
-@app.route(API_MEDIA_SCHEDULE_PULL, methods=["POST"])
-def pull_media_schedule():
-    if not timing_sheets.ok():
-        return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
-    try:
-        timing_sheets.pull()
-    except Exception as ex:
-        return ExecutionStatus(False, f"Couldn't pull Timing. Details: {ex}").to_http_status()
     return ExecutionStatus(True).to_http_status()
 
 
@@ -552,6 +489,82 @@ def media_schedule():
     status = media_scheduler.create_schedule(schedule=schedule, foo=foo)
 
     return status.to_http_status()
+
+
+@app.route(API_MEDIA_SCHEDULE_PULL, methods=["POST"])
+def pull_media_schedule():
+    if not timing_sheets.ok():
+        return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
+    try:
+        timing_sheets.pull()
+    except Exception as ex:
+        return ExecutionStatus(False, f"Couldn't pull Timing. Details: {ex}").to_http_status()
+    return ExecutionStatus(True).to_http_status()
+
+
+@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["GET"])
+def get_media_schedule():
+    """
+    :return: dictionary:
+    {
+      id_1: {
+        "name": "...",
+        "timestamp": ...,
+        "is_enabled": true/false,
+        "is_played": true/false  # добавил еще is_played, показывает, было ли это видео уже проиграно
+      },
+      id_2: {
+        ...
+      },
+      ...
+    }
+    """
+    if not timing_sheets.ok():
+        return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
+    if timing_sheets.timing_df is None:
+        return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
+    return ExecutionStatus(True, message=json.dumps(media_scheduler.get_schedule())).to_http_status()
+
+
+# PUT /media/schedule?id=...&is_enabled=False&name=...&timestamp=...
+@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["PUT"])
+def update_media_schedule():
+    """
+    Query parameters:
+    id: schedule id,
+    name: schedule id,
+    timestamp: new timestamp,
+    is_enabled: schedule id
+    :return:
+    """
+    if not timing_sheets.ok():
+        return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
+    if timing_sheets.timing_df is None:
+        return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
+
+    id_ = request.args.get("id", None)
+    if id_ is None:
+        return ExecutionStatus(False, message="Please specify schedule id").to_http_status()
+    try:
+        id_ = int(id_)
+    except:
+        return ExecutionStatus(False, message="Invalid `id`")
+    name = request.args.get("name", None)
+    timestamp = request.args.get("timestamp", None)
+    is_enabled = request.args.get("is_enabled", None)
+
+    status = media_scheduler.modify_schedule(id_=id_, name=name, timestamp=timestamp, is_enabled=is_enabled)
+
+    return status.to_http_status()
+
+
+@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["DELETE"])
+def delete_media_schedule():
+    if not timing_sheets.ok():
+        return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
+    if timing_sheets.timing_df is None:
+        return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
+    return media_scheduler.delete_schedule().to_http_status()
 
 
 @app.route(API_MEDIA_PLAY_ROUTE, methods=["POST"])

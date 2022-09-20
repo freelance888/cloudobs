@@ -1,3 +1,4 @@
+## SERVER INITIALIZATION
 ### `POST /init`
  - Initializes the server
  - Accepts the following parameters:
@@ -86,6 +87,19 @@
  - Pushes data from the server to Google Sheets
 ### `POST /cleanup`
  - Cleans up the server: stop streaming -> reset scenes -> close obs connections
+## MEDIA TIMING SCHEDULE API
+### `POST /media/schedule/setup`
+ - Sets up google sheets page info
+ - This API should be called before all other `/media/schedule` routes
+ - API parameters:
+   - `sheet_url` - url of google sheet (required)
+   - `sheet_name` - google sheets page name (required)
+### `POST /media/schedule/pull`
+ - Pulls the schedule from google sheets. Saves it in some buffer, which
+   is supposed to be used in `POST /media/schedule`
+### `POST /media/schedule`
+ - Schedules media play (note that the schedule should be pulled from 
+   google sheets in advance by using `POST /media/schedule/pull`)
 ### `GET /media/schedule`
  - Returns current media schedule
  - Has the following format:
@@ -104,15 +118,6 @@
   ...
 }
 ```
-### `POST /media/schedule`
- - Schedules media play
- - Accepts the following parameters:
-   - `schedule` - json list, e.g.:
-   ```
-   [..., [name, timestamp], ...]
-   ```
- - `timestamp` - floating-point number, in seconds
- - name media-file name, used `search_by_num=1` (see `POST /media/play`)
 ### `PUT /media/schedule`
  - Updates media schedule
  - Accepts the following parameters:
@@ -122,6 +127,7 @@
    - `is_enabled` - enables/disables specified schedule, optional
 ### `DELETE /media/schedule`
  - Removes current media schedule
+## MEDIA PLAY
 ### `POST /media/play`
  - Plays media (video/audio)
  - Accepts the following parameters:
@@ -139,6 +145,26 @@
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
 ### `DELETE /media/play`
  - Stops playing media
+### `POST /transition`
+ - Sets up transition
+ - Accepts the following parameters:
+   - `transition_settings` - json dictionary, e.g.:
+    ```
+    {"lang": {"transition_name": ..., "transition_point": ..., path": ...}, ...}
+    ```
+ - The following transition settings are supported:
+   ```
+   transition_name      - supported values are ("Cut", "Stinger"); required
+   transition_point     - transition point in ms; required for "Stinger",
+                          optional for "Cut" (used as delay for "Cut")
+   path                 - the name of media file to use as transition 
+                          (e.g. "stinger_1.mp4"); required for "Stinger"
+   ```
+   If some are not provided, default values will be used.
+ - Note: you may specify transition settings for all languages,
+   passing `__all__` as a lang code, e.g.: `{"__all__": ...}`
+ - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
+## STREAMING
 ### `POST /stream/settings`
  - Sets streaming destination settings
  - Accepts the following parameters:
@@ -167,6 +193,7 @@
  - Note: you may set `langs` for all languages,
    specifying `["__all__"]` as input
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
+## VOLUMES AND OFFSETS
 ### `POST /ts/offset`
  - Sets teamspeak sound offset (in milliseconds)
  - Accepts the following parameters:
@@ -235,25 +262,7 @@
  - Note: you may specify sidechain settings for all languages,
    passing `__all__` as a lang code, e.g.: `{"__all__": {...}}`
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
-### `POST /transition`
- - Sets up transition
- - Accepts the following parameters:
-   - `transition_settings` - json dictionary, e.g.:
-    ```
-    {"lang": {"transition_name": ..., "transition_point": ..., path": ...}, ...}
-    ```
- - The following transition settings are supported:
-   ```
-   transition_name      - supported values are ("Cut", "Stinger"); required
-   transition_point     - transition point in ms; required for "Stinger",
-                          optional for "Cut" (used as delay for "Cut")
-   path                 - the name of media file to use as transition 
-                          (e.g. "stinger_1.mp4"); required for "Stinger"
-   ```
-   If some are not provided, default values will be used.
- - Note: you may specify transition settings for all languages,
-   passing `__all__` as a lang code, e.g.: `{"__all__": ...}`
- - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
+## GOOGLE DRIVE API
 ### `POST /gdrive/sync`
  - Initializes google drive files downloading
  - Accepts the following parameters:
@@ -283,6 +292,7 @@
        ```
        {"lang": [... [filename, true/false - at least loaded on one server (or not)], ...]}
        ```
+## VMIX PLAYERS API
 ### `GET /vmix/players`
  - Returns posted vmix players (ip addresses which are allowed to play video)
  - Returns a list of dicts with the format `{"ip": "...", "label": "...", 
