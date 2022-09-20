@@ -166,6 +166,7 @@ class OBS:
             """
             # delay for self.transition_point / 1000
             try:
+                self.delete_source(source_name)  # remove media, if any has been played before
                 self._run_media(path, source_name)
                 self.delete_source(source_name=TRANSITION_INPUT_NAME)
                 self.set_source_mute(True)
@@ -202,7 +203,6 @@ class OBS:
             self.media_cb_thread.delete_cb_type(cb_type=CB_TYPE)
 
         self.media_cb_thread.delete_cb_type(cb_type=CB_TYPE)  # clean callbacks queue
-        self.delete_source(source_name)  # remove media, if any has been played before
 
         if self.transition_name == "Stinger":
             self._run_media(self.transition_path, TRANSITION_INPUT_NAME)
