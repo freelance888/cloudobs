@@ -98,9 +98,10 @@ def post_info():
 def wakeup():
     global wakeup_status
     global obs_server
-    # if not wakeup_status:
-    obs_server = server.Server()
-    wakeup_status = True
+
+    if not wakeup_status or obs_server is None:
+        obs_server = server.Server()
+        wakeup_status = True
     return "Ok", 200
 
 
@@ -145,6 +146,7 @@ def cleanup():
     :return:
     """
     global obs_server
+    global wakeup_status
 
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
@@ -153,6 +155,7 @@ def cleanup():
         obs_server.cleanup()
         del obs_server
         obs_server = None
+        wakeup_status = False
 
     return ExecutionStatus(status=True).to_http_status()
 
