@@ -2,10 +2,9 @@ name: PROD | Build and Deploy
 
 on:
   push:
-    branches:
-      - 'main'
+    branches: ["main"]
   pull_request:
-    branches: main
+    branches: ["main"]
 
 env:
     HOST: app@${{ secrets.PROD_HOST_IP }}
