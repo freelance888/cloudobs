@@ -5,11 +5,7 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
-  workflow_run:
-    workflows: ["pre-commit"]
-    branches: ["main"]
-    types:
-      - completed
+
 env:
     HOST: app@${{ secrets.PROD_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
