@@ -2,34 +2,35 @@ import json
 import os
 import time
 
-from dotenv import load_dotenv
-from flask import Flask
-from flask import request
 import requests
+from dotenv import load_dotenv
+from flask import Flask, request
 
 from media import server
-from util.config import API_CLEANUP_ROUTE
-from util.config import API_INIT_ROUTE
-from util.config import API_MEDIA_SCHEDULE_ROUTE
-from util.config import API_MEDIA_PLAY_ROUTE
-from util.config import API_SET_STREAM_SETTINGS_ROUTE
-from util.config import API_SIDECHAIN_ROUTE
-from util.config import API_SOURCE_VOLUME_ROUTE
-from util.config import API_STREAM_START_ROUTE
-from util.config import API_STREAM_STOP_ROUTE
-from util.config import API_TRANSITION_ROUTE
-from util.config import API_TS_OFFSET_ROUTE
-from util.config import API_TS_VOLUME_ROUTE
-from util.config import API_GDRIVE_SYNC
-from util.config import API_GDRIVE_FILES
-from util.config import API_INFO_ROUTE
-from util.config import API_WAKEUP_ROUTE
+from util.config import (
+    API_CLEANUP_ROUTE,
+    API_GDRIVE_FILES,
+    API_GDRIVE_SYNC,
+    API_INFO_ROUTE,
+    API_INIT_ROUTE,
+    API_MEDIA_PLAY_ROUTE,
+    API_MEDIA_SCHEDULE_ROUTE,
+    API_SET_STREAM_SETTINGS_ROUTE,
+    API_SIDECHAIN_ROUTE,
+    API_SOURCE_VOLUME_ROUTE,
+    API_STREAM_START_ROUTE,
+    API_STREAM_STOP_ROUTE,
+    API_TRANSITION_ROUTE,
+    API_TS_OFFSET_ROUTE,
+    API_TS_VOLUME_ROUTE,
+    API_WAKEUP_ROUTE,
+)
 from util.util import ExecutionStatus
 
 load_dotenv()
-DEFAULT_MEDIA_DIR = os.getenv('MEDIA_DIR', './content')
-DEFAULT_API_KEY = os.getenv('GDRIVE_API_KEY', '')
-DEFAULT_SYNC_SECONDS = os.getenv('GDRIVE_SYNC_SECONDS', 60)
+DEFAULT_MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
+DEFAULT_API_KEY = os.getenv("GDRIVE_API_KEY", "")
+DEFAULT_SYNC_SECONDS = os.getenv("GDRIVE_SYNC_SECONDS", 60)
 try:
     DEFAULT_SYNC_SECONDS = int(DEFAULT_SYNC_SECONDS)
 except:
@@ -38,7 +39,7 @@ except:
 # Setup Sentry
 # ------------
 # if env var set - setup integration
-SENTRY_DSN = os.getenv('SENTRY_DSN')
+SENTRY_DSN = os.getenv("SENTRY_DSN")
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.flask import FlaskIntegration
@@ -60,7 +61,7 @@ class GDriveHelper:
             "drive_id": drive_id,
             "media_dir": media_dir,
             "api_key": api_key,
-            "sync_seconds": sync_seconds
+            "sync_seconds": sync_seconds,
         }
 
 
@@ -446,9 +447,9 @@ def get_gdrive_files():
     return json.dumps(data), 200
 
 
-@app.route('/healthcheck', methods=['GET'])
+@app.route("/healthcheck", methods=["GET"])
 def healthcheck():
-    return '', 200
+    return "", 200
 
 
 @app.before_request

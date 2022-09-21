@@ -3,8 +3,7 @@ import os
 import sys
 import time
 
-from flask import Flask
-from flask import request
+from flask import Flask, request
 
 from util.util import ExecutionStatus
 
@@ -12,16 +11,11 @@ app = Flask(__name__)
 
 CMD_HCLOUD_LIST = "hcloud context list"
 CMD_HCLOUD_USE = "hcloud context use {name}"
-CMD_CREATE_VM = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                "./init.sh --create-vm {num_vms}"
-CMD_GET_IP = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-             "./init.sh --getip"
-CMD_DELETE_VMS = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                 "./init.sh -d"
-CMD_UPLOAD_FILES = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                   "./init.sh --upload-files"
-CMD_PROVISION = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
-                "./init.sh --provision"
+CMD_CREATE_VM = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh --create-vm {num_vms}"
+CMD_GET_IP = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh --getip"
+CMD_DELETE_VMS = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh -d"
+CMD_UPLOAD_FILES = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh --upload-files"
+CMD_PROVISION = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh --provision"
 CMD_UPLOAD_IP_LIST = "cp {ip_list} /home/user/cloudobs-infrastructure-main/shared/scripts/ip.list"
 CMD_CHECK_PROVISION = "ssh -o StrictHostKeyChecking=no stream@{ip} cat /home/stream/PROVISION_STATUS"
 IP_LIST_EXAMPLE_PATH = "./ip.list.example"
@@ -46,7 +40,7 @@ class CMDContext:
                     return result
 
                 time.sleep(5)
-        raise RuntimeError(f"Cannot execute command: \"{cmd}\"")
+        raise RuntimeError(f'Cannot execute command: "{cmd}"')
 
     def hcloud_context_list(self):
         # form a shell command
@@ -54,14 +48,17 @@ class CMDContext:
         result = self.popen(cmd)
         # if none returned, mostly that means we couldn't establish connection
         if not result:
-            raise RuntimeError(f"E PYSERVER::CMDContext::hcloud_list(): "
-                               f"Couldn't execute `hcloud context list` command.")
+            raise RuntimeError(
+                f"E PYSERVER::CMDContext::hcloud_list(): " f"Couldn't execute `hcloud context list` command."
+            )
         #
-        lines = result.split('\n')
+        lines = result.split("\n")
         if len(lines) <= 1:
-            raise RuntimeError(f"E PYSERVER::CMDContext::hcloud_list(): "
-                               f"`hcloud context list` returned no context. Please check if "
-                               f"you have configured tokens, \nOutput: {result}")
+            raise RuntimeError(
+                f"E PYSERVER::CMDContext::hcloud_list(): "
+                f"`hcloud context list` returned no context. Please check if "
+                f"you have configured tokens, \nOutput: {result}"
+            )
         # `hcloud context list` prints out two columns of data (ACTIVE MAME)
         # skip first entry since this is a header
         lines = [line.split() for line in lines][1:]

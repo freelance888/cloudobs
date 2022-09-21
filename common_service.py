@@ -1,42 +1,45 @@
 import json
 import os
 import re
+import threading
 import time
 from urllib.parse import urlencode
-import threading
 
 from dotenv import load_dotenv
-from flask import Flask
-from flask import request
+from flask import Flask, request
 
-from media import server
-from util.config import API_CLEANUP_ROUTE
-from util.config import API_WAKEUP_ROUTE
-from util.config import API_INIT_ROUTE
-from util.config import API_MEDIA_SCHEDULE_ROUTE, API_MEDIA_SCHEDULE_SETUP, API_MEDIA_SCHEDULE_PULL
-from util.config import API_MEDIA_PLAY_ROUTE
-from util.config import API_SET_STREAM_SETTINGS_ROUTE
-from util.config import API_SIDECHAIN_ROUTE
-from util.config import API_SOURCE_VOLUME_ROUTE
-from util.config import API_STREAM_START_ROUTE
-from util.config import API_STREAM_STOP_ROUTE
-from util.config import API_TRANSITION_ROUTE
-from util.config import API_TS_OFFSET_ROUTE
-from util.config import API_TS_VOLUME_ROUTE
-from util.config import API_GDRIVE_SYNC
-from util.config import API_GDRIVE_FILES
-from util.config import API_INFO_ROUTE
-from util.config import API_PULL_SHEETS
-from util.config import API_PUSH_SHEETS
-from util.config import API_VMIX_PLAYERS, API_VMIX_ACTIVE_PLAYER
-from util.config import API_SERVER_MINIONS
-from util.util import ExecutionStatus, MultilangParams, CallbackThread
-from util.vmix import SourceSelector
 import util.util as util
+from googleapi.google_sheets import OBSGoogleSheets, TimingGoogleSheets
+from media import server
 from media.scheduler import MediaScheduler
-from googleapi.google_sheets import OBSGoogleSheets
-from googleapi.google_sheets import TimingGoogleSheets
 from server.minions import Minions
+from util.config import (
+    API_CLEANUP_ROUTE,
+    API_GDRIVE_FILES,
+    API_GDRIVE_SYNC,
+    API_INFO_ROUTE,
+    API_INIT_ROUTE,
+    API_MEDIA_PLAY_ROUTE,
+    API_MEDIA_SCHEDULE_PULL,
+    API_MEDIA_SCHEDULE_ROUTE,
+    API_MEDIA_SCHEDULE_SETUP,
+    API_PULL_SHEETS,
+    API_PUSH_SHEETS,
+    API_SERVER_MINIONS,
+    API_SET_STREAM_SETTINGS_ROUTE,
+    API_SIDECHAIN_ROUTE,
+    API_SOURCE_VOLUME_ROUTE,
+    API_STREAM_START_ROUTE,
+    API_STREAM_STOP_ROUTE,
+    API_TRANSITION_ROUTE,
+    API_TS_OFFSET_ROUTE,
+    API_TS_VOLUME_ROUTE,
+    API_VMIX_ACTIVE_PLAYER,
+    API_VMIX_PLAYERS,
+    API_WAKEUP_ROUTE,
+)
+from util.util import CallbackThread, ExecutionStatus, MultilangParams
+from util.vmix import SourceSelector
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR")
@@ -45,7 +48,7 @@ COMMON_SERVICE_PORT = int(os.getenv("COMMON_SERVICE_PORT", 5000))
 # Setup Sentry
 # ------------
 # if env var set - setup integration
-SENTRY_DSN = os.getenv('SENTRY_DSN')
+SENTRY_DSN = os.getenv("SENTRY_DSN")
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.flask import FlaskIntegration
@@ -68,12 +71,14 @@ vmix_selector = SourceSelector()
 minions = Minions()
 
 
-def broadcast(api_route,
-              http_method,
-              params: util.MultilangParams = None,
-              param_name="params",
-              return_status=False,
-              method_name="broadcast"):
+def broadcast(
+    api_route,
+    http_method,
+    params: util.MultilangParams = None,
+    param_name="params",
+    return_status=False,
+    method_name="broadcast",
+):
     requests_ = {}  # lang: request
     responses_ = {}  # lang: response
 
@@ -124,8 +129,7 @@ def load_ip_list(path):
 
     with open(path, "rt") as fp:
         text = fp.read()
-    ip_list = re.findall(r"^\[(?P<lang>[A-Za-z]+)\]\=(?P<ip>[a-zA-Z0-9\.]+)",
-                         text.replace(' ', ''), flags=re.MULTILINE)
+    ip_list = re.findall(r"^\[(?P<lang>[A-Za-z]+)\]\=(?P<ip>[a-zA-Z0-9\.]+)", text.replace(" ", ""), flags=re.MULTILINE)
     for lang, ip in ip_list:
         instance_service_addrs[lang] = {
             "addr": f"http://{ip}:6000",  # address of instance_service
@@ -153,13 +157,13 @@ def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
         for lang in params:
             params[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
     except TimeoutError as ex:
-        msg_ = f"Provisioning timeout, please check if the deployment server works properly. " \
-               f"Details: {ex}"
+        msg_ = f"Provisioning timeout, please check if the deployment server works properly. " f"Details: {ex}"
         print(msg_)
         return ExecutionStatus(False, msg_)
     except Exception as ex:
-        msg_ = f"Something happened while preparing for synchronization the server from Google Sheets. " \
-               f"Details: {ex}"
+        msg_ = (
+            f"Something happened while preparing for synchronization the server from Google Sheets. " f"Details: {ex}"
+        )
         print(msg_)
         return ExecutionStatus(False, msg_)
     status = broadcast(
@@ -168,7 +172,7 @@ def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
         params=params,
         param_name="info",
         return_status=True,
-        method_name="init_from_sheets"
+        method_name="init_from_sheets",
     )
     return status
 
@@ -301,6 +305,7 @@ def wakeup_minions(iplist):
 
 
 # ========== API ROUTES ========== #
+
 
 @app.route(API_WAKEUP_ROUTE, methods=["POST"])
 def wakeup_route():
@@ -482,8 +487,12 @@ def pull_media_schedule():
             params = MultilangParams({"__all__": {"name": name, "search_by_num": "1"}}, langs=langs)
             try:
                 status = broadcast(
-                    API_MEDIA_PLAY_ROUTE, "POST", params=params,
-                    param_name="params", return_status=True, method_name="media_play"
+                    API_MEDIA_PLAY_ROUTE,
+                    "POST",
+                    params=params,
+                    param_name="params",
+                    return_status=True,
+                    method_name="media_play",
                 )
                 try:
                     after_media_play_triggered(params, status)
@@ -616,9 +625,7 @@ def media_play_delete():
     :return:
     """
 
-    status = broadcast(
-        API_MEDIA_PLAY_ROUTE, "DELETE", return_status=True, method_name="media_play"
-    )
+    status = broadcast(API_MEDIA_PLAY_ROUTE, "DELETE", return_status=True, method_name="media_play")
 
     return status.to_http_status()
 
@@ -978,9 +985,9 @@ def get_active_vmix_player():
     return ExecutionStatus(True, vmix_selector.get_active_ip()).to_http_status()
 
 
-@app.route('/healthcheck', methods=['GET'])
+@app.route("/healthcheck", methods=["GET"])
 def healthcheck():
-    return '', 200
+    return "", 200
 
 
 @app.before_request
@@ -994,7 +1001,7 @@ def before_request():
 
     if request.path == API_MEDIA_PLAY_ROUTE:
         if not vmix_selector.is_allowed(request.remote_addr):
-            return f"This API is not allowed from \"{request.remote_addr}\""
+            return f'This API is not allowed from "{request.remote_addr}"'
 
 
 @app.after_request
@@ -1018,7 +1025,7 @@ class HTTPSThread(threading.Thread):
         self.app = app
 
     def run(self) -> None:
-        self.app.run("0.0.0.0", COMMON_SERVICE_PORT + 1, ssl_context='adhoc')
+        self.app.run("0.0.0.0", COMMON_SERVICE_PORT + 1, ssl_context="adhoc")
 
 
 _thread = HTTPSThread(app)

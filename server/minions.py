@@ -1,8 +1,11 @@
-import os, sys, time
-from dotenv import load_dotenv
 import json
-import requests
+import os
+import sys
+import time
 from urllib.parse import urlencode
+
+import requests
+from dotenv import load_dotenv
 
 load_dotenv()
 SA_DEPLOY_IP = os.getenv("SA_DEPLOY_IP", None)

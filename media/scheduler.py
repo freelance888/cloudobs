@@ -1,6 +1,6 @@
-from util.util import CallbackThread
-from util.util import ExecutionStatus
 from threading import Lock
+
+from util.util import CallbackThread, ExecutionStatus
 
 
 class MediaScheduler:
@@ -38,6 +38,7 @@ class MediaScheduler:
             result = foo(id_, name, timestamp, is_enabled, is_played)
             if result:
                 self.schedule[id_]["is_played"] = True
+
         try:
             # [id, name, timestamp, is_enabled, is_played]
             self.schedule = {
@@ -46,7 +47,7 @@ class MediaScheduler:
                     "timestamp": float(timestamp),
                     "is_enabled": True,
                     "is_played": False,
-                    "foo": foo_wrap
+                    "foo": foo_wrap,
                 }
                 for i, (name, timestamp) in enumerate(schedule)
             }
@@ -64,13 +65,12 @@ class MediaScheduler:
         :return:
         """
         try:
+
             def timestamp_foo(id_):
                 return lambda: int(self.schedule[id_]["timestamp"]) + delay
 
             for id_, data in self.schedule.items():
-                self.cb_thread.append_callback(foo=data["foo"],
-                                               args=(id_, data["name"]),
-                                               delay=timestamp_foo(id_))
+                self.cb_thread.append_callback(foo=data["foo"], args=(id_, data["name"]), delay=timestamp_foo(id_))
             return ExecutionStatus(True, message="Ok")
         except Exception as ex:
             msg = f"Couldn't start the schedule. Details: {ex}"

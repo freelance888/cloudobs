@@ -4,6 +4,7 @@ import time
 
 import obswebsocket as obs
 import obswebsocket.requests
+
 from util.util import CallbackThread
 
 ORIGINAL_STREAM_SOURCE_NAME = "original_stream"
@@ -148,9 +149,7 @@ class OBS:
 
         for i, (path, timestamp) in enumerate(schedule):
             self.media_cb_thread.append_callback(
-                foo=lambda: self.run_media(path=path),
-                delay=timestamp / 1000,
-                cb_type=CB_TYPE
+                foo=lambda: self.run_media(path=path), delay=timestamp / 1000, cb_type=CB_TYPE
             )
 
     def run_media(self, path, media_type="media", source_name=MEDIA_INPUT_NAME):
@@ -171,9 +170,7 @@ class OBS:
                 self.delete_source(source_name=TRANSITION_INPUT_NAME)
                 self.set_source_mute(True)
                 self.set_ts_mute(True)
-                duration = self.client.call(
-                    obs.requests.GetMediaDuration(sourceName=source_name)
-                ).getMediaDuration()
+                duration = self.client.call(obs.requests.GetMediaDuration(sourceName=source_name)).getMediaDuration()
                 self.media_cb_thread.append_callback(media_end_foo, duration / 1000, cb_type=CB_TYPE)
             except Exception as ex:
                 self.delete_source(source_name)
@@ -429,8 +426,7 @@ class OBS:
         response = self.client.call(obs.requests.SetStreamSettings(type=type, settings=settings_, save=True))
         if not response.status:
             raise Exception(
-                f"E PYSERVER::OBS::set_stream_settings(): "
-                f"datain: {response.datain}, dataout: {response.dataout}"
+                f"E PYSERVER::OBS::set_stream_settings(): " f"datain: {response.datain}, dataout: {response.dataout}"
             )
 
     def start_streaming(self):
@@ -440,8 +436,7 @@ class OBS:
         response = self.client.call(obs.requests.StartStreaming())
         if not response.status:
             raise Exception(
-                f"E PYSERVER::OBS::start_streaming(): "
-                f"datain: {response.datain}, dataout: {response.dataout}"
+                f"E PYSERVER::OBS::start_streaming(): " f"datain: {response.datain}, dataout: {response.dataout}"
             )
 
     def stop_streaming(self):
@@ -451,8 +446,7 @@ class OBS:
         response = self.client.call(obs.requests.StopStreaming())
         if not response.status:
             raise Exception(
-                f"E PYSERVER::OBS::stop_streaming(): "
-                f"datain: {response.datain}, dataout: {response.dataout}"
+                f"E PYSERVER::OBS::stop_streaming(): " f"datain: {response.datain}, dataout: {response.dataout}"
             )
 
     def set_source_mute(self, mute):

@@ -1,11 +1,11 @@
+import asyncio
+import hashlib
 import re
+import sys
 import threading
 import time
-import hashlib
-import sys
 
 import aiohttp
-import asyncio
 from asgiref import sync
 
 
@@ -16,13 +16,12 @@ def async_aiohttp_get_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
+
             async def fetch(url):
                 async with session.get(url) as response:
                     return Response(await response.text(), response.status)
 
-            return await asyncio.gather(*[
-                fetch(url) for url in urls
-            ])
+            return await asyncio.gather(*[fetch(url) for url in urls])
 
     # call get_all as a sync function to be used in a sync context
     return sync.async_to_sync(get_all)(urls)
@@ -35,13 +34,12 @@ def async_aiohttp_post_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
+
             async def fetch(url):
                 async with session.post(url) as response:
                     return Response(await response.text(), response.status)
 
-            return await asyncio.gather(*[
-                fetch(url) for url in urls
-            ])
+            return await asyncio.gather(*[fetch(url) for url in urls])
 
     # call get_all as a sync function to be used in a sync context
     return sync.async_to_sync(get_all)(urls)
@@ -73,7 +71,7 @@ def validate_media_play_params(name, use_file_num):
     return ExecutionStatus(status=True)
 
 
-def generate_file_md5(filename, blocksize=2 ** 25):
+def generate_file_md5(filename, blocksize=2**25):
     m = hashlib.md5()
     with open(filename, "rb") as f:
         while True:
@@ -191,7 +189,7 @@ class DefaultDict:
 
     def __setitem__(self, key, value):
         if key not in self.dict:
-            raise KeyError('No new keys allowed')
+            raise KeyError("No new keys allowed")
         else:
             self.dict[key] = value
 
@@ -261,10 +259,16 @@ class CallbackThread(threading.Thread):
         :return:
         """
         with self.lock:
-            self.callbacks.append({
-                "foo": foo, "delay": delay, "args": args,
-                "__time__": time.time(), "__done__": False, "cb_type": cb_type
-            })
+            self.callbacks.append(
+                {
+                    "foo": foo,
+                    "delay": delay,
+                    "args": args,
+                    "__time__": time.time(),
+                    "__done__": False,
+                    "cb_type": cb_type,
+                }
+            )
 
     def clean_callbacks(self):
         with self.lock:
@@ -272,9 +276,7 @@ class CallbackThread(threading.Thread):
 
     def delete_cb_type(self, cb_type):
         with self.lock:
-            self.callbacks = [
-                cb for cb in self.callbacks if cb["cb_type"] != cb_type
-            ]
+            self.callbacks = [cb for cb in self.callbacks if cb["cb_type"] != cb_type]
 
     def run(self):
         while self.running:
