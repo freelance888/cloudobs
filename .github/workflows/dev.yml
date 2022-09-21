@@ -5,6 +5,11 @@ on:
     branches: ["dev", "feature/**"]
   pull_request:
     branches: ["dev"]
+  workflow_run:
+    workflows: ["pre-commit"]
+    branches: ["dev", "feature/**"]
+    types:
+      - completed
 
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}
