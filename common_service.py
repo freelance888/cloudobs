@@ -96,7 +96,7 @@ def broadcast(api_route,
         responses_ = util.async_aiohttp_post_all(urls=urls)
     responses_ = {lang: responses_[i] for i, lang in enumerate(requests_.keys())}
 
-    # decide wether to return status of response
+    # return status of response or the response itself
     if return_status:
         status: ExecutionStatus = ExecutionStatus(status=True)
         for lang, response_ in responses_.items():
@@ -107,6 +107,15 @@ def broadcast(api_route,
         return status
     else:
         return responses_
+
+
+def after_media_play(params: MultilangParams, status: ExecutionStatus):
+    """
+    :param params: media play params which was broadcasted to minions
+    :param status: media play status returned from minions
+    :return:
+    """
+    pass
 
 
 def load_ip_list(path):
@@ -457,49 +466,58 @@ def setup_media_schedule():
     return ExecutionStatus(True).to_http_status()
 
 
-@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["POST"])
-def media_schedule():
-    """
-    Query parameters:
-    sheet_url: google sheets url
-    sheet_name: google sheet name
-    """
-    if not timing_sheets.ok():
-        return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
-    if timing_sheets.timing_df is None:
-        return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
-
-    data = timing_sheets.timing_df.values  # [... [timestamp, name], ...]
-    schedule = [[name, timestamp] for timestamp, name in data]
-
-    def foo(id_, name, timestamp, is_enabled, is_played):
-        if not is_enabled or is_played:
-            return False
-        params = MultilangParams({"__all__": {"name": name, "search_by_num": "1"}}, langs=langs)
-        try:
-            _ = broadcast(
-                API_MEDIA_PLAY_ROUTE, "POST", params=params,
-                param_name="params", return_status=True, method_name="media_play"
-            )
-            return True
-        except BaseException as ex:
-            print(f"E PYSERVER::common_service::media_schedule(): {ex}")
-            return False
-
-    status = media_scheduler.create_schedule(schedule=schedule, foo=foo)
-
-    return status.to_http_status()
-
-
 @app.route(API_MEDIA_SCHEDULE_PULL, methods=["POST"])
 def pull_media_schedule():
     if not timing_sheets.ok():
         return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
     try:
         timing_sheets.pull()
+
+        data = timing_sheets.timing_df.values  # [... [timestamp, name], ...]
+        schedule = [[name, timestamp] for timestamp, name in data]
+
+        def foo(id_, name, timestamp, is_enabled, is_played):
+            if not is_enabled or is_played:
+                return False
+            params = MultilangParams({"__all__": {"name": name, "search_by_num": "1"}}, langs=langs)
+            try:
+                status = broadcast(
+                    API_MEDIA_PLAY_ROUTE, "POST", params=params,
+                    param_name="params", return_status=True, method_name="media_play"
+                )
+                try:
+                    after_media_play(params, status)
+                except Exception as ex:
+                    print(f"after_media_play: {ex}")
+                return True
+            except BaseException as ex:
+                print(f"E PYSERVER::common_service::media_schedule(): {ex}")
+                return False
+
+        status = media_scheduler.create_schedule(schedule=schedule, foo=foo)
+        return status.to_http_status()
     except Exception as ex:
         return ExecutionStatus(False, f"Couldn't pull Timing. Details: {ex}").to_http_status()
-    return ExecutionStatus(True).to_http_status()
+
+
+@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["POST"])
+def media_schedule():
+    """
+    Query parameters:
+    delay: in seconds, defaults to 0
+    """
+    if not timing_sheets.ok():
+        return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
+    if timing_sheets.timing_df is None:
+        return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
+
+    try:
+        delay = request.args.get("delay", "0")
+        delay = int(delay)
+    except:
+        return ExecutionStatus(False, f"Couldn't parse `delay` parameter.")
+
+    return media_scheduler.start_schedule(delay=delay).to_http_status()
 
 
 @app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["GET"])
@@ -582,6 +600,11 @@ def media_play():
     status = broadcast(
         API_MEDIA_PLAY_ROUTE, "POST", params=params, param_name="params", return_status=True, method_name="media_play"
     )
+
+    try:
+        after_media_play(params, status)
+    except Exception as ex:
+        print(f"after_media_play: {ex}")
 
     return status.to_http_status()
 
