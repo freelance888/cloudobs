@@ -1,6 +1,5 @@
 from __future__ import print_function
 
-import io
 import json
 import os.path
 import random
@@ -10,12 +9,7 @@ import time
 import gdown
 from dotenv import load_dotenv
 from flask import Flask, request
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaIoBaseDownload
 
 from util.util import GDriveFiles, generate_file_md5, log
 
@@ -34,7 +28,7 @@ class DriveSync(threading.Thread):
         self.files = GDriveFiles(with_lock=True)
         self.creds = None
 
-    def run(self):
+    def run(self):  # noqa: C901
         """
         Every `sync_period_seconds` lists child files within
         a specified `drive_id`, compares with a list of files

@@ -103,7 +103,7 @@ class ServerSettings:
         if attribute not in self._settings[subject]:
             raise KeyError(f'Invalid subject attribute "{subject}.{attribute}"')
         if attribute == "objvers":
-            raise KeyError(f'Explicit "objvers" modification is not allowed')
+            raise KeyError('Explicit "objvers" modification is not allowed')
 
         if self._settings[subject][attribute] == value:  # if the value is the same
             pass
@@ -124,7 +124,7 @@ class ServerSettings:
         if attribute not in self._settings[subject]:
             raise KeyError(f'Invalid subject attribute "{subject}.{attribute}"')
         if attribute == "objvers":
-            raise KeyError(f'"objvers" access is not allowed')
+            raise KeyError('"objvers" access is not allowed')
         return self._settings[subject][attribute]
 
     def to_dict(self):

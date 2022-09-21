@@ -2,7 +2,6 @@ import json
 import os
 import re
 import threading
-import time
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
@@ -25,7 +24,6 @@ from util.config import (
     API_MEDIA_SCHEDULE_SETUP,
     API_PULL_SHEETS,
     API_PUSH_SHEETS,
-    API_SERVER_MINIONS,
     API_SET_STREAM_SETTINGS_ROUTE,
     API_SIDECHAIN_ROUTE,
     API_SOURCE_VOLUME_ROUTE,
@@ -367,7 +365,7 @@ def init():
         server_langs = request.args.get("server_langs")
         try:
             server_langs = json.loads(server_langs)
-        except:
+        except Exception:
             return ExecutionStatus(False, "Couldn't parse json").to_http_status()
         status = init_from_server_langs(server_langs)
     elif request.args.get("sheet_url", "") and request.args.get("worksheet_name", ""):
@@ -523,8 +521,8 @@ def media_schedule():
     try:
         delay = request.args.get("delay", "0")
         delay = int(delay)
-    except:
-        return ExecutionStatus(False, f"Couldn't parse `delay` parameter.")
+    except Exception:
+        return ExecutionStatus(False, "Couldn't parse `delay` parameter.")
 
     return media_scheduler.start_schedule(delay=delay).to_http_status()
 
@@ -574,7 +572,7 @@ def update_media_schedule():
         return ExecutionStatus(False, message="Please specify schedule id").to_http_status()
     try:
         id_ = int(id_)
-    except:
+    except Exception:
         return ExecutionStatus(False, message="Invalid `id`")
     name = request.args.get("name", None)
     timestamp = request.args.get("timestamp", None)
@@ -994,7 +992,7 @@ def healthcheck():
 def before_request():
     if not wakeup_status:
         if request.path not in (API_WAKEUP_ROUTE, API_INIT_ROUTE):
-            return f"The server is sleeping :) Tell the admin to wake it up."
+            return "The server is sleeping :) Tell the admin to wake it up."
     else:  # if the server has already woken up
         if not init_status and request.path not in (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE):
             return f"{request.path} is not allowed before initialization"

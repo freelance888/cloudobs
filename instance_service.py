@@ -33,7 +33,7 @@ DEFAULT_API_KEY = os.getenv("GDRIVE_API_KEY", "")
 DEFAULT_SYNC_SECONDS = os.getenv("GDRIVE_SYNC_SECONDS", 60)
 try:
     DEFAULT_SYNC_SECONDS = int(DEFAULT_SYNC_SECONDS)
-except:
+except Exception:
     DEFAULT_SYNC_SECONDS = 60
 
 # Setup Sentry
@@ -456,7 +456,7 @@ def healthcheck():
 def before_request():
     if not wakeup_status:
         if request.path not in (API_WAKEUP_ROUTE,):
-            return f"The server is sleeping :) Tell the admin to wake it up."
+            return "The server is sleeping :) Tell the admin to wake it up."
 
 
 if __name__ == "__main__":

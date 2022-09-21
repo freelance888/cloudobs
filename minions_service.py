@@ -48,15 +48,13 @@ class CMDContext:
         result = self.popen(cmd)
         # if none returned, mostly that means we couldn't establish connection
         if not result:
-            raise RuntimeError(
-                f"E PYSERVER::CMDContext::hcloud_list(): " f"Couldn't execute `hcloud context list` command."
-            )
+            raise RuntimeError("E PYSERVER::CMDContext::hcloud_list(): Couldn't execute `hcloud context list` command.")
         #
         lines = result.split("\n")
         if len(lines) <= 1:
             raise RuntimeError(
-                f"E PYSERVER::CMDContext::hcloud_list(): "
-                f"`hcloud context list` returned no context. Please check if "
+                "E PYSERVER::CMDContext::hcloud_list(): "
+                "`hcloud context list` returned no context. Please check if "
                 f"you have configured tokens, \nOutput: {result}"
             )
         # `hcloud context list` prints out two columns of data (ACTIVE MAME)

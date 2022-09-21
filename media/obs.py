@@ -1,6 +1,4 @@
 import os
-import threading
-import time
 
 import obswebsocket as obs
 import obswebsocket.requests

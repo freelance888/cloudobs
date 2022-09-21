@@ -56,7 +56,7 @@ def validate_init_params(server_langs):
             if not str(websockets_port).isdigit():
                 return ExecutionStatus(status=False, message="`websocket_port` must be a number")
             # TODO: validate original_media_url
-    except:
+    except Exception:
         return ExecutionStatus(status=False, message="Invalid `server_langs` format")
     return ExecutionStatus(status=True)
 
