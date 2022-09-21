@@ -109,7 +109,7 @@ def broadcast(api_route,
         return responses_
 
 
-def after_media_play(params: MultilangParams, status: ExecutionStatus):
+def after_media_play_triggered(params: MultilangParams, status: ExecutionStatus):
     """
     :param params: media play params which was broadcasted to minions
     :param status: media play status returned from minions
@@ -486,9 +486,9 @@ def pull_media_schedule():
                     param_name="params", return_status=True, method_name="media_play"
                 )
                 try:
-                    after_media_play(params, status)
+                    after_media_play_triggered(params, status)
                 except Exception as ex:
-                    print(f"after_media_play: {ex}")
+                    print(f"after_media_play_triggered: {ex}")
                 return True
             except BaseException as ex:
                 print(f"E PYSERVER::common_service::media_schedule(): {ex}")
@@ -602,9 +602,9 @@ def media_play():
     )
 
     try:
-        after_media_play(params, status)
+        after_media_play_triggered(params, status)
     except Exception as ex:
-        print(f"after_media_play: {ex}")
+        print(f"after_media_play_triggered: {ex}")
 
     return status.to_http_status()
 
