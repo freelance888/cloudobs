@@ -184,6 +184,12 @@ class Minions:
         for lang in self.ip_dict.list_langs():
             self.ip_dict.remove_lang(lang)
 
+        try:
+            self.ssh_context.delete_vms()
+        except Exception as ex:
+            return False
+        return True
+
     def wait_until_provision(self, timeout=300):
         time_start = time.time()
         provision_status = self.check_provision()

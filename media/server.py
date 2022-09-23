@@ -55,7 +55,7 @@ class ServerSettings:
                 "objvers": "",
             },
             SUBJECT_TS_OFFSET: {
-                "value": 4000,
+                "value": 6000,
                 "objvers": "M",
             },
             SUBJECT_TS_VOLUME: {
@@ -76,7 +76,7 @@ class ServerSettings:
             SUBJECT_TRANSITION: {
                 "transition_name": "Cut",
                 "path": "",
-                "transition_point": 3600,
+                "transition_point": 6500,
                 "objvers": "M",
             },
             SUBJECT_GDRIVE_SETTINGS: {

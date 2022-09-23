@@ -29,7 +29,7 @@ from util.config import API_INFO_ROUTE
 from util.config import API_PULL_SHEETS
 from util.config import API_PUSH_SHEETS
 from util.config import API_VMIX_PLAYERS, API_VMIX_ACTIVE_PLAYER
-from util.config import API_SERVER_MINIONS
+from util.config import API_MINIONS_DELETE
 from util.util import ExecutionStatus, MultilangParams, CallbackThread
 from util.vmix import SourceSelector
 import util.util as util
@@ -301,6 +301,11 @@ def wakeup_minions(iplist):
 
 
 # ========== API ROUTES ========== #
+
+@app.route(API_MINIONS_DELETE, methods=["DELETE"])
+def delete_server_minions():
+    return ExecutionStatus(minions.cleanup(), "")
+
 
 @app.route(API_WAKEUP_ROUTE, methods=["POST"])
 def wakeup_route():
