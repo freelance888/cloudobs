@@ -7,6 +7,19 @@ class MediaScheduler:
     def __init__(self):
         self.cb_thread = CallbackThread()
         self.cb_thread.start()
+
+        """
+        Schedule: dictionary of
+        {
+            id: {
+                "name": name,
+                "timestamp": float(timestamp),
+                "is_enabled": True,
+                "is_played": False,
+                "foo": foo_wrap
+            }
+        }
+        """
         self.schedule = {}
         self._lock = Lock()
 
@@ -14,7 +27,15 @@ class MediaScheduler:
         self.cb_thread.running = False
 
     def get_schedule(self):
-        return self.schedule
+        schedule = self.schedule.copy()
+        for id in list(schedule.keys()):
+            schedule[id] = {
+                "name": schedule[id]["name"],
+                "timestamp": schedule[id]["timestamp"],
+                "is_enabled": schedule[id]["is_enabled"],
+                "is_played": schedule[id]["is_played"],
+            }
+        return schedule
 
     def create_schedule(self, schedule, foo):
         """
