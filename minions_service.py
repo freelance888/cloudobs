@@ -88,16 +88,36 @@ class CMDContext:
         cmd = CMD_DELETE_VMS
         self.popen(cmd)
 
-    def provision(self, ip_list):
+    def provision(self, ip_list, timeout=60):
         """
         :param ip_list: list of [..., [lang, ip], ...]
         :return:
         """
+        _t_start = time.time()
+
         # TODO: log function
         print(f"PYSERVER::Minions::provision(): Provisioning the following langs: {[lang for lang, _ in ip_list]}")
         sys.stdout.flush()
 
         self.upload_ip_list(ip_list)
+
+        # wait until ssh works fine
+        ssh_ok = False
+        while not ssh_ok:
+            ssh_ok = True
+            if time.time() - _t_start > timeout:
+                raise TimeoutError("Couldn't run provision through ssh")
+            try:
+                for _, ip in ip_list:
+                    # this one only checks if ssh working properly
+                    self.popen(f"ssh stream@{ip} echo OK", num_retries=1)
+            except Exception as ex:
+                # if self.popen throws an exception, that means it couldn't run a command via ssh
+                # try everything again
+                ssh_ok = False
+                time.sleep(2)
+                continue
+
         # ./init.sh --upload-files
         cmd = CMD_UPLOAD_FILES
         self.popen(cmd)

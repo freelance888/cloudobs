@@ -304,6 +304,10 @@ def wakeup_minions(iplist):
 
 # ========== API ROUTES ========== #
 
+@app.route(API_MINIONS_DELETE, methods=["DELETE"])
+def delete_server_minions():
+    return ExecutionStatus(minions.cleanup(), "")
+
 
 @app.route(API_WAKEUP_ROUTE, methods=["POST"])
 def wakeup_route():
