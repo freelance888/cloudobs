@@ -35,6 +35,7 @@ from util.config import (
     API_VMIX_ACTIVE_PLAYER,
     API_VMIX_PLAYERS,
     API_WAKEUP_ROUTE,
+    API_MINIONS_DELETE,
 )
 from util.util import CallbackThread, ExecutionStatus, MultilangParams
 from util.vmix import SourceSelector
