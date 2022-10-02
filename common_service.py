@@ -22,6 +22,7 @@ from util.config import (
     API_MEDIA_SCHEDULE_PULL,
     API_MEDIA_SCHEDULE_ROUTE,
     API_MEDIA_SCHEDULE_SETUP,
+    API_MINIONS_DELETE,
     API_PULL_SHEETS,
     API_PUSH_SHEETS,
     API_SET_STREAM_SETTINGS_ROUTE,
@@ -35,7 +36,6 @@ from util.config import (
     API_VMIX_ACTIVE_PLAYER,
     API_VMIX_PLAYERS,
     API_WAKEUP_ROUTE,
-    API_MINIONS_DELETE,
 )
 from util.util import CallbackThread, ExecutionStatus, MultilangParams
 from util.vmix import SourceSelector
@@ -304,6 +304,7 @@ def wakeup_minions(iplist):
 
 
 # ========== API ROUTES ========== #
+
 
 @app.route(API_MINIONS_DELETE, methods=["DELETE"])
 def delete_server_minions():

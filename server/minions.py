@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 import time
 from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 SA_DEPLOY_IP = os.getenv("SA_DEPLOY_IP", None)
@@ -189,6 +192,7 @@ class Minions:
         try:
             self.ssh_context.delete_vms()
         except Exception as ex:
+            logger.warrning(f"Failed to cleanup: {ex}")
             return False
         return True
 

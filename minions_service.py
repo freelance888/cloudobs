@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import sys
 import time
@@ -8,6 +9,7 @@ from flask import Flask, request
 from util.util import ExecutionStatus
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
 
 CMD_HCLOUD_LIST = "hcloud context list"
 CMD_HCLOUD_USE = "hcloud context use {name}"
@@ -114,6 +116,7 @@ class CMDContext:
             except Exception as ex:
                 # if self.popen throws an exception, that means it couldn't run a command via ssh
                 # try everything again
+                logger.debug(f"Retry provision because failed to provision with: {ex}")
                 ssh_ok = False
                 time.sleep(2)
                 continue
