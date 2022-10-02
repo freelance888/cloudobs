@@ -2,10 +2,9 @@ name: PROD | Build and Deploy
 
 on:
   push:
-    branches:
-      - 'main'
+    branches: ["main"]
   pull_request:
-    branches: main
+    branches: ["main"]
 
 env:
     HOST: app@${{ secrets.PROD_HOST_IP }}
@@ -20,6 +19,8 @@ env:
 jobs:
 
   build:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    needs: pre-commit
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -39,6 +40,7 @@ jobs:
         retention-days: 2
 
   deploy:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     needs: build
     steps:

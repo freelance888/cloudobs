@@ -1,20 +1,43 @@
-default_stages: [ commit ]
-
 repos:
-  # using local repos because that way versioning is done by Poetry
-  - repo: local
+  - repo: https://github.com/ambv/black
+    rev: "22.8.0"
     hooks:
-      # https://wemake-python-styleguide.readthedocs.io/en/latest/pages/usage/integrations/plugins.html#hooks
-      - id: flake8
-        name: flake8
-        description: linter
-        entry: flake8
-        args: [ "--config=.flake8" ]
-        language: python
-        types: [ python ]
       - id: black
-        name: black
-        description: formatter
-        entry: black
-        language: python
-        types: [ python ]
+        language_version: python3
+          # override until resolved: https://github.com/ambv/black/issues/402
+        files: \.pyi?$
+        types: []
+
+  - repo: https://gitlab.com/pycqa/flake8
+    rev: "5.0.4"
+    hooks:
+      - id: flake8
+        language_version: python3
+
+  - repo: https://github.com/PyCQA/isort
+    rev: "5.10.1"
+    hooks:
+      - id: isort
+        language_version: python3
+        args: ["--profile", "black"]
+        entry: isort
+        additional_dependencies: [toml]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: "v4.3.0"
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: debug-statements
+      - id: check-case-conflict
+      - id: check-yaml
+      - id: fix-byte-order-marker
+      - id: mixed-line-ending
+        args:
+          - --fix=lf
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: "v0.971"
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-requests]
+        args: [--no-strict-optional, --ignore-missing-imports]

@@ -1,11 +1,12 @@
-import pygsheets
-import pandas as pd
-from media.server import ServerSettings
-from media import server
-from dotenv import load_dotenv
 import os
 import re
-from datetime import datetime
+
+import pandas as pd
+import pygsheets
+from dotenv import load_dotenv
+
+from media import server
+from media.server import ServerSettings
 from util.util import MultilangParams
 
 load_dotenv()
@@ -79,11 +80,13 @@ class OBSGoogleSheets:
             else:
                 gdrive_folder_id = ""
 
-            self._update_lang(lang,
-                             source_url=source_url,
-                             target_server=target_server,
-                             target_key=target_key,
-                             gdrive_folder_id=gdrive_folder_id)
+            self._update_lang(
+                lang,
+                source_url=source_url,
+                target_server=target_server,
+                target_key=target_key,
+                gdrive_folder_id=gdrive_folder_id,
+            )
 
     def to_df(self):
         """
@@ -105,9 +108,9 @@ class OBSGoogleSheets:
             data.append([lang, source_url, target_server, target_key, gdrive_folder_url])
         return pd.DataFrame(data, columns=["lang", "source_url", "target_server", "target_key", "gdrive_folder_url"])
 
-    def to_multilang_params(self, subjects=(server.SUBJECT_SERVER_LANGS,
-                                            server.SUBJECT_GDRIVE_SETTINGS,
-                                            server.SUBJECT_STREAM_SETTINGS)):
+    def to_multilang_params(
+        self, subjects=(server.SUBJECT_SERVER_LANGS, server.SUBJECT_GDRIVE_SETTINGS, server.SUBJECT_STREAM_SETTINGS)
+    ):
         params = {}
         for lang in self.settings:
             info_ = self.dump_info(lang)
@@ -178,6 +181,7 @@ class OBSGoogleSheets:
         self._set_value(lang, "api_key", API_KEY)
         self._set_value(lang, "sync_seconds", SYNC_SECONDS)
         self._set_value(lang, "gdrive_sync_addr", GDRIVE_SYNC_ADDR)
+
 
 class TimingGoogleSheets:
     def __init__(self):

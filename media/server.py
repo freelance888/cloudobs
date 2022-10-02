@@ -1,19 +1,19 @@
 import glob
 import os
 import re
+from urllib.parse import urlencode
 
 import obswebsocket as obsws
-from dotenv import load_dotenv
-from urllib.parse import urlencode
 import requests
+from dotenv import load_dotenv
 
 from media import obs
 from util.util import ExecutionStatus
 
 load_dotenv()
-BASE_MEDIA_DIR = os.getenv('MEDIA_DIR', './content')
-DEFAULT_API_KEY = os.getenv('GDRIVE_API_KEY', '')
-DEFAULT_SYNC_SECONDS = int(os.getenv('GDRIVE_SYNC_SECONDS', 60))
+BASE_MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
+DEFAULT_API_KEY = os.getenv("GDRIVE_API_KEY", "")
+DEFAULT_SYNC_SECONDS = int(os.getenv("GDRIVE_SYNC_SECONDS", 60))
 MEDIA_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 
@@ -86,7 +86,7 @@ class ServerSettings:
                 "sync_seconds": 0,
                 "gdrive_sync_addr": "",
                 "objvers": "",
-            }
+            },
         }
 
     @staticmethod
@@ -99,11 +99,11 @@ class ServerSettings:
 
     def set(self, subject, attribute, value):
         if subject not in self._settings:
-            raise KeyError(f"Invalid subject \"{subject}\"")
+            raise KeyError(f'Invalid subject "{subject}"')
         if attribute not in self._settings[subject]:
-            raise KeyError(f"Invalid subject attribute \"{subject}.{attribute}\"")
+            raise KeyError(f'Invalid subject attribute "{subject}.{attribute}"')
         if attribute == "objvers":
-            raise KeyError(f"Explicit \"objvers\" modification is not allowed")
+            raise KeyError('Explicit "objvers" modification is not allowed')
 
         if self._settings[subject][attribute] == value:  # if the value is the same
             pass
@@ -113,46 +113,43 @@ class ServerSettings:
 
     def get_subject(self, subject):
         if subject not in self._settings:
-            raise KeyError(f"Invalid subject \"{subject}\"")
+            raise KeyError(f'Invalid subject "{subject}"')
         subject = self._settings[subject].copy()
         subject.pop("objvers")
         return subject
 
     def get(self, subject, attribute):
         if subject not in self._settings:
-            raise KeyError(f"Invalid subject \"{subject}\"")
+            raise KeyError(f'Invalid subject "{subject}"')
         if attribute not in self._settings[subject]:
-            raise KeyError(f"Invalid subject attribute \"{subject}.{attribute}\"")
+            raise KeyError(f'Invalid subject attribute "{subject}.{attribute}"')
         if attribute == "objvers":
-            raise KeyError(f"\"objvers\" access is not allowed")
+            raise KeyError('"objvers" access is not allowed')
         return self._settings[subject][attribute]
 
     def to_dict(self):
-        result = {
-            subject: self.get_subject(subject)
-            for subject in self.subjects
-        }
+        result = {subject: self.get_subject(subject) for subject in self.subjects}
         result[SUBJECT_SERVER_LANGS].pop("obs_host")
         return result
 
     def is_modified(self, subject):
         if subject not in self._settings:
-            raise KeyError(f"Invalid subject \"{subject}\"")
+            raise KeyError(f'Invalid subject "{subject}"')
         return self._settings[subject]["objvers"] == "M"
 
     def is_active(self, subject):
         if subject not in self._settings:
-            raise KeyError(f"Invalid subject \"{subject}\"")
+            raise KeyError(f'Invalid subject "{subject}"')
         return self._settings[subject]["objvers"] == "A"
 
     def activate(self, subject):
         if subject not in self._settings:
-            raise KeyError(f"Invalid subject \"{subject}\"")
+            raise KeyError(f'Invalid subject "{subject}"')
         self._settings[subject]["objvers"] = "A"
 
     def deactivate(self, subject):
         if subject not in self._settings:
-            raise KeyError(f"Invalid subject \"{subject}\"")
+            raise KeyError(f'Invalid subject "{subject}"')
         self._settings[subject]["objvers"] = ""
 
 
@@ -248,7 +245,7 @@ class Server:
         status = ExecutionStatus(status=True)
 
         use_file_num, name = params["search_by_num"], params["name"]
-        media_type = params['media_type'] if 'media_type' in params else 'media'
+        media_type = params["media_type"] if "media_type" in params else "media"
         media_dir = os.path.join(self.media_dir, "media")
 
         # search for the file
@@ -701,8 +698,7 @@ class Server:
         if not self.settings.is_modified(subject=SUBJECT_STREAM_SETTINGS):
             return
         stream_settings = self.settings.get_subject(SUBJECT_STREAM_SETTINGS)
-        self.obs_instance.set_stream_settings(server=stream_settings["server"],
-                                              key=stream_settings["key"])
+        self.obs_instance.set_stream_settings(server=stream_settings["server"], key=stream_settings["key"])
         self.settings.activate(SUBJECT_STREAM_SETTINGS)
 
     def activate_stream_on(self):
@@ -744,18 +740,21 @@ class Server:
         if not self.settings.is_modified(subject=SUBJECT_SIDECHAIN):
             return
         sidechain_settings = self.settings.get_subject(SUBJECT_SIDECHAIN)
-        self.obs_instance.setup_sidechain(ratio=sidechain_settings["ratio"],
-                                          release_time=sidechain_settings["release_time"],
-                                          output_gain=sidechain_settings["output_gain"],
-                                          threshold=sidechain_settings["threshold"])
+        self.obs_instance.setup_sidechain(
+            ratio=sidechain_settings["ratio"],
+            release_time=sidechain_settings["release_time"],
+            output_gain=sidechain_settings["output_gain"],
+            threshold=sidechain_settings["threshold"],
+        )
         self.settings.activate(SUBJECT_SIDECHAIN)
 
     def activate_transition(self):
         if not self.settings.is_modified(subject=SUBJECT_TRANSITION):
             return
         transition_settings = self.settings.get_subject(SUBJECT_TRANSITION)
-        self.obs_instance.setup_transition(transition_name=transition_settings["transition_name"],
-                                           transition_settings=transition_settings)
+        self.obs_instance.setup_transition(
+            transition_name=transition_settings["transition_name"], transition_settings=transition_settings
+        )
         self.settings.activate(SUBJECT_TRANSITION)
 
     def activate_gdrive(self):
@@ -771,17 +770,15 @@ class Server:
         drive_id = gdrive_settings["drive_id"]
         api_key = gdrive_settings["api_key"] if "api_key" in gdrive_settings else DEFAULT_API_KEY
         sync_seconds = gdrive_settings["sync_seconds"] if "sync_seconds" in gdrive_settings else DEFAULT_SYNC_SECONDS
-        gdrive_sync_addr = gdrive_settings["gdrive_sync_addr"] \
-                            if "gdrive_sync_addr" in gdrive_settings else "http://localhost:7000"
+        gdrive_sync_addr = (
+            gdrive_settings["gdrive_sync_addr"] if "gdrive_sync_addr" in gdrive_settings else "http://localhost:7000"
+        )
         gdrive_sync_addr = gdrive_sync_addr.rstrip("/")
 
         # build a query
-        query_params = urlencode({
-            "drive_id": drive_id,
-            "media_dir": media_dir,
-            "api_key": api_key,
-            "sync_seconds": sync_seconds
-        })
+        query_params = urlencode(
+            {"drive_id": drive_id, "media_dir": media_dir, "api_key": api_key, "sync_seconds": sync_seconds}
+        )
 
         response_ = requests.post(f"{gdrive_sync_addr}/init?{query_params}")
         if response_.status_code != 200:

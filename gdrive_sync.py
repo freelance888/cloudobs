@@ -1,25 +1,17 @@
 from __future__ import print_function
 
-import io
 import json
 import os.path
-import time
 import random
-import gdown
-from flask import Flask
-from flask import request
 import threading
-from dotenv import load_dotenv
+import time
 
+import gdown
+from dotenv import load_dotenv
+from flask import Flask, request
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.errors import HttpError
-from util.util import GDriveFiles
-from util.util import generate_file_md5
-from util.util import log
+
+from util.util import GDriveFiles, generate_file_md5, log
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -29,13 +21,14 @@ lock = threading.Lock()
 
 app = Flask(__name__)
 
+
 class DriveSync(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.files = GDriveFiles(with_lock=True)
         self.creds = None
 
-    def run(self):
+    def run(self):  # noqa: C901
         """
         Every `sync_period_seconds` lists child files within
         a specified `drive_id`, compares with a list of files
@@ -60,12 +53,18 @@ class DriveSync(threading.Thread):
                            'mimeType': 'audio/wav'}]}
                         """
                         time.sleep(random.randint(1, 5))
-                        files = service.files().list(q=f"'{drive_id}' in parents",
-                                                     supportsAllDrives=True,
-                                                     supportsTeamDrives=True,
-                                                     includeItemsFromAllDrives=True,
-                                                     includeTeamDriveItems=True,
-                                                     fields="files(id,name,md5Checksum)").execute()
+                        files = (
+                            service.files()
+                            .list(
+                                q=f"'{drive_id}' in parents",
+                                supportsAllDrives=True,
+                                supportsTeamDrives=True,
+                                includeItemsFromAllDrives=True,
+                                includeTeamDriveItems=True,
+                                fields="files(id,name,md5Checksum)",
+                            )
+                            .execute()
+                        )
                         # if something went wrong
                         if "files" not in files:
                             raise Exception(f"Couldn't list files in specified driveId. Error: {files}")
@@ -105,7 +104,7 @@ class DriveSync(threading.Thread):
             time.sleep(sync_seconds)
 
 
-@app.route('/init', methods=['POST'])
+@app.route("/init", methods=["POST"])
 def init():
     """
     Query parameters:
@@ -131,18 +130,18 @@ def init():
 
         b_init = True
         os.system(f"mkdir -p {media_dir}")
-    return 'Ok', 200
+    return "Ok", 200
 
 
-@app.route('/files', methods=['GET'])
+@app.route("/files", methods=["GET"])
 def get_files():
     data = [[fname, state] for fname, state in drive_sync.files.items()]
     return json.dumps(data), 200
 
 
-@app.route('/healthcheck', methods=['GET'])
+@app.route("/healthcheck", methods=["GET"])
 def healthcheck():
-    return '', 200
+    return "", 200
 
 
 drive_sync = DriveSync()

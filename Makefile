@@ -41,4 +41,4 @@ pc-update:
 	pre-commit autoupdate
 
 pc-run:
-	pre-commit run
+	pre-commit run --all-files

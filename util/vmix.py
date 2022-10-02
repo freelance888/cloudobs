@@ -10,13 +10,13 @@ class SourceSelector:
         """
         assert isinstance(ip_list, list), f"`ip_list` should be type of list, {type(ip_list)} got"
         for element in ip_list:
-            assert isinstance(element, dict), f"Element of `ip_list` should be type of dict, " \
-                                              f"{type(element)} got"
-            assert len(element) == 2 and \
-                   "ip" in element and "label" in element, f"Element of `ip_list` should " \
-                                                           f"have the following structure: " \
-                                                           f"{{\"ip\": \"...\", \"label\": \"...\"}}, " \
-                                                           f"got {element}"
+            assert isinstance(element, dict), f"Element of `ip_list` should be type of dict, " f"{type(element)} got"
+            assert len(element) == 2 and "ip" in element and "label" in element, (
+                f"Element of `ip_list` should "
+                f"have the following structure: "
+                f'{{"ip": "...", "label": "..."}}, '
+                f"got {element}"
+            )
         self.ip_list = ip_list
         self.set_active_ip("*")
 

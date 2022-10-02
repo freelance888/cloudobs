@@ -3,21 +3,21 @@
  - Initializes the server
  - Accepts the following parameters:
    - `server_langs` -
-    json, dict of 
+    json, dict of
      ```
      "lang": {
         "host_url": "localhost",  # url of an instance_service
         "websocket_port": 1234,   # obs websocket port
         "password": "qwerty123",  # obs websocket password (not working yet)
         "original_media_url": "srt://localhost"  # rtmp/srt source url
-     }     
+     }  
      ```
    - `sheet_url` - google sheet url (`server_langs` should not be specified)
-   - `worksheet_name` - google sheet worksheet name, (should be specified along 
+   - `worksheet_name` - google sheet worksheet name, (should be specified along
      with `sheet_url`)
-   - `force_deploy_minions` - specifies if the server should force redeploy 
-     minions. Usually it deploys minions only if the server was not woken up 
-     (if you have not called `POST /wakeup` route yet). So that if you set 
+   - `force_deploy_minions` - specifies if the server should force redeploy
+     minions. Usually it deploys minions only if the server was not woken up
+     (if you have not called `POST /wakeup` route yet). So that if you set
      `force_deploy_minions=true` -> the server will redeploy minions.
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
 ### `GET /init`
@@ -98,7 +98,7 @@
  - Pulls the schedule from google sheets. Saves it in some buffer, which
    is supposed to be used in `POST /media/schedule`
 ### `POST /media/schedule`
- - Schedules media play (note that the schedule should be pulled from 
+ - Schedules media play (note that the schedule should be pulled from
    google sheets in advance by using `POST /media/schedule/pull`)
 ### `GET /media/schedule`
  - Returns current media schedule
@@ -109,7 +109,7 @@
     "name": "...",
     "timestamp": ...,
     "is_enabled": true/false,
-    "is_played": true/false  # this attribute shows if the 
+    "is_played": true/false  # this attribute shows if the
                              # video was already played
   },
   id_2: {
@@ -135,7 +135,7 @@
     ```
     {"lang": {"name": "...", "search_by_num": "0/1"}, ...}
     ```
-   where `name` is the name of the video, `search_by_num` - 
+   where `name` is the name of the video, `search_by_num` -
    points the server needs to search a file by first `n` numbers in name,
    for example if `name="001_test.mp4"`, the server will search for a file
    which full name even does not match `001_test.mp4`, but it's name starts with
@@ -157,7 +157,7 @@
    transition_name      - supported values are ("Cut", "Stinger"); required
    transition_point     - transition point in ms; required for "Stinger",
                           optional for "Cut" (used as delay for "Cut")
-   path                 - the name of media file to use as transition 
+   path                 - the name of media file to use as transition
                           (e.g. "stinger_1.mp4"); required for "Stinger"
    ```
    If some are not provided, default values will be used.
@@ -282,9 +282,9 @@
 ### `GET /gdrive/files`
  - Returns information about google drive files
  - Accepts the following parameters:
-   - `return_details` - `"1/0"` (default `0`), points if needed to return 
+   - `return_details` - `"1/0"` (default `0`), points if needed to return
      detailed info for all languages. Values:
-     - `0` - returns 
+     - `0` - returns
        ```
        {"__all__": [... [filename, true/false - loaded/not loaded], ...]}
        ```
@@ -295,7 +295,7 @@
 ## VMIX PLAYERS API
 ### `GET /vmix/players`
  - Returns posted vmix players (ip addresses which are allowed to play video)
- - Returns a list of dicts with the format `{"ip": "...", "label": "...", 
+ - Returns a list of dicts with the format `{"ip": "...", "label": "...",
    "active": true/false}`, e.g.:
 ```
 [
@@ -309,7 +309,7 @@
 ### `POST /vmix/players`
  - Posts vmix players ip addresses
  - Accepts the following parameters:
-   - `ip_list` - list of dicts with the format `{"ip": "...", "label": "..."}`, 
+   - `ip_list` - list of dicts with the format `{"ip": "...", "label": "..."}`,
      e.g.:
 ```
 [
@@ -326,7 +326,7 @@
  - Sets active vmix player
  - Accepts the following parameters:
    - `ip` - ip address
- - if `ip` is not in the list posted using `POST /vmix/players` - exception is 
+ - if `ip` is not in the list posted using `POST /vmix/players` - exception is
    raised
  - `ip` also can be set to `*` -> this allows all ip addresses to play video
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
