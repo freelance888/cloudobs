@@ -594,6 +594,7 @@ def delete_media_schedule():
         return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
     if timing_sheets.timing_df is None:
         return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
+    status = broadcast(API_MEDIA_PLAY_ROUTE, "DELETE", return_status=True, method_name="media_play")
     return media_scheduler.delete_schedule().to_http_status()
 
 
