@@ -1003,7 +1003,7 @@ def before_request():
         if not init_status and request.path not in (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE):
             return f"{request.path} is not allowed before initialization"
 
-    if request.path == API_MEDIA_PLAY_ROUTE:
+    if request.path in (API_MEDIA_PLAY_ROUTE, API_MEDIA_SCHEDULE_ROUTE):
         if not vmix_selector.is_allowed(request.remote_addr):
             return f'This API is not allowed from "{request.remote_addr}"'
 
