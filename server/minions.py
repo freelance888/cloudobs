@@ -188,11 +188,10 @@ class Minions:
     def cleanup(self):
         for lang in self.ip_dict.list_langs():
             self.ip_dict.remove_lang(lang)
-
         try:
             self.ssh_context.delete_vms()
         except Exception as ex:
-            logger.warrning(f"Failed to cleanup: {ex}")
+            logger.warning(f"Failed to cleanup: {ex}")
             return False
         return True
 

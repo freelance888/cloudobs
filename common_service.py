@@ -308,7 +308,7 @@ def wakeup_minions(iplist):
 
 @app.route(API_MINIONS_DELETE, methods=["DELETE"])
 def delete_server_minions():
-    return ExecutionStatus(minions.cleanup(), "")
+    return ExecutionStatus(minions.cleanup(), "").to_http_status()
 
 
 @app.route(API_WAKEUP_ROUTE, methods=["POST"])
@@ -595,6 +595,7 @@ def delete_media_schedule():
         return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
     if timing_sheets.timing_df is None:
         return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
+    status = broadcast(API_MEDIA_PLAY_ROUTE, "DELETE", return_status=True, method_name="media_play")
     return media_scheduler.delete_schedule().to_http_status()
 
 
@@ -1003,7 +1004,7 @@ def before_request():
         if not init_status and request.path not in (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE):
             return f"{request.path} is not allowed before initialization"
 
-    if request.path == API_MEDIA_PLAY_ROUTE:
+    if request.path in (API_MEDIA_PLAY_ROUTE, API_MEDIA_SCHEDULE_ROUTE):
         if not vmix_selector.is_allowed(request.remote_addr):
             return f'This API is not allowed from "{request.remote_addr}"'
 

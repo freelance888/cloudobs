@@ -62,6 +62,7 @@ class DriveSync(threading.Thread):
                                 includeItemsFromAllDrives=True,
                                 includeTeamDriveItems=True,
                                 fields="files(id,name,md5Checksum)",
+                                pageSize=1000,
                             )
                             .execute()
                         )
