@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from media import server
 from media.server import ServerSettings
-from util.util import MultilangParams
+from util.util import (MultilangParams, to_seconds)
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -214,15 +214,6 @@ class TimingGoogleSheets:
         12:01:01    03_video.mp4
         """
         df = self.ws.get_as_df()  # load data from google sheets
-
-        def to_seconds(ts_str):
-            if not re.fullmatch(r"\d{1,2}\:\d{2}\:\d{2}", ts_str):
-                raise f"Timestamp has invalid format: {ts_str}"
-            r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})", ts_str)
-            hour, minute, second = r.group("hour"), r.group("minute"), r.group("second")
-            hour, minute, second = int(hour), int(minute), int(second)
-
-            return hour * 3600 + minute * 60 + second * 1
 
         df["timestamp"] = df["timestamp"].apply(to_seconds)
         df = df[["timestamp", "name"]]
