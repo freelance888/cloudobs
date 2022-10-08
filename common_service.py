@@ -37,7 +37,7 @@ from util.config import (
     API_VMIX_PLAYERS,
     API_WAKEUP_ROUTE,
 )
-from util.util import CallbackThread, ExecutionStatus, MultilangParams
+from util.util import (CallbackThread, ExecutionStatus, MultilangParams, to_seconds)
 from util.vmix import SourceSelector
 
 load_dotenv()
@@ -98,6 +98,8 @@ def broadcast(
         responses_ = util.async_aiohttp_get_all(urls=urls)
     elif http_method == "POST":
         responses_ = util.async_aiohttp_post_all(urls=urls)
+    elif http_method == "DELETE":
+        responses_ = util.async_aiohttp_delete_all(urls=urls)
     responses_ = {lang: responses_[i] for i, lang in enumerate(requests_.keys())}
 
     # return status of response or the response itself
@@ -578,11 +580,19 @@ def update_media_schedule():
         return ExecutionStatus(False, message="Please specify schedule id").to_http_status()
     try:
         id_ = int(id_)
-    except Exception:
+    except:
         return ExecutionStatus(False, message="Invalid `id`")
     name = request.args.get("name", None)
     timestamp = request.args.get("timestamp", None)
     is_enabled = request.args.get("is_enabled", None)
+
+    assert is_enabled is None or is_enabled in ("true", "false")
+    if is_enabled is not None:
+        is_enabled = json.loads(is_enabled)
+
+    assert timestamp is None or bool(re.fullmatch(r"\d{1,2}\:\d{2}\:\d{2}", timestamp))
+    if timestamp is not None:
+        timestamp = to_seconds(timestamp)
 
     status = media_scheduler.modify_schedule(id_=id_, name=name, timestamp=timestamp, is_enabled=is_enabled)
 
@@ -595,7 +605,7 @@ def delete_media_schedule():
         return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
     if timing_sheets.timing_df is None:
         return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
-    status = broadcast(API_MEDIA_PLAY_ROUTE, "DELETE", return_status=True, method_name="media_play")
+    broadcast(API_MEDIA_PLAY_ROUTE, "DELETE", return_status=True, method_name="media_play")
     return media_scheduler.delete_schedule().to_http_status()
 
 

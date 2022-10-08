@@ -45,6 +45,24 @@ def async_aiohttp_post_all(urls):
     return sync.async_to_sync(get_all)(urls)
 
 
+def async_aiohttp_delete_all(urls):
+    """
+    performs asynchronous get requests
+    """
+
+    async def get_all(urls):
+        async with aiohttp.ClientSession() as session:
+
+            async def fetch(url):
+                async with session.delete(url) as response:
+                    return Response(await response.text(), response.status)
+
+            return await asyncio.gather(*[fetch(url) for url in urls])
+
+    # call get_all as a sync function to be used in a sync context
+    return sync.async_to_sync(get_all)(urls)
+
+
 def validate_init_params(server_langs):
     try:
         for lang, lang_info in server_langs.items():
@@ -80,6 +98,20 @@ def generate_file_md5(filename, blocksize=2**25):
                 break
             m.update(buf)
     return m.hexdigest()
+
+
+def to_seconds(timestamp_str):
+    """
+    :param timestamp_str: string representation of time. Format of 00:00:00
+    :return:
+    """
+    if not re.fullmatch(r"\d{1,2}\:\d{2}\:\d{2}", timestamp_str):
+        raise f"Timestamp has invalid format: {timestamp_str}"
+    r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})", timestamp_str)
+    hour, minute, second = r.group("hour"), r.group("minute"), r.group("second")
+    hour, minute, second = int(hour), int(minute), int(second)
+
+    return hour * 3600 + minute * 60 + second * 1
 
 
 def log(text):
