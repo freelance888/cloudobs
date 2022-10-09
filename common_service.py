@@ -310,7 +310,12 @@ def wakeup_minions(iplist):
 
 @app.route(API_MINIONS_DELETE, methods=["DELETE"])
 def delete_server_minions():
-    return ExecutionStatus(minions.cleanup(), "").to_http_status()
+    cleanup_status = minions.cleanup()
+    if cleanup_status:
+        global init_status, wakeup_status
+        init_status = False
+        wakeup_status = False
+    return ExecutionStatus(cleanup_status, "").to_http_status()
 
 
 @app.route(API_WAKEUP_ROUTE, methods=["POST"])
@@ -590,7 +595,7 @@ def update_media_schedule():
     if is_enabled is not None:
         is_enabled = json.loads(is_enabled)
 
-    assert timestamp is None or bool(re.fullmatch(r"\d{1,2}\:\d{2}\:\d{2}", timestamp))
+    assert timestamp is None or bool(re.fullmatch(r"\d{1,2}\:\d{2}\:\d{2}", timestamp))  # 00:01:59
     if timestamp is not None:
         timestamp = to_seconds(timestamp)
 
