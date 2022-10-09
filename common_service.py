@@ -580,7 +580,7 @@ def update_media_schedule():
         return ExecutionStatus(False, message="Please specify schedule id").to_http_status()
     try:
         id_ = int(id_)
-    except:
+    except BaseException:
         return ExecutionStatus(False, message="Invalid `id`")
     name = request.args.get("name", None)
     timestamp = request.args.get("timestamp", None)
