@@ -1,6 +1,7 @@
 API_WAKEUP_ROUTE = "/wakeup"
 API_INIT_ROUTE = "/init"
 API_INFO_ROUTE = "/info"
+API_GET_SERVER_STATE = "/state"
 API_MEDIA_SCHEDULE_ROUTE = "/media/schedule"
 API_MEDIA_SCHEDULE_SETUP = "/media/schedule/setup"
 API_MEDIA_SCHEDULE_PULL = "/media/schedule/pull"

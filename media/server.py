@@ -159,6 +159,7 @@ class Server:
 
         self.obs_instance: obs.OBS = None
         self.obs_client = None
+        self.obs_connected = False
         self.is_initialized = False
 
         self.media_dir = MEDIA_DIR
@@ -212,6 +213,7 @@ class Server:
                 self.obs_client.disconnect()
             except Exception as ex:
                 print(f"PYSERVER::Server::drop_connections(): {ex}")
+        self.obs_connected = False
 
     def schedule_media(self, schedule):
         """
@@ -601,7 +603,9 @@ class Server:
 
         # establish connections
         try:
-            self.obs_client.connect()
+            if not self.obs_connected:
+                self.obs_client.connect()
+                self.obs_connected = True
         except BaseException as ex:
             msg_ = (
                 "E PYSERVER::Server::_establish_connections(): Couldn't connect to obs server. "
@@ -676,18 +680,18 @@ class Server:
     def activate_server_langs(self):
         if not self.settings.is_modified(subject=SUBJECT_SERVER_LANGS):
             return
-        self.drop_connections()
+        #self.drop_connections()
 
         status = self._establish_connections(verbose=True)
 
         if not status:
-            self.drop_connections()
+            #self.drop_connections()
             return status
 
         status = self._initialize_obs_controllers(verbose=True)
 
         if not status:
-            self.drop_connections()
+            #self.drop_connections()
             return status
 
         self.is_initialized = True
