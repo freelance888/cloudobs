@@ -36,8 +36,9 @@ from util.config import (
     API_VMIX_ACTIVE_PLAYER,
     API_VMIX_PLAYERS,
     API_WAKEUP_ROUTE,
+    API_GET_SERVER_STATE,
 )
-from util.util import (CallbackThread, ExecutionStatus, MultilangParams, to_seconds)
+from util.util import (CallbackThread, ExecutionStatus, MultilangParams, to_seconds, ServerState)
 from util.vmix import SourceSelector
 
 load_dotenv()
@@ -338,6 +339,15 @@ def wakeup_route():
         return ExecutionStatus(False, f"Something happened. Details: {ex}").to_http_status()
 
     return wakeup_minions(iplist).to_http_status()
+
+
+@app.route(API_GET_SERVER_STATE, methods=["GET"])
+def get_state():
+    if not wakeup_status:
+        return ServerState.SLEEPING
+    if not init_status:
+        return ServerState.NOT_INITIALIZED
+    return ServerState.RUNNING
 
 
 @app.route(API_INFO_ROUTE, methods=["GET"])

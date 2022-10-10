@@ -341,3 +341,9 @@ class CallbackThread(threading.Thread):
                 foo()
         except BaseException as ex:
             print(f"E PYSERVER::CallbackThread::_invoke(): {ex}")
+
+
+class ServerState:
+    SLEEPING = "sleeping"
+    NOT_INITIALIZED = "not initialized"
+    RUNNING = "running"

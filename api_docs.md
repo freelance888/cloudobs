@@ -24,6 +24,9 @@
  - Returns current `server_lang` variable of the server (see `GET /info`)
  - Works even if the server was not initialized, in this case the function
    returns data with `host_url` filled.
+### `GET /state`
+ - Returns current server state
+ - Possible values: `["sleeping", "not initialized", "running"]`
 ### `GET /info`
  - Returns current server state.
  - Works even if the server was not initialized, in this case the function
@@ -80,13 +83,15 @@
     }
 }
 ```
+### `POST /cleanup`
+ - Cleans up the server: stop streaming -> reset scenes -> close obs connections
+### `DELETE /minions/delete_vms`
+ - Deletes all the minion servers. Puts the server into "sleeping" state.
 ### `POST /sheets/pull`
  - Pulls data from Google Sheets (only available if the server was initialized using
    Google Sheets url) and synchronizes the server according to the sheets dataframe.
 ### `POST /sheets/push`
  - Pushes data from the server to Google Sheets
-### `POST /cleanup`
- - Cleans up the server: stop streaming -> reset scenes -> close obs connections
 ## MEDIA TIMING SCHEDULE API
 ### `POST /media/schedule/setup`
  - Sets up google sheets page info
@@ -123,7 +128,7 @@
  - Accepts the following parameters:
    - `id` - schedule id, required (see `GET /media/schedule`)
    - `name` - new video name, optional
-   - `timestamp` - new timestamp, optional
+   - `timestamp` - new timestamp, optional (format of `hh:mm:ss`)
    - `is_enabled` - enables/disables specified schedule, optional
 ### `DELETE /media/schedule`
  - Removes current media schedule

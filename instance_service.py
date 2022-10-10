@@ -100,9 +100,10 @@ def wakeup():
     global wakeup_status
     global obs_server
 
-    if not wakeup_status or obs_server is None:
+    if obs_server is None:
         obs_server = server.Server()
-        wakeup_status = True
+    wakeup_status = True
+
     return "Ok", 200
 
 
@@ -132,10 +133,12 @@ def init():
             time.sleep(1)  # wait for cleanup
         except Exception:  # FIXME
             pass
-        del obs_server
-        obs_server = None
+        #del obs_server
+        #obs_server = None
 
-    obs_server = server.Server()
+    if obs_server is None:
+        obs_server = server.Server()
+
     status: ExecutionStatus = obs_server.initialize(server_langs=server_langs)
 
     return status.to_http_status()
@@ -154,8 +157,8 @@ def cleanup():
 
     if obs_server is not None:
         obs_server.cleanup()
-        del obs_server
-        obs_server = None
+        #del obs_server
+        #obs_server = None
         wakeup_status = False
 
     return ExecutionStatus(status=True).to_http_status()
