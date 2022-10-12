@@ -41,6 +41,10 @@ class IPDict:
             if self._ip_list[ip] == lang:
                 self.reset_ip_lang(ip)
 
+    def remove_ip(self, ip):
+        if ip in self._ip_list:
+            self._ip_list.pop(ip)
+
     def ip_has_lang(self, ip):
         return ip in self._ip_list
 
@@ -72,6 +76,10 @@ class IPDict:
         :return: list of [... [lang, ip], ...]
         """
         return [[lang, ip] for ip, lang in self._ip_list.items()]
+
+    def cleanup(self):
+        for ip in list(self._ip_list.keys()):
+            self.remove_ip(ip)
 
 
 class SSHContext:
@@ -186,8 +194,7 @@ class Minions:
         return self.ip_dict.ip_list()
 
     def cleanup(self):
-        for lang in self.ip_dict.list_langs():
-            self.ip_dict.remove_lang(lang)
+        self.ip_dict.cleanup()
         try:
             self.ssh_context.delete_vms()
         except Exception as ex:
