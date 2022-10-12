@@ -1023,10 +1023,11 @@ def healthcheck():
 @app.before_request
 def before_request():
     if not wakeup_status:
-        if request.path not in (API_WAKEUP_ROUTE, API_INIT_ROUTE):
+        if request.path not in (API_WAKEUP_ROUTE, API_INIT_ROUTE, API_GET_SERVER_STATE):
             return "The server is sleeping :) Tell the admin to wake it up."
     else:  # if the server has already woken up
-        if not init_status and request.path not in (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE):
+        if not init_status and request.path not in \
+                (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE, API_GET_SERVER_STATE):
             return f"{request.path} is not allowed before initialization"
 
     if request.path in (API_MEDIA_PLAY_ROUTE, API_MEDIA_SCHEDULE_ROUTE):
