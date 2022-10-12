@@ -54,6 +54,7 @@ class OBS:
         self.delete_source(ORIGINAL_STREAM_SOURCE_NAME)
 
         source_settings = {
+            "buffering_mb": 10,
             "input": original_media_source,
             "is_local_file": False,
         }
