@@ -5,6 +5,7 @@ import os.path
 import random
 import threading
 import time
+import requests
 
 import gdown
 from dotenv import load_dotenv
@@ -85,7 +86,18 @@ class DriveSync(threading.Thread):
                                     self.files[fname] = True
 
                             if not self.files[fname]:
-                                gdown.download(id=fid, output=flocal, quiet=True)
+                                #try:
+                                #    gdown.download(id=fid, output=flocal, quiet=True)
+                                #except:
+                                #    print(f"Couldn't download file {fid} via gdown, downloading via requests.get()")
+                                #    try:
+                                response = requests.get(f"https://drive.google.com/uc?id={fid}&export=download&confirm=y")
+                                with open(flocal, "wb") as fp:
+                                    fp.write(response.content)
+                                del response
+                                #    except:
+                                #        print(f"Couldn't download file {fid} at all, skipping")
+
                                 # time.sleep(random.randint(1, 5))
                                 # request_ = service.files().get_media(fileId=fid)
                                 #
