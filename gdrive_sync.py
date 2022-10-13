@@ -91,6 +91,7 @@ class DriveSync(threading.Thread):
                                 #except:
                                 #    print(f"Couldn't download file {fid} via gdown, downloading via requests.get()")
                                 #    try:
+                                time.sleep(random.randint(5, 20))
                                 response = requests.get(f"https://drive.google.com/uc?id={fid}&export=download&confirm=y")
                                 with open(flocal, "wb") as fp:
                                     fp.write(response.content)
