@@ -93,12 +93,12 @@ class DriveSync(threading.Thread):
                                     print(f"Couldn't download file {fid} via gdown, downloading via requests.get()")
 
                                 # if couldn't download via gdown, download with requests
-                                if not os.path.isfile(flocal) or generate_file_md5(flocal) != fmd5Checksum:
-                                    response = requests.get(f"https://drive.google.com/uc?id={fid}&export=download&confirm=y")
-                                    if len(response.content) > 10000:
-                                        with open(flocal, "wb") as fp:
-                                            fp.write(response.content)
-                                    del response
+                                #if not os.path.isfile(flocal) or generate_file_md5(flocal) != fmd5Checksum:
+                                    #response = requests.get(f"https://drive.google.com/uc?id={fid}&export=download&confirm=y")
+                                    #if len(response.content) > 10000:
+                                    #    with open(flocal, "wb") as fp:
+                                    #        fp.write(response.content)
+                                    #del response
                                 #    except:
                                 #        print(f"Couldn't download file {fid} at all, skipping")
 
