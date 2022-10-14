@@ -89,33 +89,14 @@ class DriveSync(threading.Thread):
                             if not self.files[fname]:
                                 try:
                                     gdown.download(id=fid, output=flocal, quiet=True)
-                                except:
-                                    print(f"Couldn't download file {fid} via gdown, downloading via requests.get()")
 
-                                # if couldn't download via gdown, download with requests
-                                #if not os.path.isfile(flocal) or generate_file_md5(flocal) != fmd5Checksum:
-                                    #response = requests.get(f"https://drive.google.com/uc?id={fid}&export=download&confirm=y")
-                                    #if len(response.content) > 10000:
-                                    #    with open(flocal, "wb") as fp:
-                                    #        fp.write(response.content)
-                                    #del response
-                                #    except:
-                                #        print(f"Couldn't download file {fid} at all, skipping")
-
-                                # time.sleep(random.randint(1, 5))
-                                # request_ = service.files().get_media(fileId=fid)
-                                #
-                                # with io.FileIO(flocal, mode="w") as fh:
-                                #     downloader = MediaIoBaseDownload(fh, request_)
-                                #     done = False
-                                #     while not done:
-                                #         status, done = downloader.next_chunk()
-                                #         # print("Download %d%%." % int(status.progress() * 100))
-                                if generate_file_md5(flocal) == fmd5Checksum:
-                                    self.files[fname] = True
-                                    log(f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}")
-                                else:
-                                    log(f"E PYSERVER::run_drive_sync(): Couldn't verify checksum for {fname}")
+                                    if generate_file_md5(flocal) == fmd5Checksum:
+                                        self.files[fname] = True
+                                        log(f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}")
+                                    else:
+                                        log(f"E PYSERVER::run_drive_sync(): Couldn't verify checksum for {fname}")
+                                except Exception as ex:
+                                    print(f"Couldn't download file {fid} via gdown. Details: {ex}")
             except Exception as ex:
                 log(f"E PYSERVER::run_drive_sync(): {ex}")
             time.sleep(sync_seconds)
