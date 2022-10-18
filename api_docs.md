@@ -26,7 +26,8 @@
    returns data with `host_url` filled.
 ### `GET /state`
  - Returns current server state
- - Possible values: `["sleeping", "not initialized", "running"]`
+ - Possible values: `["sleeping", "initializing", "not initialized", 
+                      "running", "disposing"]`
 ### `GET /info`
  - Returns current server state.
  - Works even if the server was not initialized, in this case the function

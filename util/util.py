@@ -3,6 +3,7 @@ import hashlib
 import re
 import sys
 import threading
+from threading import Lock
 import time
 
 import aiohttp
@@ -346,4 +347,37 @@ class CallbackThread(threading.Thread):
 class ServerState:
     SLEEPING = "sleeping"
     NOT_INITIALIZED = "not initialized"
+    INITIALIZING = "initializing"
     RUNNING = "running"
+    DISPOSING = "disposing"
+
+    def __init__(self, state):
+        assert state in (ServerState.SLEEPING, ServerState.NOT_INITIALIZED, ServerState.INITIALIZING,
+                         ServerState.RUNNING, ServerState.DISPOSING)
+        self.state = state
+        self.lock = Lock()
+
+    def set(self, state):
+        assert state in (ServerState.SLEEPING, ServerState.NOT_INITIALIZED, ServerState.INITIALIZING,
+                         ServerState.RUNNING, ServerState.DISPOSING)
+        with self.lock:
+            self.state = state
+
+    def get(self):
+        with self.lock:
+            return self.state
+
+    def sleeping(self):
+        return self.state == ServerState.SLEEPING
+
+    def not_initialized(self):
+        return self.state == ServerState.NOT_INITIALIZED
+
+    def initializing(self):
+        return self.state == ServerState.INITIALIZING
+
+    def running(self):
+        return self.state == ServerState.RUNNING
+
+    def disposing(self):
+        return self.state == ServerState.DISPOSING
