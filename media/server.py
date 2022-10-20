@@ -597,13 +597,12 @@ class Server:
         """
         # create obs ws clients
         lang_info = self.settings.get_subject(SUBJECT_SERVER_LANGS)
-        self.obs_client = obsws.obsws(host=lang_info["obs_host"], port=int(lang_info["websocket_port"]))
-
         status = ExecutionStatus(status=True)
 
         # establish connections
         try:
             if not self.obs_connected:
+                self.obs_client = obsws.obsws(host=lang_info["obs_host"], port=int(lang_info["websocket_port"]))
                 self.obs_client.connect()
                 self.obs_connected = True
         except BaseException as ex:

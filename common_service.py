@@ -62,7 +62,8 @@ if SENTRY_DSN:
 app = Flask(__name__)
 instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
 langs: list[str] = []
-init_status, wakeup_status = False, False
+server_state = ServerState(ServerState.SLEEPING)
+# init_status, wakeup_status = False, False
 cb_thread = CallbackThread()
 media_scheduler = MediaScheduler()
 sheets = OBSGoogleSheets()
@@ -72,12 +73,12 @@ minions = Minions()
 
 
 def broadcast(
-    api_route,
-    http_method,
-    params: util.MultilangParams = None,
-    param_name="params",
-    return_status=False,
-    method_name="broadcast",
+        api_route,
+        http_method,
+        params: util.MultilangParams = None,
+        param_name="params",
+        return_status=False,
+        method_name="broadcast",
 ):
     requests_ = {}  # lang: request
     responses_ = {}  # lang: response
@@ -145,28 +146,43 @@ def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
     This function converts google sheets data to api request and
     broadcasts it across all minions
     """
+    deploy_minions = ((deploy_minions and server_state.sleeping()) or force_deploy_minions)
+    last_state = server_state.get()
+
     try:
-        if (deploy_minions and not wakeup_status) or force_deploy_minions:
-            langs = sheets.to_df()["lang"].values
-            # ip_list_for_provision - list of [..., [lang, ip], ...], only those ones which have been just deployed
-            # and provisioned
-            # deploy minions if they haven't been deployed yet
-            ip_list = minions.ensure_langs(langs, wait_for_provision=True, provision_timeout=500)
-            # wake up those which were just deployed
-            wakeup_minions(ip_list)
+        server_state.set(ServerState.INITIALIZING)
+        if deploy_minions:
+            try:
+                langs = sheets.to_df()["lang"].values
+                # ip_list_for_provision - list of [..., [lang, ip], ...], only those ones which have been just deployed
+                # and provisioned
+                # deploy minions if they haven't been deployed yet
+                ip_list = minions.ensure_langs(langs, wait_for_provision=True, provision_timeout=500)
+                # wake up those which were just deployed
+                wakeup_minions(ip_list)
+            except Exception as ex:  # if deployment has failed, delete minions and reraise exception
+                server_state.set(ServerState.SLEEPING)
+                minions.cleanup()
+                raise ex
         # pull broadcast-related parameters from google sheets
         params = sheets.to_multilang_params()
         for lang in params:
-            params[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
+            try:
+                params[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
+            except KeyError:
+                server_state.set(last_state)  # reset state
+                return ExecutionStatus(False, f"No minion deployed for lang {lang}")
     except TimeoutError as ex:
-        msg_ = f"Provisioning timeout, please check if the deployment server works properly. " f"Details: {ex}"
+        msg_ = f"Provisioning timeout, please check if the deployment server works properly. Details: {ex}"
         print(msg_)
+        server_state.set(ServerState.SLEEPING)
         return ExecutionStatus(False, msg_)
     except Exception as ex:
         msg_ = (
-            f"Something happened while preparing for synchronization the server from Google Sheets. " f"Details: {ex}"
+            f"Something happened while preparing for synchronization the server from Google Sheets. Details: {ex}"
         )
         print(msg_)
+        server_state.set(last_state)  # reset state
         return ExecutionStatus(False, msg_)
     status = broadcast(
         api_route=API_INFO_ROUTE,
@@ -176,6 +192,10 @@ def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
         return_status=True,
         method_name="init_from_sheets",
     )
+    if status:
+        server_state.set(ServerState.RUNNING)
+    else:
+        server_state.set(ServerState.NOT_INITIALIZED)
     return status
 
 
@@ -300,8 +320,12 @@ def wakeup_minions(iplist):
     )  # returns ExecutionStatus
 
     # the server has woken up
-    global wakeup_status
-    wakeup_status = status.status
+    if status:
+        server_state.set(ServerState.NOT_INITIALIZED)
+    else:
+        server_state.set(ServerState.SLEEPING)
+    # global wakeup_status
+    # wakeup_status = status.status
 
     return status
 
@@ -311,11 +335,16 @@ def wakeup_minions(iplist):
 
 @app.route(API_MINIONS_DELETE, methods=["DELETE"])
 def delete_server_minions():
+    old_state = server_state.get()
+    server_state.set(ServerState.DISPOSING)
     cleanup_status = minions.cleanup()
     if cleanup_status:
-        global init_status, wakeup_status
-        init_status = False
-        wakeup_status = False
+        server_state.set(ServerState.SLEEPING)
+        # global init_status, wakeup_status
+        # init_status = False
+        # wakeup_status = False
+    else:
+        server_state.set(old_state)
     return ExecutionStatus(cleanup_status, "").to_http_status()
 
 
@@ -338,16 +367,19 @@ def wakeup_route():
     except Exception as ex:
         return ExecutionStatus(False, f"Something happened. Details: {ex}").to_http_status()
 
-    return wakeup_minions(iplist).to_http_status()
+    status = wakeup_minions(iplist)
+
+    return status.to_http_status()
 
 
 @app.route(API_GET_SERVER_STATE, methods=["GET"])
 def get_state():
-    if not wakeup_status:
-        return ServerState.SLEEPING
-    if not init_status:
-        return ServerState.NOT_INITIALIZED
-    return ServerState.RUNNING
+    return server_state.get()
+    # if not wakeup_status:
+    #    return ServerState.SLEEPING
+    # if not init_status:
+    #    return ServerState.NOT_INITIALIZED
+    # return ServerState.RUNNING
 
 
 @app.route(API_INFO_ROUTE, methods=["GET"])
@@ -381,16 +413,17 @@ def init():
     force_deploy_minions: bool
     :return:
     """
-    global init_status
-    init_status = False
+    # global init_status
+    # init_status = False
 
     if request.args.get("server_langs", ""):
-        server_langs = request.args.get("server_langs")
-        try:
-            server_langs = json.loads(server_langs)
-        except Exception:
-            return ExecutionStatus(False, "Couldn't parse json").to_http_status()
-        status = init_from_server_langs(server_langs)
+        return ExecutionStatus("`server_langs` attribute is deprecated. Please use `sheet_url`").to_http_status()
+        # server_langs = request.args.get("server_langs")
+        # try:
+        #    server_langs = json.loads(server_langs)
+        # except Exception:
+        #    return ExecutionStatus(False, "Couldn't parse json").to_http_status()
+        # status = init_from_server_langs(server_langs)
     elif request.args.get("sheet_url", "") and request.args.get("worksheet_name", ""):
         force_deploy_minions = request.args.get("force_deploy_minions", "false")
         force_deploy_minions = json.loads(force_deploy_minions)
@@ -401,8 +434,6 @@ def init():
     else:
         return ExecutionStatus(False, "Invalid parameters list").to_http_status()
 
-    if status:
-        init_status = True
     return status.to_http_status()
 
 
@@ -411,7 +442,7 @@ def get_init():
     """
     :return:
     """
-    if init_status:
+    if server_state.running():
         responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
         data = {}
         for lang, response in responses.items():
@@ -466,8 +497,9 @@ def cleanup():
             print(msg_)
             status.append_error(msg_)
 
-    global init_status
-    init_status = False
+    server_state.set(ServerState.NOT_INITIALIZED)
+    # global init_status
+    # init_status = False
 
     return status.to_http_status()
 
@@ -1022,15 +1054,16 @@ def healthcheck():
 
 @app.before_request
 def before_request():
-    if not wakeup_status:
+    if server_state.sleeping():
         if request.path not in (API_WAKEUP_ROUTE, API_INIT_ROUTE, API_GET_SERVER_STATE):
             return "The server is sleeping :) Tell the admin to wake it up."
     else:  # if the server has already woken up
-        if not init_status and request.path not in \
+        if not server_state.running() and request.path not in \
                 (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE, API_GET_SERVER_STATE):
             return f"{request.path} is not allowed before initialization"
 
-    if request.path in (API_MEDIA_PLAY_ROUTE, API_MEDIA_SCHEDULE_ROUTE):
+    if request.path == API_MEDIA_PLAY_ROUTE or \
+            (request.path == API_MEDIA_SCHEDULE_ROUTE and request.method == "POST"):
         if not vmix_selector.is_allowed(request.remote_addr):
             return f'This API is not allowed from "{request.remote_addr}"'
 
