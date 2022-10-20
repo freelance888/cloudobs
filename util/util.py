@@ -147,6 +147,8 @@ class ServiceAddrStorage:
         return self.dct.items()
 
     def addr(self, lang):
+        if lang not in self.dct:
+            raise KeyError(lang)
         return self.dct[lang]["addr"]
 
 

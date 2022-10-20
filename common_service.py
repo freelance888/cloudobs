@@ -63,7 +63,7 @@ app = Flask(__name__)
 instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
 langs: list[str] = []
 server_state = ServerState(ServerState.SLEEPING)
-#init_status, wakeup_status = False, False
+# init_status, wakeup_status = False, False
 cb_thread = CallbackThread()
 media_scheduler = MediaScheduler()
 sheets = OBSGoogleSheets()
@@ -73,12 +73,12 @@ minions = Minions()
 
 
 def broadcast(
-    api_route,
-    http_method,
-    params: util.MultilangParams = None,
-    param_name="params",
-    return_status=False,
-    method_name="broadcast",
+        api_route,
+        http_method,
+        params: util.MultilangParams = None,
+        param_name="params",
+        return_status=False,
+        method_name="broadcast",
 ):
     requests_ = {}  # lang: request
     responses_ = {}  # lang: response
@@ -147,6 +147,7 @@ def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
     broadcasts it across all minions
     """
     deploy_minions = ((deploy_minions and server_state.sleeping()) or force_deploy_minions)
+    last_state = server_state.get()
 
     try:
         server_state.set(ServerState.INITIALIZING)
@@ -166,16 +167,22 @@ def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
         # pull broadcast-related parameters from google sheets
         params = sheets.to_multilang_params()
         for lang in params:
-            params[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
+            try:
+                params[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
+            except KeyError:
+                server_state.set(last_state)  # reset state
+                return ExecutionStatus(False, f"No minion deployed for lang {lang}")
     except TimeoutError as ex:
         msg_ = f"Provisioning timeout, please check if the deployment server works properly. Details: {ex}"
         print(msg_)
+        server_state.set(ServerState.SLEEPING)
         return ExecutionStatus(False, msg_)
     except Exception as ex:
         msg_ = (
             f"Something happened while preparing for synchronization the server from Google Sheets. Details: {ex}"
         )
         print(msg_)
+        server_state.set(last_state)  # reset state
         return ExecutionStatus(False, msg_)
     status = broadcast(
         api_route=API_INFO_ROUTE,
@@ -317,8 +324,8 @@ def wakeup_minions(iplist):
         server_state.set(ServerState.NOT_INITIALIZED)
     else:
         server_state.set(ServerState.SLEEPING)
-    #global wakeup_status
-    #wakeup_status = status.status
+    # global wakeup_status
+    # wakeup_status = status.status
 
     return status
 
@@ -333,9 +340,9 @@ def delete_server_minions():
     cleanup_status = minions.cleanup()
     if cleanup_status:
         server_state.set(ServerState.SLEEPING)
-        #global init_status, wakeup_status
-        #init_status = False
-        #wakeup_status = False
+        # global init_status, wakeup_status
+        # init_status = False
+        # wakeup_status = False
     else:
         server_state.set(old_state)
     return ExecutionStatus(cleanup_status, "").to_http_status()
@@ -368,11 +375,11 @@ def wakeup_route():
 @app.route(API_GET_SERVER_STATE, methods=["GET"])
 def get_state():
     return server_state.get()
-    #if not wakeup_status:
+    # if not wakeup_status:
     #    return ServerState.SLEEPING
-    #if not init_status:
+    # if not init_status:
     #    return ServerState.NOT_INITIALIZED
-    #return ServerState.RUNNING
+    # return ServerState.RUNNING
 
 
 @app.route(API_INFO_ROUTE, methods=["GET"])
@@ -406,17 +413,17 @@ def init():
     force_deploy_minions: bool
     :return:
     """
-    #global init_status
-    #init_status = False
+    # global init_status
+    # init_status = False
 
     if request.args.get("server_langs", ""):
         return ExecutionStatus("`server_langs` attribute is deprecated. Please use `sheet_url`").to_http_status()
-        #server_langs = request.args.get("server_langs")
-        #try:
+        # server_langs = request.args.get("server_langs")
+        # try:
         #    server_langs = json.loads(server_langs)
-        #except Exception:
+        # except Exception:
         #    return ExecutionStatus(False, "Couldn't parse json").to_http_status()
-        #status = init_from_server_langs(server_langs)
+        # status = init_from_server_langs(server_langs)
     elif request.args.get("sheet_url", "") and request.args.get("worksheet_name", ""):
         force_deploy_minions = request.args.get("force_deploy_minions", "false")
         force_deploy_minions = json.loads(force_deploy_minions)
@@ -491,8 +498,8 @@ def cleanup():
             status.append_error(msg_)
 
     server_state.set(ServerState.NOT_INITIALIZED)
-    #global init_status
-    #init_status = False
+    # global init_status
+    # init_status = False
 
     return status.to_http_status()
 
@@ -1055,7 +1062,8 @@ def before_request():
                 (API_INIT_ROUTE, API_WAKEUP_ROUTE, API_INFO_ROUTE, API_GET_SERVER_STATE):
             return f"{request.path} is not allowed before initialization"
 
-    if request.path in (API_MEDIA_PLAY_ROUTE, API_MEDIA_SCHEDULE_ROUTE):
+    if request.path == API_MEDIA_PLAY_ROUTE or \
+            (request.path == API_MEDIA_SCHEDULE_ROUTE and request.method == "POST"):
         if not vmix_selector.is_allowed(request.remote_addr):
             return f'This API is not allowed from "{request.remote_addr}"'
 
