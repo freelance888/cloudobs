@@ -152,6 +152,11 @@ class ServerSettings:
             raise KeyError(f'Invalid subject "{subject}"')
         self._settings[subject]["objvers"] = ""
 
+    def modify_subject(self, subject):
+        if subject not in self._settings:
+            raise KeyError(f'Invalid subject "{subject}"')
+        self._settings[subject]["objvers"] = "M"
+
 
 class Server:
     def __init__(self):
@@ -688,6 +693,10 @@ class Server:
             return status
 
         status = self._initialize_obs_controllers(verbose=True)
+        self.settings.modify_subject(SUBJECT_SIDECHAIN)
+        self.settings.modify_subject(SUBJECT_SOURCE_VOLUME)
+        self.settings.modify_subject(SUBJECT_TS_VOLUME)
+        self.settings.modify_subject(SUBJECT_TS_OFFSET)
 
         if not status:
             #self.drop_connections()
