@@ -165,14 +165,16 @@ class Server:
         self.media_dir = MEDIA_DIR
 
     def set_info(self, info):
-        status = self._initialize_if_not()
-        if not status:
-            return status
         status = ExecutionStatus(status=True)
         try:
             for subject, data in info.items():  # for each subject
                 for k, v in data.items():  # for each key-value pair
                     self.settings.set(subject, k, v)
+
+            status = self._initialize_if_not()
+            if not status:
+                return status
+
             self.activate()
         except BaseException as ex:
             msg_ = f"E PYSERVER::Server::set_info(): couldn't activate settings. Details: {ex}"
@@ -193,14 +195,16 @@ class Server:
             }
         :return: Status
         """
-        status = self._initialize_if_not()
-        if not status:
-            return status
 
         status = ExecutionStatus(status=True)
         try:
             for k, v in server_langs.items():
                 self.settings.set(SUBJECT_SERVER_LANGS, k, v)
+
+            status = self._initialize_if_not()
+            if not status:
+                return status
+
             self.activate()
             self.is_initialized = True
         except Exception as ex:

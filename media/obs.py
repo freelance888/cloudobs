@@ -496,7 +496,8 @@ class OBS:
         Removes all inputs with name `source_name`
         """
         item_id, scene_name = self.get_item_from_sourcename(source_name, scene_name)
-        self.delete_scene_item(item_id=item_id, source_name=source_name, scene_name=scene_name)
+        if item_id is not None:
+            self.delete_scene_item(item_id=item_id, source_name=source_name, scene_name=scene_name)
 
     def source_exists(self, source_name, scene_name=None):
         """
@@ -509,7 +510,8 @@ class OBS:
         """
         Returns (item_id, scene_name) given a source_name
         """
-        scene_names = [scene_name] if scene_name is not None else self.obsws_get_scene_list()
+        scene_names = [scene_name] if scene_name is not None \
+            else [x["name"] for x in self.obsws_get_scene_list()]
 
         for scene_name in scene_names:
             items = self.obsws_get_scene_item_list(scene_name=scene_name)
@@ -517,6 +519,7 @@ class OBS:
                 item_id, source_name_ = item["itemId"], item["sourceName"]
                 if source_name_ == source_name:
                     return item_id, scene_name
+        return None, None
 
     def delete_scene_item(self, item_id, source_name, scene_name):
         """
