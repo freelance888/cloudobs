@@ -19,7 +19,6 @@ TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 
 SUBJECT_SERVER_LANGS = "server_langs"
 SUBJECT_STREAM_SETTINGS = "stream_settings"
-SUBJECT_MEDIA_SCHEDULE = "media_schedule"
 SUBJECT_TS_OFFSET = "ts_offset"
 SUBJECT_TS_VOLUME = "ts_volume"
 SUBJECT_SOURCE_VOLUME = "source_volume"
@@ -48,10 +47,6 @@ class ServerSettings:
             },
             SUBJECT_STREAM_ON: {
                 "value": False,
-                "objvers": "",
-            },
-            SUBJECT_MEDIA_SCHEDULE: {
-                "value": None,  # list of [id, name, timestamp, is_enabled, is_played]
                 "objvers": "",
             },
             SUBJECT_TS_OFFSET: {
@@ -195,11 +190,20 @@ class Server:
             }
         :return: Status
         """
+
+        status = self._establish_connections(verbose=True)
+        if not status:
+            return status
+        status = self._initialize_obs_controllers(verbose=True)
+        if not status:
+            return status
+
         status = ExecutionStatus(status=True)
         try:
             for k, v in server_langs.items():
                 self.settings.set(SUBJECT_SERVER_LANGS, k, v)
             self.activate()
+            self.is_initialized = True
         except Exception as ex:
             msg_ = f"E PYSERVER::Server::initialize(), details: {ex}"
             print(msg_)
@@ -595,6 +599,21 @@ class Server:
         if not os.path.isdir(self.media_dir):
             os.system(f"mkdir -p {self.media_dir}")
 
+    def refresh_media_source(self):
+        status: ExecutionStatus = ExecutionStatus()
+        original_media_url = self.settings.get(SUBJECT_SERVER_LANGS, "original_media_url")
+        try:
+            self.obs_instance.set_original_media_source(
+                scene_name=obs.MAIN_SCENE_NAME, original_media_source=original_media_url,
+                recreate_source=False
+            )
+        except BaseException:
+            msg_ = (
+                f"E PYSERVER::Server::refresh_media_source(): Couldn't `set_original_media_source`. "
+            )
+            status.append_error(msg_)
+        return status
+
     def _establish_connections(self, verbose=True):
         """
         establish obs connection
@@ -637,7 +656,8 @@ class Server:
             self.obs_instance.clear_all_scenes()
             self.obs_instance.setup_scene(scene_name=obs.MAIN_SCENE_NAME)
             self.obs_instance.set_original_media_source(
-                scene_name=obs.MAIN_SCENE_NAME, original_media_source=lang_info["original_media_url"]
+                scene_name=obs.MAIN_SCENE_NAME, original_media_source=lang_info["original_media_url"],
+                recreate_source=True
             )
             self.obs_instance.setup_ts_sound()
         except BaseException as ex:
@@ -673,7 +693,6 @@ class Server:
             raise RuntimeError("E PYSERVER::Server::activate(): attempt to activate config without initialization")
         self.activate_stream_settings()
         self.activate_stream_on()
-        # TODO: SCHEDULE
         self.activate_ts_offset()
         self.activate_ts_volume()
         self.activate_source_volume()
@@ -684,25 +703,14 @@ class Server:
     def activate_server_langs(self):
         if not self.settings.is_modified(subject=SUBJECT_SERVER_LANGS):
             return
-        #self.drop_connections()
 
-        status = self._establish_connections(verbose=True)
+        status: ExecutionStatus = self.refresh_media_source()
 
-        if not status:
-            #self.drop_connections()
-            return status
-
-        status = self._initialize_obs_controllers(verbose=True)
         self.settings.modify_subject(SUBJECT_SIDECHAIN)
         self.settings.modify_subject(SUBJECT_SOURCE_VOLUME)
         self.settings.modify_subject(SUBJECT_TS_VOLUME)
         self.settings.modify_subject(SUBJECT_TS_OFFSET)
 
-        if not status:
-            #self.drop_connections()
-            return status
-
-        self.is_initialized = True
         self.settings.activate(SUBJECT_SERVER_LANGS)
         return status
 
@@ -722,10 +730,6 @@ class Server:
         else:
             self.obs_instance.stop_streaming()
         self.settings.activate(SUBJECT_STREAM_ON)
-
-    def activate_schedule(self):
-        if not self.settings.is_modified(subject=SUBJECT_MEDIA_SCHEDULE):
-            return
 
     def activate_ts_offset(self):
         if not self.settings.is_modified(subject=SUBJECT_TS_OFFSET):

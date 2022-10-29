@@ -24,6 +24,7 @@ from util.config import (
     API_TS_OFFSET_ROUTE,
     API_TS_VOLUME_ROUTE,
     API_WAKEUP_ROUTE,
+    API_SOURCE_REFRESH,
 )
 from util.util import ExecutionStatus
 
@@ -82,7 +83,51 @@ def get_info():
 @app.route(API_INFO_ROUTE, methods=["POST"])
 def post_info():
     """
-    :return:
+    parameters:
+     - info - e.g.:
+    {
+        "server_langs": {
+            "obs_host": "localhost",
+            "host_url": "",
+            "websocket_port": 4439,
+            "password": "",
+            "original_media_url": "",
+        },
+        "stream_settings": {
+            "server": "",
+            "key": "",
+        },
+        "stream_on": {
+            "value": False,             # this parameters points if the stream is on
+        },
+        "ts_offset": {
+            "value": 4000,
+        },
+        "ts_volume": {
+            "value": 0,
+        },
+        "source_volume": {
+            "value": 0,
+        },
+        "sidechain": {
+            "ratio": 32,
+            "release_time": 1000,
+            "threshold": -30.0,
+            "output_gain": -10.0,
+        },
+        "transition": {
+            "transition_name": "Cut",
+            "path": "",
+            "transition_point": 3600,
+        },
+        "gdrive_settings": {
+            "drive_id": "",
+            "media_dir": "",
+            "api_key": "",
+            "sync_seconds": 0,
+            "gdrive_sync_addr": "",
+        }
+    }
     """
     info_ = request.args.get("info", "")
     if not info_:
@@ -90,7 +135,7 @@ def post_info():
     try:
         info_ = json.loads(info_)
     except Exception as ex:
-        return f"Error while parsing json, details: {ex}"
+        return f"Error while parsing json, details: {ex}", 500
 
     return obs_server.set_info(info_).to_http_status()
 
@@ -365,6 +410,17 @@ def get_source_volume():
     data = json.dumps(data)
 
     return data, 200
+
+
+@app.route(API_SOURCE_REFRESH, methods=["PUT"])
+def refresh_source():
+    """
+    This API refreshes media source
+    """
+    if obs_server is None:
+        return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
+
+    return obs_server.refresh_media_source().to_http_status()
 
 
 @app.route(API_SIDECHAIN_ROUTE, methods=["POST"])
