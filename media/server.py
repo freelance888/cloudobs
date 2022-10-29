@@ -165,6 +165,9 @@ class Server:
         self.media_dir = MEDIA_DIR
 
     def set_info(self, info):
+        status = self._initialize_if_not()
+        if not status:
+            return status
         status = ExecutionStatus(status=True)
         try:
             for subject, data in info.items():  # for each subject
@@ -190,11 +193,7 @@ class Server:
             }
         :return: Status
         """
-
-        status = self._establish_connections(verbose=True)
-        if not status:
-            return status
-        status = self._initialize_obs_controllers(verbose=True)
+        status = self._initialize_if_not()
         if not status:
             return status
 
@@ -208,6 +207,17 @@ class Server:
             msg_ = f"E PYSERVER::Server::initialize(), details: {ex}"
             print(msg_)
             status.append_error(msg_)
+        return status
+
+    def _initialize_if_not(self):
+        if self.is_initialized:
+            return ExecutionStatus(True)
+        status = self._establish_connections(verbose=True)
+        if not status:
+            return status
+        status = self._initialize_obs_controllers(verbose=True)
+        if status:
+            self.is_initialized = True
         return status
 
     def cleanup(self):
