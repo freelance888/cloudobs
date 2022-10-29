@@ -64,6 +64,24 @@ def async_aiohttp_delete_all(urls):
     return sync.async_to_sync(get_all)(urls)
 
 
+def async_aiohttp_put_all(urls):
+    """
+    performs asynchronous get requests
+    """
+
+    async def get_all(urls):
+        async with aiohttp.ClientSession() as session:
+
+            async def fetch(url):
+                async with session.put(url) as response:
+                    return Response(await response.text(), response.status)
+
+            return await asyncio.gather(*[fetch(url) for url in urls])
+
+    # call get_all as a sync function to be used in a sync context
+    return sync.async_to_sync(get_all)(urls)
+
+
 def validate_init_params(server_langs):
     try:
         for lang, lang_info in server_langs.items():

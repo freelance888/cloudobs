@@ -37,6 +37,7 @@ from util.config import (
     API_VMIX_PLAYERS,
     API_WAKEUP_ROUTE,
     API_GET_SERVER_STATE,
+    API_SOURCE_REFRESH,
 )
 from util.util import (CallbackThread, ExecutionStatus, MultilangParams, to_seconds, ServerState)
 from util.vmix import SourceSelector
@@ -102,6 +103,8 @@ def broadcast(
         responses_ = util.async_aiohttp_post_all(urls=urls)
     elif http_method == "DELETE":
         responses_ = util.async_aiohttp_delete_all(urls=urls)
+    elif http_method == "PUT":
+        responses_ = util.async_aiohttp_put_all(urls=urls)
     responses_ = {lang: responses_[i] for i, lang in enumerate(requests_.keys())}
 
     # return status of response or the response itself
@@ -873,6 +876,21 @@ def get_source_volume():
             data[lang] = "#"
 
     return json.dumps(data), 200
+
+
+@app.route(API_SOURCE_REFRESH, methods=["PUT"])
+def refresh_source():
+    """
+    This API refreshes media source
+    """
+    status = broadcast(
+        API_SOURCE_VOLUME_ROUTE,
+        "PUT",
+        return_status=True,
+        method_name="refresh_source",
+    )
+
+    return status.to_http_status()
 
 
 @app.route(API_SIDECHAIN_ROUTE, methods=["POST"])

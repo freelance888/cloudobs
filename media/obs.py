@@ -44,28 +44,41 @@ class OBS:
 
         self.client.register(create_event_handler(self))
 
-    def set_original_media_source(self, scene_name, original_media_source):
+    def set_original_media_source(self, scene_name, original_media_source,
+                                  recreate_source=True):
         """
         Adds an original media source
         :param scene_name: scene to add an input
         :param original_media_source: url like 'protocol://address[:port][/path][...]', may be rtmp, srt
         """
         self.original_media_source = original_media_source
-        self.delete_source(ORIGINAL_STREAM_SOURCE_NAME)
+        if recreate_source:
+            self.delete_source(ORIGINAL_STREAM_SOURCE_NAME)
 
         source_settings = {
-            "buffering_mb": 10,
+            #"buffering_mb": 10,
             "input": original_media_source,
             "is_local_file": False,
+            "clear_on_media_end": False,
         }
-        request = obs.requests.CreateSource(
-            sourceName=ORIGINAL_STREAM_SOURCE_NAME,
-            sourceKind="ffmpeg_source",
-            sceneName=scene_name,
-            sourceSettings=source_settings,
-        )
-        response = self.client.call(request)
+        if not self.source_exists(source_name=ORIGINAL_STREAM_SOURCE_NAME):
+            request = obs.requests.CreateSource(
+                sourceName=ORIGINAL_STREAM_SOURCE_NAME,
+                sourceKind="ffmpeg_source",
+                sceneName=scene_name,
+                sourceSettings=source_settings,
+            )
+            response = self.client.call(request)
+            if not response.status:
+                raise Exception(
+                    f"E PYSERVER::OBS::add_original_media_source(): "
+                    f"datain: {response.datain}, dataout: {response.dataout}"
+                )
 
+        response = self.client.call(obs.requests.SetSourceSettings(
+            ORIGINAL_STREAM_SOURCE_NAME,
+            source_settings,
+        ))
         if not response.status:
             raise Exception(
                 f"E PYSERVER::OBS::add_original_media_source(): "
@@ -482,6 +495,20 @@ class OBS:
         """
         Removes all inputs with name `source_name`
         """
+        item_id, scene_name = self.get_item_from_sourcename(source_name, scene_name)
+        self.delete_scene_item(item_id=item_id, source_name=source_name, scene_name=scene_name)
+
+    def source_exists(self, source_name, scene_name=None):
+        """
+        Checks if the item with source name `source_name` exists
+        """
+        item_id, scene_name = self.get_item_from_sourcename(source_name, scene_name)
+        return item_id is not None
+
+    def get_item_from_sourcename(self, source_name, scene_name=None):
+        """
+        Returns (item_id, scene_name) given a source_name
+        """
         scene_names = [scene_name] if scene_name is not None else self.obsws_get_scene_list()
 
         for scene_name in scene_names:
@@ -489,7 +516,7 @@ class OBS:
             for item in items:
                 item_id, source_name_ = item["itemId"], item["sourceName"]
                 if source_name_ == source_name:
-                    self.delete_scene_item(item_id=item_id, source_name=source_name, scene_name=scene_name)
+                    return item_id, scene_name
 
     def delete_scene_item(self, item_id, source_name, scene_name):
         """
