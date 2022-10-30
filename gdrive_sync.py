@@ -89,9 +89,9 @@ class DriveSync(threading.Thread):
 
                             if not self.files[fname]:
                                 try:
-                                    #gdown.download(id=fid, output=flocal, quiet=True)
                                     time.sleep(random.randint(3, 7))
-                                    gdown.download_via_gdrive_api(fid, flocal, api_key)
+                                    #gdown.download_via_gdrive_api(fid, flocal, api_key)
+                                    gdown.download(id=fid, output=flocal, quiet=True)
 
                                     if generate_file_md5(flocal) == fmd5Checksum:
                                         self.files[fname] = True
