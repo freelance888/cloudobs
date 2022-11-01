@@ -18,7 +18,7 @@ from util.util import GDriveFiles, generate_file_md5, log
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
 SYNC_SECONDS = int(os.getenv("GDRIVE_SYNC_SECONDS", 120))
-SERVICE_FILE = os.getenv("SERVICE_ACCOUNT_FILE")
+SERVICE_FILE = "~/sa.json"  # os.getenv("SERVICE_ACCOUNT_FILE")
 b_init, drive_id, media_dir, api_key, sync_seconds = False, None, "", None, 2
 lock = threading.Lock()
 
@@ -90,7 +90,7 @@ class DriveSync(threading.Thread):
                             if not self.files[fname]:
                                 try:
                                     time.sleep(random.randint(3, 7))
-                                    gdown.download_via_gdrive_api(fid, flocal, api_key)
+                                    gdown.download_via_gdrive_api(fid, flocal, SERVICE_FILE)
                                     #gdown.download(id=fid, output=flocal, quiet=True)
 
                                     if generate_file_md5(flocal) == fmd5Checksum:
