@@ -18,7 +18,7 @@ from util.util import GDriveFiles, generate_file_md5, log
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
 SYNC_SECONDS = int(os.getenv("GDRIVE_SYNC_SECONDS", 120))
-SERVICE_FILE = "~/sa.json"  # os.getenv("SERVICE_ACCOUNT_FILE")
+SERVICE_FILE = "/home/stream/sa.json"  # os.getenv("SERVICE_ACCOUNT_FILE")
 b_init, drive_id, media_dir, api_key, sync_seconds = False, None, "", None, 2
 lock = threading.Lock()
 
