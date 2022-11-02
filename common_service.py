@@ -881,14 +881,17 @@ def get_source_volume():
 @app.route(API_SOURCE_REFRESH, methods=["PUT"])
 def refresh_source():
     """
-    This API refreshes media source
+    This API refreshes media sources for specified langs.
+    Query parameters:
+    langs: json list of langs,
+    e.g. ["eng", "rus"], or ["__all__"] (default)
+    :return:
     """
-    status = broadcast(
-        API_SOURCE_VOLUME_ROUTE,
-        "PUT",
-        return_status=True,
-        method_name="refresh_source",
-    )
+    _langs = request.args.get("langs", json.dumps(["__all__"]))
+    _langs = json.loads(_langs)
+
+    params = MultilangParams({_: {} for _ in _langs}, langs=langs)
+    status = broadcast(API_SOURCE_REFRESH, "PUT", params=params, return_status=True, method_name="refresh_source")
 
     return status.to_http_status()
 

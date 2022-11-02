@@ -199,7 +199,7 @@
  - Note: you may set `langs` for all languages,
    specifying `["__all__"]` as input
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
-## VOLUMES AND OFFSETS
+## VOLUMES, OFFSETS AND SOURCES
 ### `POST /ts/offset`
  - Sets teamspeak sound offset (in milliseconds)
  - Accepts the following parameters:
@@ -251,6 +251,16 @@
    {"lang": volume, ...}
    ```
  - Returns ("data", 200)
+### `PUT /source/refresh`
+ - Refreshes source for specified languages
+ - Accepts the following parameters:
+   - `langs` - json list of langs, e.g.:
+   ```
+   ["eng", "rus"], or ["__all__"] (default)
+   ```
+ - Note: you may set `langs` for all languages,
+   specifying `["__all__"]` as input
+ - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`
 ### `POST /filters/sidechain`
  - Sets up sidechain
  - Accepts the following parameters:
