@@ -63,7 +63,7 @@ if SENTRY_DSN:
 app = Flask(__name__)
 instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
 langs: list[str] = []
-server_state = ServerState(ServerState.SLEEPING)
+server_state = ServerState(ServerState.SLEEPING)  #
 # init_status, wakeup_status = False, False
 cb_thread = CallbackThread()
 media_scheduler = MediaScheduler()
