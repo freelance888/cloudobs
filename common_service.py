@@ -664,7 +664,11 @@ def media_play():
     """
     Query parameters:
     params: json dictionary,
-    e.g. {"lang": {"name": "...", "search_by_num": "0/1"}, ...}
+        structure: {"name": "...", "search_by_num": "0/1", "mode": "force"}
+            mode - media play mode. Possible values:
+                 - "force" - stop any media being played right now, and play media specified (default value)
+                 - "check_any" - if any video is being played, skip
+                 - "check_same" - if the same video is being played, skip, otherwise play
     :return:
     """
     params = request.args.get("params", None)
