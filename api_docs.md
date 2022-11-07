@@ -139,13 +139,19 @@
  - Accepts the following parameters:
    - `params` - json dictionary, by-lang parameters, e.g.:
     ```
-    {"lang": {"name": "...", "search_by_num": "0/1"}, ...}
+    {"lang": {"name": "...", "search_by_num": "0/1", "mode": "..."}, ...}
     ```
-   where `name` is the name of the video, `search_by_num` -
-   points the server needs to search a file by first `n` numbers in name,
-   for example if `name="001_test.mp4"`, the server will search for a file
-   which full name even does not match `001_test.mp4`, but it's name starts with
-   `001`, it may be `001_test2.mp4`, `001.mp4`, etc.
+     - `name` - the name of the video
+     - `search_by_num` - points the server needs to search a file by 
+       first `n` numbers in name, for example if `name="001_test.mp4"`, 
+       the server will search for a file which full name even does not 
+       match `001_test.mp4`, but it's name starts with `001`, it may 
+       be `001_test2.mp4`, `001.mp4`, etc.
+     - `mode` - media play mode. Possible values:
+       - `force` - stop any media being played right now, and play 
+                   media specified (default value)
+       - `check_any` - if any video is being played, skip
+       - `check_same` - if the same video is being played, skip, otherwise - play
  - Note: you may set `params` for all languages,
    specifying `__all__` as a lang code, e.g.: `{"__all__": ...}`
  - Returns `("Ok", 200)` on success, otherwise `("error details", 500)`

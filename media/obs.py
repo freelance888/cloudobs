@@ -4,6 +4,7 @@ import obswebsocket as obs
 import obswebsocket.requests
 
 from util.util import CallbackThread
+import util.util as util
 
 ORIGINAL_STREAM_SOURCE_NAME = "original_stream"
 TS_INPUT_NAME = "ts_input"
@@ -43,6 +44,8 @@ class OBS:
         self.media_cb_thread.start()
 
         self.client.register(create_event_handler(self))
+
+        self._current_media_played = None
 
     def set_original_media_source(self, scene_name, original_media_source,
                                   recreate_source=True):
@@ -164,12 +167,17 @@ class OBS:
                 foo=lambda: self.run_media(path=path), delay=timestamp / 1000, cb_type=CB_TYPE
             )
 
-    def run_media(self, path, media_type="media", source_name=MEDIA_INPUT_NAME):
+    def run_media(self, path, media_type="media", mode=util.PLAYBACK_MODE_FORCE, source_name=MEDIA_INPUT_NAME):
         """
         Mutes original media, adds and runs the media located at `path`, and appends a listener which removes
         the media when it has finished. Fires Exception when couldn't add or mute a source.
         """
         CB_TYPE = "media"
+
+        if mode == util.PLAYBACK_MODE_CHECK_ANY and self._current_media_played is not None:
+            return
+        if mode == util.PLAYBACK_MODE_CHECK_SAME and self._current_media_played == path:
+            return
 
         def media_play_foo():
             """
@@ -188,6 +196,7 @@ class OBS:
                 self.delete_source(source_name)
                 self.set_source_mute(False)
                 self.set_ts_mute(False)
+                self._current_media_played = None
                 raise ex
 
         def media_end_foo():
@@ -206,6 +215,7 @@ class OBS:
             On transition (stinger) finish handler.
             Removes stinger, mutes source and teamspeak
             """
+            self._current_media_played = None
             self.delete_source(source_name=TRANSITION_INPUT_NAME)
             self.set_source_mute(False)
             self.set_ts_mute(False)
@@ -221,6 +231,7 @@ class OBS:
             self.set_source_mute(False)  # unmute main source
             self.set_ts_mute(False)  # unmute teamspeak
 
+        self._current_media_played = path
         self.media_cb_thread.append_callback(media_play_foo, self.transition_point / 1000, cb_type=CB_TYPE)
 
     def stop_media(self, source_name=MEDIA_INPUT_NAME):

@@ -7,6 +7,7 @@ import obswebsocket as obsws
 import requests
 from dotenv import load_dotenv
 
+import util.util as util
 from media import obs
 from util.util import ExecutionStatus
 
@@ -262,7 +263,11 @@ class Server:
     def run_media(self, params):
         """
         :param params: json dictionary,
-        e.g. {"name": "...", "search_by_num": "0/1"}
+            structure: {"name": "...", "search_by_num": "0/1", "mode": "force"}
+                mode - media play mode. Possible values:
+                     - "force" - stop any media being played right now, and play media specified (default value)
+                     - "check_any" - if any video is being played, skip
+                     - "check_same" - if the same video is being played, skip, otherwise play
         :return:
         """
         if not self.is_initialized:
@@ -271,6 +276,13 @@ class Server:
         status = ExecutionStatus(status=True)
 
         use_file_num, name = params["search_by_num"], params["name"]
+        mode = util.PLAYBACK_MODE_FORCE
+        if "mode" in params:
+            if params["mode"] not in (util.PLAYBACK_MODE_FORCE, util.PLAYBACK_MODE_CHECK_ANY,
+                                      util.PLAYBACK_MODE_CHECK_SAME):
+                return ExecutionStatus(status=False, message="invalid `mode`")
+            mode = params["mode"]
+
         media_type = params["media_type"] if "media_type" in params else "media"
         media_dir = os.path.join(self.media_dir, "media")
 
@@ -306,7 +318,7 @@ class Server:
                 return status
 
         try:
-            self.obs_instance.run_media(path, media_type=media_type)
+            self.obs_instance.run_media(path, media_type=media_type, mode=mode)
         except BaseException as ex:
             msg_ = f"E PYSERVER::Server::run_media(): couldn't play media. Details: {ex}"
             print(msg_)

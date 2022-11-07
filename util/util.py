@@ -10,6 +10,10 @@ import aiohttp
 from asgiref import sync
 
 
+PLAYBACK_MODE_FORCE = "force"  # stop any media being played right now, and play media specified
+PLAYBACK_MODE_CHECK_ANY = "check_any"  # if any video is being played, skip
+PLAYBACK_MODE_CHECK_SAME = "check_same"  # if the same video is being played, skip, otherwise play
+
 def async_aiohttp_get_all(urls):
     """
     performs asynchronous get requests
