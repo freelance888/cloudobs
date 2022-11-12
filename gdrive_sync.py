@@ -80,6 +80,8 @@ class DriveSync(threading.Thread):
 
                         log(f"I PYSERVER::run_drive_sync(): Sync {len(files['files'])} files")
                         for fileinfo in files["files"]:
+                            if "md5Checksum" not in fileinfo:
+                                continue
                             fid, fname, fmd5Checksum = fileinfo["id"], fileinfo["name"], fileinfo["md5Checksum"]
                             # if file already exists - check its md5
                             flocal = os.path.join(media_dir, fname)
