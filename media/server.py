@@ -230,6 +230,7 @@ class Server:
         self.stop_streaming()  # no need to check status
         self._reset_scenes()
         self.settings.deactivate(SUBJECT_SERVER_LANGS)
+        self.is_initialized = False
         # self.drop_connections()
 
     def drop_connections(self):

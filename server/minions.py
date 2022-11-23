@@ -18,7 +18,7 @@ class IPDict:
     def __init__(self):
         self._ip_list = {}  # ip: lang
 
-    def add_ip(self, ip):
+    def add_ip_if_not_exists(self, ip):
         if ip not in self._ip_list:
             self._ip_list[ip] = ""
 
@@ -29,14 +29,14 @@ class IPDict:
         for _ip, _lang in self._ip_list.items():
             if _ip != ip and _lang == lang:
                 raise ValueError("Lang is already bound for another ip")
-        self.add_ip(ip)
+        self.add_ip_if_not_exists(ip)
         self._ip_list[ip] = lang
 
     def reset_ip_lang(self, ip):
-        self.add_ip(ip)
+        self.add_ip_if_not_exists(ip)
         self._ip_list[ip] = ""
 
-    def remove_lang(self, lang):
+    def remove_lang_if_exists(self, lang):
         for ip in self._ip_list.keys():
             if self._ip_list[ip] == lang:
                 self.reset_ip_lang(ip)
@@ -116,7 +116,7 @@ class SSHContext:
     def hcloud_context_use(self, name):
         return self.request("hcloud_context_use", "POST", {"name": name})
 
-    def create_vm(self, total_num_vms):
+    def ensure_vms(self, total_num_vms):
         return self.request("create_vm", "POST", {"count": json.dumps(total_num_vms)})
 
     def get_ip(self):
@@ -142,12 +142,12 @@ class Minions:
 
         ips = self.ssh_context.get_ip()  # get current ip list state
         if len(ips) < n_minions:  # ip ips count is less then `n_minions` create ones
-            ips = self.ssh_context.create_vm(n_minions)
+            ips = self.ssh_context.ensure_vms(n_minions)
         if len(ips) < n_minions:  # if for some reason couldn't create those minions, raise exception
             raise RuntimeError("Couldn't deploy enough minions")
 
         for ip in ips:
-            self.ip_dict.add_ip(ip)
+            self.ip_dict.add_ip_if_not_exists(ip)
 
     def ensure_langs(self, langs, wait_for_provision=False, provision_timeout=300):
         """
@@ -156,41 +156,38 @@ class Minions:
         """
         # make sure we have enough minions deployed
         self._ensure_minions(len(langs))
-        # remove old languaged which are not used anymore
+        # remove old languages which are not used anymore
         for lang in self.ip_dict.list_langs():
             if lang not in langs:  # if already bound (before) lang is not listed in new `langs` param
                 # TODO: cleanup a minion
-                self.ip_dict.remove_lang(lang)  # remove lang
+                self.ip_dict.remove_lang_if_exists(lang)  # remove lang
         # add new languages
         # first find free ips addresses
         free_ips = self.ip_dict.list_free_ips()
         bound_langs = self.ip_dict.list_langs()
-        # TODO: ip_list_for_provision as a dict, move cleanup mechanism into provision
-        # how?
-        # try to pass empty langs in provision maybe?
-        # I think it even doesn't matter, what language is passed, just REprovision would be enough
+
         ip_list_for_provision = []  # [..., [lang, ip], ...]
         for lang in langs:
-            if lang not in bound_langs:  # if the language has not been bound yet
+            if lang not in bound_langs:  # if the language has not been bound to an IP yet
                 if len(free_ips) == 0:
                     raise RuntimeError(f"No minions available for new langs. Something went wrong. Lang: {lang}")
                 ip = free_ips[0]
                 free_ips.remove(ip)
-                self.ip_dict.set_ip_lang(ip, lang)  # bind a lang to an ip
+                self.ip_dict.set_ip_lang(ip, lang)  # bind lang to an IP
                 ip_list_for_provision.append([lang, ip])
 
-        # TODO: check for minions have been started
-        time.sleep(10)
-        self.ssh_context.provision(ip_list_for_provision)  # do provision for those servers
-        # if needed to wait until provision
-        if wait_for_provision:
-            try:
-                self.wait_until_provision(timeout=provision_timeout)
-            except TimeoutError as ex:
-                # remove langs (revert changes) if the function threw provision timeout error
-                for lang, ip in ip_list_for_provision:
-                    self.ip_dict.remove_lang(lang)
-                raise ex
+        if len(ip_list_for_provision) > 0:
+            time.sleep(10)
+            self.ssh_context.provision(ip_list_for_provision)  # provision for those servers
+            # if needed to wait until provision
+            if wait_for_provision:
+                try:
+                    self.wait_until_provision(timeout=provision_timeout)
+                except TimeoutError as ex:
+                    # remove langs (revert changes) if the function threw provision timeout error
+                    for lang, ip in ip_list_for_provision:
+                        self.ip_dict.remove_lang_if_exists(lang)
+                    raise ex
         return self.ip_dict.ip_list()
 
     def cleanup(self):
