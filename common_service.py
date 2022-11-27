@@ -22,6 +22,7 @@ from util.config import (
     API_MEDIA_SCHEDULE_PULL,
     API_MEDIA_SCHEDULE_ROUTE,
     API_MEDIA_SCHEDULE_SETUP,
+    API_MEDIA_SCHEDULE_STATUS,
     API_MINIONS_DELETE,
     API_PULL_SHEETS,
     API_PUSH_SHEETS,
@@ -563,6 +564,18 @@ def pull_media_schedule():
         return status.to_http_status()
     except Exception as ex:
         return ExecutionStatus(False, f"Couldn't pull Timing. Details: {ex}").to_http_status()
+
+
+@app.route(API_MEDIA_SCHEDULE_STATUS, methods=["GET"])
+def media_schedule_status():
+    """
+    :return: dictionary:
+    {
+        "running": true/false,
+        "timestamp": datetime ISO-8601 UTC (example: "2022-11-27T12:30:42+00:00"),
+    }
+    """
+    return json.dumps(media_scheduler.status.to_dict()), 200
 
 
 @app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["POST"])
