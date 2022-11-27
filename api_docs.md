@@ -109,7 +109,7 @@
 ### `GET /media/schedule`
  - Returns current media schedule
  - Has the following format:
-```
+```json
 {
   id_1: {
     "name": "...",
@@ -122,6 +122,15 @@
     ...
   },
   ...
+}
+```
+### `GET /media/schedule/status`
+ - Returns a status of current media schedule
+ - Has the following response format:
+```json
+{
+    "running": true/false,
+    "timestamp": "yyyy-MM-ddTHH:mm:ss+00:00" # datetime as ISO-8601 UTC,
 }
 ```
 ### `PUT /media/schedule`
