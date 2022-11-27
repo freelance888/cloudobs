@@ -1,9 +1,20 @@
+from datetime import datetime, timezone
 from threading import Lock
 
 from util.util import CallbackThread, ExecutionStatus
 
 
 class MediaScheduler:
+    class Status:
+        running = False
+        timestamp: datetime = datetime.now(timezone.utc)
+
+        def to_dict(self):
+            return {
+                'running': self.running,
+                'timestamp': self.timestamp.replace(microsecond=0).isoformat(sep='T')
+            }
+
     def __init__(self):
         self.cb_thread = CallbackThread()
         self.cb_thread.start()
@@ -22,8 +33,10 @@ class MediaScheduler:
         """
         self.schedule = {}
         self._lock = Lock()
+        self.status = MediaScheduler.Status()
 
     def __del__(self):
+        self.status.running = False
         self.cb_thread.running = False
 
     def get_schedule(self):
@@ -73,10 +86,13 @@ class MediaScheduler:
                 for i, (name, timestamp) in enumerate(schedule)
             }
 
+            self.status.running = True
+            self.status.timestamp = datetime.utcnow()
             return ExecutionStatus(True, message="Ok")
         except ValueError as ex:
             msg = f"The schedule structure is invalid, required [..., [name, timestamp], ...]. Details: {ex}"
             print(f"E PYSERVER::MediaScheduler::create_schedule(): {msg}")
+            self.status.running = False
             return ExecutionStatus(False, message=msg)
 
     def start_schedule(self, delay=0.0):
@@ -92,10 +108,14 @@ class MediaScheduler:
 
             for id_, data in self.schedule.items():
                 self.cb_thread.append_callback(foo=data["foo"], args=(id_, data["name"]), delay=timestamp_foo(id_))
+
+            self.status.running = True
+            self.status.timestamp = datetime.utcnow()
             return ExecutionStatus(True, message="Ok")
         except Exception as ex:
             msg = f"Couldn't start the schedule. Details: {ex}"
             print(f"E PYSERVER::MediaScheduler::start_schedule(): {msg}")
+            self.status.running = False
             return ExecutionStatus(False, message=msg)
 
     def modify_schedule(self, id_, name=None, timestamp=None, is_enabled=None, is_played=None):
@@ -123,4 +143,5 @@ class MediaScheduler:
     def delete_schedule(self):
         self.cb_thread.clean_callbacks()
         self.schedule = {}
+        self.status.running = False
         return ExecutionStatus(True, message="Ok")
