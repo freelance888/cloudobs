@@ -12,7 +12,8 @@ class MediaScheduler:
         def to_dict(self):
             return {
                 'running': self.running,
-                'timestamp': self.timestamp.replace(microsecond=0).isoformat(sep='T')
+                'timestamp': None if self.timestamp is None
+                else self.timestamp.replace(microsecond=0).isoformat(sep='T')
             }
 
     def __init__(self):
