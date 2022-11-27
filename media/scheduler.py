@@ -58,6 +58,8 @@ class MediaScheduler:
         :return: ExecutionStatus
         """
         self.cb_thread.clean_callbacks()
+        self.status.running = False
+        self.status.timestamp = None
 
         def foo_wrap(id_, name):
             """
@@ -86,13 +88,10 @@ class MediaScheduler:
                 for i, (name, timestamp) in enumerate(schedule)
             }
 
-            self.status.running = True
-            self.status.timestamp = datetime.utcnow()
             return ExecutionStatus(True, message="Ok")
         except ValueError as ex:
             msg = f"The schedule structure is invalid, required [..., [name, timestamp], ...]. Details: {ex}"
             print(f"E PYSERVER::MediaScheduler::create_schedule(): {msg}")
-            self.status.running = False
             return ExecutionStatus(False, message=msg)
 
     def start_schedule(self, delay=0.0):
