@@ -198,7 +198,7 @@ def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
     if status:
         server_state.set(ServerState.RUNNING)
     else:
-        server_state.set(ServerState.NOT_INITIALIZED)
+        server_state.set(last_state)
     return status
 
 

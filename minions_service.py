@@ -116,7 +116,7 @@ class CMDContext:
             except Exception as ex:
                 # if self.popen throws an exception, that means it couldn't run a command via ssh
                 # try everything again
-                logger.debug(f"Retry provision because failed to provision with: {ex}")
+                logger.debug(f"Retry provision, failed with error: {ex}")
                 ssh_ok = False
                 time.sleep(2)
                 continue
