@@ -241,26 +241,6 @@ class Server:
                 print(f"PYSERVER::Server::drop_connections(): {ex}")
         self.obs_connected = False
 
-    def schedule_media(self, schedule):
-        """
-        :param schedule: dictionary of [..., [path, timestamp], ...]
-         - path - media name
-         - timestamp - relative timestamp in milliseconds
-        """
-        # TODO: activate
-        if not self.is_initialized:
-            return ExecutionStatus(status=False, message="The server was not initialized yet")
-
-        status = ExecutionStatus(status=True)
-
-        try:
-            self.obs_instance.schedule_media(schedule)
-        except BaseException as ex:
-            msg_ = f"E PYSERVER::Server::schedule_media(): couldn't schedule media. Details: {ex}"
-            print(msg_)
-            status.append_error(msg_)
-        return status
-
     def run_media(self, params):
         """
         :param params: json dictionary,

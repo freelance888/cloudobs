@@ -149,24 +149,6 @@ class OBS:
         """
         self.client.call(obs.requests.CreateScene(sceneName=scene_name))
 
-    def schedule_media(self, schedule):
-        """
-        Creates a media schedule
-        :param schedule: list of [path, timestamp], e.g.: [..., ["video.mp4", 3600000], ...]
-         - path - media name
-         - timestamp - relative timestamp in milliseconds
-        """
-        CB_TYPE = "schedule"
-
-        self.media_cb_thread.delete_cb_type(CB_TYPE)
-
-        schedule = sorted(schedule, key=lambda x: x[1])  # sort by timestamp
-
-        for i, (path, timestamp) in enumerate(schedule):
-            self.media_cb_thread.append_callback(
-                foo=lambda: self.run_media(path=path), delay=timestamp / 1000, cb_type=CB_TYPE
-            )
-
     def run_media(self, path, media_type="media", mode=util.PLAYBACK_MODE_FORCE, source_name=MEDIA_INPUT_NAME):
         """
         Mutes original media, adds and runs the media located at `path`, and appends a listener which removes

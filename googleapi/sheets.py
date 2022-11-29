@@ -1,15 +1,16 @@
-# REFACTORING: delete this file, use sheets.py
-
+# REFACTORING: replace old classes
 import os
 import re
 
 import pandas as pd
 import pygsheets
+
 from dotenv import load_dotenv
 
 from media import server
 from media.server import ServerSettings
 from util.util import (MultilangParams, to_seconds)
+from util.util import ExecutionStatus
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -19,7 +20,7 @@ GDRIVE_SYNC_ADDR = "http://localhost:7000"
 SERVICE_FILE = os.getenv("SERVICE_ACCOUNT_FILE")
 
 
-class OBSGoogleSheets:
+class MinionsSheet:
     def __init__(self):
         self.service_file = SERVICE_FILE
         self.gc = pygsheets.authorize(service_account_file=self.service_file)
@@ -185,7 +186,7 @@ class OBSGoogleSheets:
         self._set_value(lang, "gdrive_sync_addr", GDRIVE_SYNC_ADDR)
 
 
-class TimingGoogleSheets:
+class TimingSheet:
     def __init__(self):
         self.service_file = SERVICE_FILE
         self.gc = pygsheets.authorize(service_account_file=self.service_file)
@@ -203,9 +204,14 @@ class TimingGoogleSheets:
         return self._ok
 
     def set_sheet(self, sheet_url, worksheet_name):
-        self.sheet = self.gc.open_by_url(sheet_url)
-        self.ws = self.sheet.worksheet_by_title(worksheet_name)
-        self._ok = True
+        self._ok = False
+        try:
+            self.sheet = self.gc.open_by_url(sheet_url)
+            self.ws = self.sheet.worksheet_by_title(worksheet_name)
+            self._ok = True
+        except Exception as ex:
+            return ExecutionStatus(False, str(ex))
+        return ExecutionStatus(self._ok)
 
     def pull(self):
         """

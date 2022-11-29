@@ -1,348 +1,15 @@
-# REFACTORING: use web/routes.py, state/server_state.py
+# REFACTORING: all routes functions are listed in this file
 
 import json
-import os
 import re
+import os
+import util.config as config
 from urllib.parse import urlencode
-
-from dotenv import load_dotenv
-from flask import Flask, request
-import socketio
-import eventlet
-
-import util.util as util
-from googleapi.google_sheets import OBSGoogleSheets, TimingGoogleSheets
-from media import server
-from media.scheduler import MediaScheduler
-from server.minions import Minions
-from util.config import (
-    API_CLEANUP_ROUTE,
-    API_GDRIVE_FILES,
-    API_GDRIVE_SYNC,
-    API_INFO_ROUTE,
-    API_INIT_ROUTE,
-    API_MEDIA_PLAY_ROUTE,
-    API_MEDIA_SCHEDULE_PULL,
-    API_MEDIA_SCHEDULE_ROUTE,
-    API_MEDIA_SCHEDULE_SETUP,
-    API_MINIONS_DELETE,
-    API_PULL_SHEETS,
-    API_PUSH_SHEETS,
-    API_SET_STREAM_SETTINGS_ROUTE,
-    API_SIDECHAIN_ROUTE,
-    API_SOURCE_VOLUME_ROUTE,
-    API_STREAM_START_ROUTE,
-    API_STREAM_STOP_ROUTE,
-    API_TRANSITION_ROUTE,
-    API_TS_OFFSET_ROUTE,
-    API_TS_VOLUME_ROUTE,
-    API_VMIX_ACTIVE_PLAYER,
-    API_VMIX_PLAYERS,
-    API_WAKEUP_ROUTE,
-    API_GET_SERVER_STATE,
-    API_SOURCE_REFRESH,
-)
-from util.util import (CallbackThread, ExecutionStatus, MultilangParams, to_seconds, ServerState)
-from util.vmix import SourceSelector
-
-load_dotenv()
-MEDIA_DIR = os.getenv("MEDIA_DIR")
-COMMON_SERVICE_PORT = int(os.getenv("COMMON_SERVICE_PORT", 5000))
-
-# Setup Sentry
-# ------------
-# if env var set - setup integration #
-SENTRY_DSN = os.getenv("SENTRY_DSN")
-if SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.flask import FlaskIntegration
-
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        integrations=[FlaskIntegration()],
-        traces_sample_rate=1.0,
-    )
-
-sio = socketio.Server()
-app = Flask(__name__)
-sio_app = socketio.WSGIApp(sio, app)
-
-instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
-langs: list[str] = []
-server_state = ServerState(ServerState.SLEEPING)
-# init_status, wakeup_status = False, False
-cb_thread = CallbackThread()
-media_scheduler = MediaScheduler()
-sheets = OBSGoogleSheets()
-timing_sheets = TimingGoogleSheets()
-vmix_selector = SourceSelector()
-minions = Minions()
+from flask import request
 
 
-def broadcast(
-        api_route,
-        http_method,
-        params: util.MultilangParams = None,
-        param_name="params",
-        return_status=False,
-        method_name="broadcast",
-):
-    requests_ = {}  # lang: request
-    responses_ = {}  # lang: response
 
-    langs_ = params.list_langs() if params is not None else langs
-    # create requests for all langs
-    for lang in langs_:
-        addr = instance_service_addrs.addr(lang)  # get server address
-        request_ = f"{addr}{api_route}"  # create requests
-        if params is not None and param_name is not None:  # add query params if needed
-            params_json = json.dumps(params[lang])
-            query_params = urlencode({param_name: params_json})
-            request_ = request_ + "?" + query_params
-        requests_[lang] = request_  # dump request
-
-    # initialize grequests
-    urls = list(requests_.values())
-    if http_method == "GET":
-        responses_ = util.async_aiohttp_get_all(urls=urls)
-    elif http_method == "POST":
-        responses_ = util.async_aiohttp_post_all(urls=urls)
-    elif http_method == "DELETE":
-        responses_ = util.async_aiohttp_delete_all(urls=urls)
-    elif http_method == "PUT":
-        responses_ = util.async_aiohttp_put_all(urls=urls)
-    responses_ = {lang: responses_[i] for i, lang in enumerate(requests_.keys())}
-
-    # return status of response or the response itself
-    if return_status:
-        status: ExecutionStatus = ExecutionStatus(status=True)
-        for lang, response_ in responses_.items():
-            if response_.status_code != 200:
-                msg_ = f"E PYSERVER::{method_name}(): {lang}, details: {response_.text}"
-                print(msg_)
-                status.append_error(msg_)
-        return status
-    else:
-        return responses_
-
-
-def after_media_play_triggered(params: MultilangParams, status: ExecutionStatus):
-    """
-    :param params: media play params which was broadcasted to minions
-    :param status: media play status returned from minions
-    :return:
-    """
-    pass
-
-
-def load_ip_list(path):
-    global langs, instance_service_addrs
-    instance_service_addrs = util.ServiceAddrStorage()
-
-    with open(path, "rt") as fp:
-        text = fp.read()
-    ip_list = re.findall(r"^\[(?P<lang>[A-Za-z]+)\]\=(?P<ip>[a-zA-Z0-9\.]+)", text.replace(" ", ""), flags=re.MULTILINE)
-    for lang, ip in ip_list:
-        instance_service_addrs[lang] = {
-            "addr": f"http://{ip}:6000",  # address of instance_service
-        }
-    langs = [lang for lang, ip in ip_list]
-
-
-# ===== METHODS TO WORK WITH GOOGLE SHEETS ===== #
-def sync_from_sheets(deploy_minions=False, force_deploy_minions=False):
-    """
-    This function converts google sheets data to api request and
-    broadcasts it across all minions
-    """
-    deploy_minions = ((deploy_minions and server_state.sleeping()) or force_deploy_minions)
-    last_state = server_state.get()
-
-    try:
-        server_state.set(ServerState.INITIALIZING)
-        if deploy_minions:
-            try:
-                langs = sheets.to_df()["lang"].values
-                # ip_list_for_provision - list of [..., [lang, ip], ...], only those ones which have been just deployed
-                # and provisioned
-                # deploy minions if they haven't been deployed yet
-                ip_list = minions.ensure_langs(langs, wait_for_provision=True, provision_timeout=500)
-                # wake up those which were just deployed
-                wakeup_minions(ip_list)
-            except Exception as ex:  # if deployment has failed, delete minions and reraise exception
-                server_state.set(ServerState.SLEEPING)
-                minions.cleanup()
-                raise ex
-        # pull broadcast-related parameters from google sheets
-        params = sheets.to_multilang_params()
-        for lang in params:
-            try:
-                params[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
-            except KeyError:
-                server_state.set(last_state)  # reset state
-                return ExecutionStatus(False, f"No minion deployed for lang {lang}")
-    except TimeoutError as ex:
-        msg_ = f"Provisioning timeout, please check if the deployment server works properly. Details: {ex}"
-        print(msg_)
-        server_state.set(ServerState.SLEEPING)
-        return ExecutionStatus(False, msg_)
-    except Exception as ex:
-        msg_ = (
-            f"Something happened while preparing for synchronization the server from Google Sheets. Details: {ex}"
-        )
-        print(msg_)
-        server_state.set(last_state)  # reset state
-        return ExecutionStatus(False, msg_)
-    status = broadcast(
-        api_route=API_INFO_ROUTE,
-        http_method="POST",
-        params=params,
-        param_name="info",
-        return_status=True,
-        method_name="init_from_sheets",
-    )
-    if status:
-        server_state.set(ServerState.RUNNING)
-    else:
-        server_state.set(last_state)
-    return status
-
-
-# def init_from_server_langs(server_langs):
-#     """
-#     This function takes in old `server_langs` parameter and broadcasts it across minions.
-#     Made for old versions compatibility.
-#     :param server_langs:
-#     :return:
-#     """
-#     # validate input parameters before broadcasting them to servers
-#     status: ExecutionStatus = util.validate_init_params(server_langs)
-#     if not status:
-#         return status
-#
-#     for lang in server_langs:
-#         server_langs[lang]["obs_host"] = "localhost"
-#
-#     params = MultilangParams(server_langs, langs=langs)
-#     status = broadcast(
-#         API_INIT_ROUTE,
-#         "POST",
-#         params=params,
-#         param_name="server_langs",
-#         return_status=True,
-#         method_name="init_from_server_langs",
-#     )
-#     return status
-
-
-def init_from_sheets(sheet_url, worksheet_name, force_deploy_minions=False):
-    """
-    This function sets up google sheets object and synchronizes the server considering google sheets data.
-    :param sheet_url: url of a public google sheets doc
-    :param worksheet_name: a worksheet name
-    :return:
-    """
-    try:
-        sheets.set_sheet(sheet_url, worksheet_name)
-        return pull_sheets(deploy_minions=True, force_deploy_minions=force_deploy_minions)
-    except Exception as ex:
-        msg_ = f"Something happened while setting up Google Sheets. Details: {ex}"
-        print(msg_)
-        return ExecutionStatus(False, msg_)
-
-
-def get_info(fillna: object = "#"):
-    """
-    This function fetches `GET /info` from miniones
-    :param fillna:
-    :return:
-    """
-    responses = broadcast(API_INFO_ROUTE, "GET", params=None, return_status=False)
-    data = {}
-    schedule = media_scheduler.get_schedule()
-
-    for lang, response in responses.items():
-        try:
-            data[lang] = json.loads(response.text)
-            data[lang][server.SUBJECT_SERVER_LANGS]["host_url"] = instance_service_addrs.addr(lang)
-
-            data[lang][server.SUBJECT_MEDIA_SCHEDULE] = "#" if schedule is None else schedule
-        except json.JSONDecodeError:
-            if fillna:
-                data[lang] = fillna
-    return data
-
-
-def pull_sheets(deploy_minions=False, force_deploy_minions=False):
-    """
-    pull - means pull data from Google Sheets to the server
-    """
-    if not sheets.ok():
-        return ExecutionStatus(False, "Something happened with Google Sheets object")
-    try:
-        sheets.pull()
-    except Exception as ex:
-        return ExecutionStatus(False, f"Couldn't pull data from Google Sheets. Details: {ex}")
-    return sync_from_sheets(deploy_minions=deploy_minions, force_deploy_minions=force_deploy_minions)
-
-
-def push_sheets():
-    """
-    push - means push data from the server to Google Sheets
-    """
-    if not sheets.ok():
-        return ExecutionStatus(False, "Something happened with Google Sheets object")
-    try:
-        info_ = get_info(fillna=False)
-        for lang, info__ in info_.items():
-            sheets.from_info(lang, info__)
-        sheets.push()
-    except Exception as ex:
-        return ExecutionStatus(False, f"Couldn't push data to Google Sheets. Details: {ex}")
-    return ExecutionStatus(True, "Ok")
-
-
-def wakeup_minions(iplist):
-    """
-    :param iplist: list of [..., [lang, ip], ...]
-    :return:
-    """
-    global langs, instance_service_addrs
-    # TODO
-    instance_service_addrs = util.ServiceAddrStorage()
-    for lst in iplist:
-        # check the list structure
-        if not isinstance(lst, list) or len(lst) != 2:
-            return ExecutionStatus(False, "`iplist` entry should also be a list with length of 2")
-        lang, ip = lst
-        instance_service_addrs[lang] = {
-            "addr": f"http://{ip}:6000",  # address of instance_service
-        }
-    langs = [lang for lang, ip in iplist]
-
-    # broadcast wakeup to minions
-    status = broadcast(
-        API_WAKEUP_ROUTE,
-        "POST",
-        return_status=True,
-        method_name="wakeup",
-    )  # returns ExecutionStatus
-
-    # the server has woken up
-    if status:
-        server_state.set(ServerState.NOT_INITIALIZED)
-    else:
-        server_state.set(ServerState.SLEEPING)
-    # global wakeup_status
-    # wakeup_status = status.status
-
-    return status
-
-
-# ========== API ROUTES ========== #
-
-
-@app.route(API_MINIONS_DELETE, methods=["DELETE"])
+# @app.route(API_MINIONS_DELETE, methods=["DELETE"])
 def delete_server_minions():
     old_state = server_state.get()
     server_state.set(ServerState.DISPOSING)
@@ -357,7 +24,7 @@ def delete_server_minions():
     return ExecutionStatus(cleanup_status, "").to_http_status()
 
 
-@app.route(API_WAKEUP_ROUTE, methods=["POST"])
+# @app.route(API_WAKEUP_ROUTE, methods=["POST"])
 def wakeup_route():
     """
     Query parameters:
@@ -381,7 +48,7 @@ def wakeup_route():
     return status.to_http_status()
 
 
-@app.route(API_GET_SERVER_STATE, methods=["GET"])
+# @app.route(API_GET_SERVER_STATE, methods=["GET"])
 def get_state():
     return server_state.get()
     # if not wakeup_status:
@@ -391,7 +58,7 @@ def get_state():
     # return ServerState.RUNNING
 
 
-@app.route(API_INFO_ROUTE, methods=["GET"])
+# @app.route(API_INFO_ROUTE, methods=["GET"])
 def info():
     """
     :return:
@@ -399,7 +66,7 @@ def info():
     return json.dumps(get_info()), 200
 
 
-@app.route(API_INIT_ROUTE, methods=["POST"])
+# @app.route(API_INIT_ROUTE, methods=["POST"])
 def init():
     """
     Query parameters:
@@ -446,7 +113,7 @@ def init():
     return status.to_http_status()
 
 
-@app.route(API_INIT_ROUTE, methods=["GET"])
+# @app.route(API_INIT_ROUTE, methods=["GET"])
 def get_init():
     """
     :return:
@@ -482,17 +149,17 @@ def get_init():
         return json.dumps(data), 200
 
 
-@app.route(API_PULL_SHEETS, methods=["POST"])
+# @app.route(API_PULL_SHEETS, methods=["POST"])
 def api_pull_sheets():
     return pull_sheets().to_http_status()
 
 
-@app.route(API_PUSH_SHEETS, methods=["POST"])
+# @app.route(API_PUSH_SHEETS, methods=["POST"])
 def api_push_sheets():
     return push_sheets().to_http_status()
 
 
-@app.route(API_CLEANUP_ROUTE, methods=["POST"])
+# @app.route(API_CLEANUP_ROUTE, methods=["POST"])
 def cleanup():
     """
     :return:
@@ -513,7 +180,7 @@ def cleanup():
     return status.to_http_status()
 
 
-@app.route(API_MEDIA_SCHEDULE_SETUP, methods=["POST"])
+# @app.route(API_MEDIA_SCHEDULE_SETUP, methods=["POST"])
 def setup_media_schedule():
     """
     Query parameters:
@@ -533,7 +200,7 @@ def setup_media_schedule():
     return ExecutionStatus(True).to_http_status()
 
 
-@app.route(API_MEDIA_SCHEDULE_PULL, methods=["POST"])
+# @app.route(API_MEDIA_SCHEDULE_PULL, methods=["POST"])
 def pull_media_schedule():
     if not timing_sheets.ok():
         return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
@@ -571,7 +238,7 @@ def pull_media_schedule():
         return ExecutionStatus(False, f"Couldn't pull Timing. Details: {ex}").to_http_status()
 
 
-@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["POST"])
+# @app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["POST"])
 def media_schedule():
     """
     Query parameters:
@@ -591,7 +258,7 @@ def media_schedule():
     return media_scheduler.start_schedule(delay=delay).to_http_status()
 
 
-@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["GET"])
+# @app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["GET"])
 def get_media_schedule():
     """
     :return: dictionary:
@@ -616,7 +283,7 @@ def get_media_schedule():
 
 
 # PUT /media/schedule?id=...&is_enabled=False&name=...&timestamp=...
-@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["PUT"])
+# @app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["PUT"])
 def update_media_schedule():
     """
     Query parameters:
@@ -655,7 +322,7 @@ def update_media_schedule():
     return status.to_http_status()
 
 
-@app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["DELETE"])
+# @app.route(API_MEDIA_SCHEDULE_ROUTE, methods=["DELETE"])
 def delete_media_schedule():
     if not timing_sheets.ok():
         return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
@@ -665,7 +332,7 @@ def delete_media_schedule():
     return media_scheduler.delete_schedule().to_http_status()
 
 
-@app.route(API_MEDIA_PLAY_ROUTE, methods=["POST"])
+# @app.route(API_MEDIA_PLAY_ROUTE, methods=["POST"])
 def media_play():
     """
     Query parameters:
@@ -693,7 +360,7 @@ def media_play():
     return status.to_http_status()
 
 
-@app.route(API_MEDIA_PLAY_ROUTE, methods=["DELETE"])
+# @app.route(API_MEDIA_PLAY_ROUTE, methods=["DELETE"])
 def media_play_delete():
     """
     Stops any media played
@@ -705,7 +372,7 @@ def media_play_delete():
     return status.to_http_status()
 
 
-@app.route(API_SET_STREAM_SETTINGS_ROUTE, methods=["POST"])
+# @app.route(API_SET_STREAM_SETTINGS_ROUTE, methods=["POST"])
 def set_stream_settings():
     """
     Query parameters:
@@ -729,7 +396,7 @@ def set_stream_settings():
     return status.to_http_status()
 
 
-@app.route(API_STREAM_START_ROUTE, methods=["POST"])
+# @app.route(API_STREAM_START_ROUTE, methods=["POST"])
 def stream_start():
     """
     Starts streaming.
@@ -747,7 +414,7 @@ def stream_start():
     return status.to_http_status()
 
 
-@app.route(API_STREAM_STOP_ROUTE, methods=["POST"])
+# @app.route(API_STREAM_STOP_ROUTE, methods=["POST"])
 def stream_stop():
     """
     Stops streaming.
@@ -765,7 +432,7 @@ def stream_stop():
     return status.to_http_status()
 
 
-@app.route(API_TS_OFFSET_ROUTE, methods=["POST"])
+# @app.route(API_TS_OFFSET_ROUTE, methods=["POST"])
 def set_ts_offset():
     """
     Query parameters:
@@ -789,7 +456,7 @@ def set_ts_offset():
     return status.to_http_status()
 
 
-@app.route(API_TS_OFFSET_ROUTE, methods=["GET"])
+# @app.route(API_TS_OFFSET_ROUTE, methods=["GET"])
 def get_ts_offset():
     """
     Retrieves information about teamspeak sound offset
@@ -806,7 +473,7 @@ def get_ts_offset():
     return json.dumps(data), 200
 
 
-@app.route(API_TS_VOLUME_ROUTE, methods=["POST"])
+# @app.route(API_TS_VOLUME_ROUTE, methods=["POST"])
 def set_ts_volume():
     """
     Query parameters:
@@ -830,7 +497,7 @@ def set_ts_volume():
     return status.to_http_status()
 
 
-@app.route(API_TS_VOLUME_ROUTE, methods=["GET"])
+# @app.route(API_TS_VOLUME_ROUTE, methods=["GET"])
 def get_ts_volume():
     """
     Retrieves information about teamspeak sound volume
@@ -847,7 +514,7 @@ def get_ts_volume():
     return json.dumps(data), 200
 
 
-@app.route(API_SOURCE_VOLUME_ROUTE, methods=["POST"])
+# @app.route(API_SOURCE_VOLUME_ROUTE, methods=["POST"])
 def set_source_volume():
     """
     Query parameters:
@@ -871,7 +538,7 @@ def set_source_volume():
     return status.to_http_status()
 
 
-@app.route(API_SOURCE_VOLUME_ROUTE, methods=["GET"])
+# @app.route(API_SOURCE_VOLUME_ROUTE, methods=["GET"])
 def get_source_volume():
     """
     Retrieves information about original source volume
@@ -888,7 +555,7 @@ def get_source_volume():
     return json.dumps(data), 200
 
 
-@app.route(API_SOURCE_REFRESH, methods=["PUT"])
+# @app.route(API_SOURCE_REFRESH, methods=["PUT"])
 def refresh_source():
     """
     This API refreshes media sources for specified langs.
@@ -906,7 +573,7 @@ def refresh_source():
     return status.to_http_status()
 
 
-@app.route(API_SIDECHAIN_ROUTE, methods=["POST"])
+# @app.route(API_SIDECHAIN_ROUTE, methods=["POST"])
 def setup_sidechain():
     """
     Query parameters:
@@ -930,7 +597,7 @@ def setup_sidechain():
     return status.to_http_status()
 
 
-@app.route(API_TRANSITION_ROUTE, methods=["POST"])
+# @app.route(API_TRANSITION_ROUTE, methods=["POST"])
 def setup_transition():
     """
     Query parameters:
@@ -954,7 +621,7 @@ def setup_transition():
     return status.to_http_status()
 
 
-@app.route(API_GDRIVE_SYNC, methods=["POST"])
+# @app.route(API_GDRIVE_SYNC, methods=["POST"])
 def setup_gdrive_sync():
     """
     Query parameters:
@@ -978,7 +645,7 @@ def setup_gdrive_sync():
     return status.to_http_status()
 
 
-@app.route(API_GDRIVE_FILES, methods=["GET"])
+# @app.route(API_GDRIVE_FILES, methods=["GET"])
 def get_gdrive_files():
     """
     Retrieves information about google drive files
@@ -1018,7 +685,7 @@ def get_gdrive_files():
     return json.dumps(result), 200
 
 
-@app.route(API_VMIX_PLAYERS, methods=["POST"])
+# @app.route(API_VMIX_PLAYERS, methods=["POST"])
 def post_vmix_players():
     """
     Sets vmix ip addresses list
@@ -1045,7 +712,7 @@ def post_vmix_players():
     return ExecutionStatus(True, "Ok").to_http_status()
 
 
-@app.route(API_VMIX_PLAYERS, methods=["GET"])
+# @app.route(API_VMIX_PLAYERS, methods=["GET"])
 def get_vmix_players():
     """
     Returns current vmix players
@@ -1053,7 +720,7 @@ def get_vmix_players():
     return ExecutionStatus(True, json.dumps(vmix_selector.dump_dict())).to_http_status()
 
 
-@app.route(API_VMIX_ACTIVE_PLAYER, methods=["POST"])
+# @app.route(API_VMIX_ACTIVE_PLAYER, methods=["POST"])
 def post_active_vmix_player():
     """
     Selects active vmix player.
@@ -1070,7 +737,7 @@ def post_active_vmix_player():
     return ExecutionStatus(True).to_http_status()
 
 
-@app.route(API_VMIX_ACTIVE_PLAYER, methods=["GET"])
+# @app.route(API_VMIX_ACTIVE_PLAYER, methods=["GET"])
 def get_active_vmix_player():
     """
     Returns current active vmix player
@@ -1078,12 +745,12 @@ def get_active_vmix_player():
     return ExecutionStatus(True, vmix_selector.get_active_ip()).to_http_status()
 
 
-@app.route("/healthcheck", methods=["GET"])
+# @app.route("/healthcheck", methods=["GET"])
 def healthcheck():
     return "", 200
 
 
-@app.before_request
+# @app.before_request
 def before_request():
     if server_state.sleeping():
         if request.path not in (API_WAKEUP_ROUTE, API_INIT_ROUTE, API_GET_SERVER_STATE):
@@ -1099,7 +766,7 @@ def before_request():
             return f'This API is not allowed from "{request.remote_addr}"'
 
 
-@app.after_request
+# @app.after_request
 def after_request(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Credentials"] = "true"
@@ -1108,54 +775,11 @@ def after_request(response):
     return response
 
 
-@app.errorhandler(Exception)
+# @app.errorhandler(Exception)
 def server_error(err):
     print(f"E PYSERVER::server_error(): {err}")
     return f"Something happened :(\n\nDetails:\n{err}", 500
 
 
-# class HTTPSThread(threading.Thread):
-#     def __init__(self, app):
-#         super().__init__()
-#         self.app = app
-#
-#     def run(self) -> None:
-#         self.app.run("0.0.0.0", COMMON_SERVICE_PORT + 1, ssl_context="adhoc")
-#
-#
-# _thread = HTTPSThread(app)
-
-if __name__ == "__main__":
-    cb_thread.start()
-    # _thread.start()
-    eventlet.wsgi.server(eventlet.listen(('', COMMON_SERVICE_PORT)), app)
-    # app.run("0.0.0.0", COMMON_SERVICE_PORT)
-
-# -- server side -- #
-
-from flask import Flask
-import socketio
-import eventlet
-
-sio = socketio.Server()
-app = socketio.WSGIApp(sio, Flask(__name__))
-
-
-sio = socketio.Server()
-app = socketio.WSGIApp(sio, Flask(__name__))
-
-@sio.event
-def connect(sid, environ):
-    print('connect ', sid)
-
-sio.on("message 1", lambda sid, data: print(f"Received: {data}"))
-
-eventlet.wsgi.server(eventlet.listen(('', 8088)), app)
-
-# -- client
-import socketio
-socketio.Server()
-sio = socketio.Client()
-sio.connect('http://localhost:8088')
-
-sio.on("message 1", lambda data: print(f"message 1: {data}"))
+def wrap_all(app):
+    raise NotImplementedError()

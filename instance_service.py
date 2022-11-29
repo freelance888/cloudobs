@@ -165,28 +165,30 @@ def init():
     }
     :return:
     """
-    server_langs = request.args.get("server_langs", "")
-    if not server_langs:
-        return ExecutionStatus(False, "server_langs not specified").to_http_status()
-    server_langs = json.loads(server_langs)
-
-    global obs_server
-
-    if obs_server is not None:
-        try:
-            obs_server.cleanup()
-            time.sleep(1)  # wait for cleanup
-        except Exception:  # FIXME
-            pass
-        #del obs_server
-        #obs_server = None
-
-    if obs_server is None:
-        obs_server = server.Server()
-
-    status: ExecutionStatus = obs_server.initialize(server_langs=server_langs)
-
-    return status.to_http_status()
+    return ExecutionStatus(False, f"`POST {API_INIT_ROUTE}` is deprecated, "
+                                  f"please use `POST {API_INFO_ROUTE}`").to_http_status()
+    # server_langs = request.args.get("server_langs", "")
+    # if not server_langs:
+    #     return ExecutionStatus(False, "server_langs not specified").to_http_status()
+    # server_langs = json.loads(server_langs)
+    #
+    # global obs_server
+    #
+    # if obs_server is not None:
+    #     try:
+    #         obs_server.cleanup()
+    #         time.sleep(1)  # wait for cleanup
+    #     except Exception:  # FIXME
+    #         pass
+    #     #del obs_server
+    #     #obs_server = None
+    #
+    # if obs_server is None:
+    #     obs_server = server.Server()
+    #
+    # status: ExecutionStatus = obs_server.initialize(server_langs=server_langs)
+    #
+    # return status.to_http_status()
 
 
 @app.route(API_CLEANUP_ROUTE, methods=["POST"])
@@ -202,8 +204,6 @@ def cleanup():
 
     if obs_server is not None:
         obs_server.cleanup()
-        #del obs_server
-        #obs_server = None
         wakeup_status = False
 
     return ExecutionStatus(status=True).to_http_status()
@@ -222,12 +222,8 @@ def media_schedule():
     if obs_server is None:
         return ExecutionStatus(status=False, message="The server was not initialized yet").to_http_status()
 
-    schedule = request.args.get("schedule", None)
-    schedule = json.loads(schedule)
-
-    status: ExecutionStatus = obs_server.schedule_media(schedule=schedule)
-
-    return status.to_http_status()
+    return ExecutionStatus(False,
+                           f"`POST {API_MEDIA_SCHEDULE_ROUTE}` is deprecated for `instance_service`").to_http_status()
 
 
 @app.route(API_MEDIA_PLAY_ROUTE, methods=["POST"])
@@ -441,9 +437,7 @@ def setup_sidechain():
     sidechain_settings = request.args.get("sidechain_settings", None)
     sidechain_settings = json.loads(sidechain_settings)
 
-    status: ExecutionStatus = obs_server.setup_sidechain(sidechain_settings=sidechain_settings)
-
-    return status.to_http_status()
+    return obs_server.setup_sidechain(sidechain_settings=sidechain_settings).to_http_status()
 
 
 @app.route(API_TRANSITION_ROUTE, methods=["POST"])
@@ -460,9 +454,7 @@ def setup_transition():
     transition_settings = request.args.get("transition_settings", None)
     transition_settings = json.loads(transition_settings)
 
-    status: ExecutionStatus = obs_server.setup_transition(transition_settings=transition_settings)
-
-    return status.to_http_status()
+    return obs_server.setup_transition(transition_settings=transition_settings).to_http_status()
 
 
 @app.route(API_GDRIVE_SYNC, methods=["POST"])
@@ -501,7 +493,7 @@ def get_gdrive_files():
         return ExecutionStatus(False, "Google drive was not initialized yet").to_http_status()
 
     addr = gdrive_settings["gdrive_sync_addr"]
-    response_ = requests.get(f"{addr}/files")
+    response_ = requests.get(f"{addr.rstrip('/')}/files")
     if response_.status_code != 200:
         msg_ = f"E PYSERVER::get_gdrive_files(): Details: {response_.text}"
         print(msg_)
@@ -513,7 +505,6 @@ def get_gdrive_files():
 @app.route("/healthcheck", methods=["GET"])
 def healthcheck():
     return "", 200
-
 
 @app.before_request
 def before_request():
