@@ -1140,10 +1140,6 @@ import eventlet
 sio = socketio.Server()
 app = socketio.WSGIApp(sio, Flask(__name__))
 
-
-sio = socketio.Server()
-app = socketio.WSGIApp(sio, Flask(__name__))
-
 @sio.event
 def connect(sid, environ):
     print('connect ', sid)
