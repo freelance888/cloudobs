@@ -6,6 +6,8 @@ import re
 import pandas as pd
 import pygsheets
 from dotenv import load_dotenv
+from pydantic import BaseModel, validator
+from typing import Dict, List
 
 from media import server
 from media.server import ServerSettings
@@ -17,6 +19,28 @@ API_KEY = os.getenv("GDRIVE_API_KEY", "")
 SYNC_SECONDS = int(os.getenv("GDRIVE_SYNC_SECONDS", 120))
 GDRIVE_SYNC_ADDR = "http://localhost:7000"
 SERVICE_FILE = os.getenv("SERVICE_ACCOUNT_FILE")
+
+
+class LangConfig(BaseModel):
+    lang: str
+    source_url: str = ""
+    target_server: str = ""
+    target_key: str = ""
+    gdrive_folder_id: str = ""
+    media_dir: str = MEDIA_DIR
+    api_key: str = API_KEY
+    sync_seconds: int = SYNC_SECONDS
+    gdrive_sync_addr: str = GDRIVE_SYNC_ADDR
+
+    @validator('lang')
+    def valid_lang(cls, v):
+        if not re.fullmatch(r"[A-Za-z\_]+", v):
+            raise ValueError(f"Invalid lang \"{v}\"")
+        return v
+
+
+class SheetConfig(BaseModel):
+    langs: List[LangConfig] = []
 
 
 class OBSGoogleSheets:
@@ -36,20 +60,20 @@ class OBSGoogleSheets:
     def set_sheet(self, sheet_url, worksheet_name):
         self.sheet = self.gc.open_by_url(sheet_url)
         self.ws = self.sheet.worksheet_by_title(worksheet_name)
-        self.settings = {}
         self._ok = True
 
     def langs(self):
         return list(self.settings.keys())
 
-    def pull(self):
-        data = self.ws.get_as_df()  # load data from google sheets
-        self.from_df(data)
+    def pull(self) -> SheetConfig:
+        df = self.ws.get_as_df()  # load data from google sheets
+        return self.parse_df(df)
 
-    def push(self):
-        df = self.to_df()
+    def push(self, sheet_config: SheetConfig):
+        df = self.to_df(sheet_config)
         self.ws.set_dataframe(df, (1, 1))
 
+    # TODO: remove method
     def from_info(self, lang, info):
         """
         Updates server settings from the given `info`. Also pushes the dataframe to the google sheet
@@ -63,13 +87,17 @@ class OBSGoogleSheets:
                 self._set_subject_value(lang, subject, k, v)
         self.push()
 
+    # TODO: remove method
     def dump_info(self, lang):
         # TODO
         return self.settings[lang].to_dict()
 
-    def from_df(self, df):
+    def parse_df(self, df: pd.DataFrame) -> SheetConfig:
+        sheet_config = SheetConfig()
+
         for lang in df["lang"]:  # for each lang
             data_ = df.loc[df["lang"] == lang]
+
             source_url = data_["source_url"].values[0]
             target_server = data_["target_server"].values[0]
             target_key = data_["target_key"].values[0]
@@ -82,36 +110,42 @@ class OBSGoogleSheets:
             else:
                 gdrive_folder_id = ""
 
-            self._update_lang(
-                lang,
-                source_url=source_url,
-                target_server=target_server,
-                target_key=target_key,
-                gdrive_folder_id=gdrive_folder_id,
-            )
+            lang_config = LangConfig(lang=lang, source_url=source_url, target_server=target_server,
+                                     target_key=target_key, gdrive_folder_id=gdrive_folder_id)
+            if lang in [lang_config_.lang for lang_config_ in sheet_config.langs]:
+                raise KeyError(f"Multiple entries for lang \"{lang}\"")
 
-    def to_df(self):
-        """
-        Forms a dataframe based on self.settings.
-        Has the following structure:
-        | lang    | source_url    | target_server | target_key    | gdrive_folder_url   |
-        """
-        data = []
-        for lang in self.settings:
-            # settings: ServerSettings = self.settings[lang]
-            source_url = self._get_value(lang, "source_url")
-            target_server = self._get_value(lang, "target_server")
-            target_key = self._get_value(lang, "target_key")
-            gdrive_folder_id = self._get_value(lang, "gdrive_folder_id")
-            if gdrive_folder_id:
-                gdrive_folder_url = f"https://drive.google.com/drive/u/0/folders/{gdrive_folder_id}"
+            sheet_config.langs.append(lang_config)
+
+            # self._update_lang(
+            #     lang,
+            #     source_url=source_url,
+            #     target_server=target_server,
+            #     target_key=target_key,
+            #     gdrive_folder_id=gdrive_folder_id,
+            # )
+        return sheet_config
+
+    def to_df(self, sheet_config: SheetConfig) -> pd.DataFrame:
+        rows = []
+        for _, lang_config in sheet_config.langs.items():  # for each lang
+            lang = lang_config.lang
+            source_url = lang_config.source_url
+            target_server = lang_config.target_server
+            target_key = lang_config.target_key
+            if lang_config.gdrive_folder_id:
+                gdrive_folder_url = f"https://drive.google.com/drive/folders/{lang_config.gdrive_folder_id}"
             else:
                 gdrive_folder_url = ""
-            data.append([lang, source_url, target_server, target_key, gdrive_folder_url])
-        return pd.DataFrame(data, columns=["lang", "source_url", "target_server", "target_key", "gdrive_folder_url"])
+            rows.append([
+                lang, source_url, target_server, target_key, gdrive_folder_url
+            ])
+        return pd.DataFrame(rows, columns=["lang", "source_url", "target_server", "target_key",
+                                           "gdrive_folder_url"])
 
+    # TODO: remove
     def to_multilang_params(
-        self, subjects=(server.SUBJECT_SERVER_LANGS, server.SUBJECT_GDRIVE_SETTINGS, server.SUBJECT_STREAM_SETTINGS)
+            self, subjects=(server.SUBJECT_SERVER_LANGS, server.SUBJECT_GDRIVE_SETTINGS, server.SUBJECT_STREAM_SETTINGS)
     ):
         params = {}
         for lang in self.settings:
@@ -122,6 +156,7 @@ class OBSGoogleSheets:
             params[lang] = info_
         return MultilangParams(params, langs=list(self.settings.keys()))
 
+    # TODO: remove
     def _update_lang(self, lang, **kwargs):
         """
         Updates a single language settings.
@@ -132,6 +167,7 @@ class OBSGoogleSheets:
         for k, v in kwargs.items():
             self._set_value(lang, k, v)
 
+    # TODO: remove
     def _get_value(self, lang, k):
         if k == "source_url":
             return self.settings[lang].get(server.SUBJECT_SERVER_LANGS, "original_media_url")
@@ -152,6 +188,7 @@ class OBSGoogleSheets:
         else:
             raise KeyError(f"Invalid key: {k}")
 
+    # TODO: remove
     def _set_value(self, lang, k, v):
         if k == "source_url":
             self.settings[lang].set(server.SUBJECT_SERVER_LANGS, "original_media_url", v)
@@ -172,11 +209,13 @@ class OBSGoogleSheets:
         else:
             raise KeyError(f"Invalid key: {k}")
 
+    # TODO: remove
     def _set_subject_value(self, lang, subject, k, v):
         if lang not in self.settings:
             self._init_settings(lang)
         self.settings[lang].set(subject, k, v)
 
+    # TODO: remove
     def _init_settings(self, lang):
         self.settings[lang] = ServerSettings()
         self._set_value(lang, "media_dir", MEDIA_DIR)
