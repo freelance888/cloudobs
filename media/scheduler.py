@@ -145,3 +145,14 @@ class MediaScheduler:
         self.schedule = {}
         self.status.running = False
         return ExecutionStatus(True, message="Ok")
+
+    def reset_schedule(self):
+        # This functions resets the schedule, so it can be started again
+        self.cb_thread.clean_callbacks()
+
+        for id in self.schedule:
+            self.schedule[id]["is_enabled"] = True
+            self.schedule[id]["is_played"] = False
+        self.status.running = False
+
+        return ExecutionStatus(True, message="Ok")

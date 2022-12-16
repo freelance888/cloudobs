@@ -22,6 +22,7 @@ from util.config import (
     API_MEDIA_SCHEDULE_PULL,
     API_MEDIA_SCHEDULE_ROUTE,
     API_MEDIA_SCHEDULE_SETUP,
+    API_MEDIA_SCHEDULE_RESET,
     API_MEDIA_SCHEDULE_STATUS,
     API_MINIONS_DELETE,
     API_PULL_SHEETS,
@@ -670,6 +671,16 @@ def delete_media_schedule():
         return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
     broadcast(API_MEDIA_PLAY_ROUTE, "DELETE", return_status=True, method_name="media_play")
     return media_scheduler.delete_schedule().to_http_status()
+
+
+@app.route(API_MEDIA_SCHEDULE_RESET, methods=["POST"])
+def reset_media_schedule():
+    if not timing_sheets.ok():
+        return ExecutionStatus(False, "Please complete Timing Google Sheets initialization first").to_http_status()
+    if timing_sheets.timing_df is None:
+        return ExecutionStatus(False, "Please pull Timing Google Sheets first").to_http_status()
+    broadcast(API_MEDIA_PLAY_ROUTE, "DELETE", return_status=True, method_name="media_play")
+    return media_scheduler.reset_schedule().to_http_status()
 
 
 @app.route(API_MEDIA_PLAY_ROUTE, methods=["POST"])
