@@ -140,6 +140,9 @@
    - `name` - new video name, optional
    - `timestamp` - new timestamp, optional (format of `hh:mm:ss`)
    - `is_enabled` - enables/disables specified schedule, optional
+### `POST /media/schedule/reset`
+ - Resets current timing, so it can be started again
+ - Also stops the video playing
 ### `DELETE /media/schedule`
  - Removes current media schedule
 ## MEDIA PLAY
