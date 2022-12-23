@@ -1137,16 +1137,31 @@ from flask import Flask
 import socketio
 import eventlet
 
+
 sio = socketio.Server()
 app = socketio.WSGIApp(sio, Flask(__name__))
+
+def worker_eventlet():
+    eventlet.wsgi.server(eventlet.listen(('', 8088)), app)
+
+def worker_1():
+    while True:
+        sio.sleep(2)
+        print("ttt")
+        sio.emit("message", "msg")
 
 @sio.event
 def connect(sid, environ):
     print('connect ', sid)
 
-sio.on("message 1", lambda sid, data: print(f"Received: {data}"))
+@sio.on("message")
+def on_message(sid, data):
+    print(f"Server received a message \"{data}\", sending it back")
+    sio.emit("message", data)
 
-eventlet.wsgi.server(eventlet.listen(('', 8088)), app)
+sio.start_background_task(worker_1)
+worker_eventlet()
+
 
 # -- client
 import socketio
@@ -1154,4 +1169,7 @@ socketio.Server()
 sio = socketio.Client()
 sio.connect('http://localhost:8088')
 
-sio.on("message 1", lambda data: print(f"message 1: {data}"))
+@sio.on("message")
+def my_message(data):
+    print('message received with ', data)
+

@@ -127,6 +127,11 @@ class SSHContext:
         return self.request("delete_vms", "POST")
 
     def provision(self, ip_list):
+        """
+        Runs provision for specified lang-ip pairs
+        :param ip_list: list, [... [lang, ip], ...]
+        :return:
+        """
         return self.request("provision", "POST", {"ip_list": json.dumps(ip_list)})
 
     def check_provision(self, ip):
@@ -153,7 +158,7 @@ class Spawner:
     def ensure_langs(self, langs, wait_for_provision=False, provision_timeout=300):
         """
         :param langs: list of langs
-        :return: list of [..., [lang, ip], ...] which are about being provisioned
+        :return: list of [..., [lang, ip], ...]
         """
         # make sure we have enough minions deployed
         self._ensure_minions(len(langs))
