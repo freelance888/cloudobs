@@ -11,6 +11,7 @@ from typing import Dict, List
 
 from media import server
 from media.server import ServerSettings
+from models import MinionSettings
 from util.util import (MultilangParams, to_seconds)
 
 load_dotenv()
@@ -61,8 +62,11 @@ class SheetConfig:
     def list_langs(self) -> List[str]:
         return list(self._langs.keys())
 
-    def list_lang_configs(self) -> List[LangConfig]:
+    def list_configs(self) -> List[LangConfig]:
         return list(self._langs.values())
+
+    def items(self) -> List[List[str, LangConfig]]:
+
 
 
 class OBSGoogleSheets:
@@ -87,16 +91,16 @@ class OBSGoogleSheets:
     # def langs(self):
     #     return list(self.settings.keys())
 
-    def pull(self) -> SheetConfig:
+    def pull(self) -> Dict[str, MinionSettings]:
         df = self.ws.get_as_df()  # load data from google sheets
         return self.parse_df(df)
 
-    def push(self, sheet_config: SheetConfig):
+    def push(self, sheet_config: Dict[str, MinionSettings]):
         df = self.to_df(sheet_config)
         self.ws.set_dataframe(df, (1, 1))
 
-    def parse_df(self, df: pd.DataFrame) -> SheetConfig:
-        sheet_config = SheetConfig()
+    def parse_df(self, df: pd.DataFrame) -> Dict[str, MinionSettings]:
+        langs = {}
 
         for id in df.index:  # for each lang
             lang = df.loc[id, "lang"]
@@ -113,24 +117,32 @@ class OBSGoogleSheets:
             else:
                 gdrive_folder_id = ""
 
-            lang_config = LangConfig(lang=lang, source_url=source_url, target_server=target_server,
-                                     target_key=target_key, gdrive_folder_id=gdrive_folder_id)
-            if lang in sheet_config.list_langs():
+            settings = MinionSettings.get_none()
+
+            settings.addr_config.original_media_url = source_url
+            settings.stream_settings.server = target_server
+            settings.stream_settings.key = target_key
+            settings.gdrive_settings.media_dir = MEDIA_DIR
+            settings.gdrive_settings.api_key = API_KEY
+            settings.gdrive_settings.sync_seconds = SYNC_SECONDS
+            settings.gdrive_settings.gdrive_sync_addr = GDRIVE_SYNC_ADDR
+            settings.gdrive_settings.folder_id = gdrive_folder_id
+
+            if lang in langs:
                 raise KeyError(f"Multiple entries for lang \"{lang}\"")
 
-            sheet_config.set_lang_config(lang_config)
+            langs[lang] = settings
 
-        return sheet_config
+        return langs
 
-    def to_df(self, sheet_config: SheetConfig) -> pd.DataFrame:
+    def to_df(self, sheet_config: Dict[str, MinionSettings]) -> pd.DataFrame:
         rows = []
-        for lang_config in sheet_config.list_lang_configs():  # for each lang
-            lang = lang_config.lang
-            source_url = lang_config.source_url
-            target_server = lang_config.target_server
-            target_key = lang_config.target_key
-            if lang_config.gdrive_folder_id:
-                gdrive_folder_url = f"https://drive.google.com/drive/folders/{lang_config.gdrive_folder_id}"
+        for lang, settings in sheet_config.items():  # for each lang
+            source_url = settings.addr_config.original_media_url
+            target_server = settings.stream_settings.server
+            target_key = settings.stream_settings.key
+            if settings.gdrive_settings.folder_id:
+                gdrive_folder_url = f"https://drive.google.com/drive/folders/{settings.gdrive_settings.folder_id}"
             else:
                 gdrive_folder_url = ""
             rows.append([

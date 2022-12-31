@@ -5,6 +5,7 @@ import sys
 import threading
 from threading import Lock
 import time
+from typing import List
 
 import aiohttp
 from asgiref import sync
@@ -405,3 +406,27 @@ class ServerState:
 
     def disposing(self):
         return self.state == ServerState.DISPOSING
+
+
+class WebsocketResponse:
+    @classmethod
+    def wait_for(cls, responses):
+        while not all([r.done() for r in responses]):
+            time.sleep(0.1)
+        return responses
+
+    def __init__(self, timeout=5.0):
+        self.t = time.time()
+        self.timeout = timeout
+        self.response = None
+        self._done = False
+
+    def callback(self, *data):
+        self.response = data
+        self._done = True
+
+    def done(self):
+        return self._done or (time.time() - self.t) >= self.timeout
+
+    def result(self):
+        return self.response

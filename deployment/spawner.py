@@ -4,6 +4,8 @@ import logging
 import os
 import time
 from urllib.parse import urlencode
+from pydantic import BaseModel
+from typing import Dict
 
 import requests
 from dotenv import load_dotenv
@@ -15,71 +17,70 @@ SA_DEPLOY_IP = os.getenv("SA_DEPLOY_IP", None)
 SA_DEPLOY_PORT = os.getenv("SA_DEPLOY_PORT", None)
 
 
-class IPDict:
-    def __init__(self):
-        self._ip_list = {}  # ip: lang
+class IPDict(BaseModel):
+    ip_langs: Dict[str, str] = {}
 
     def add_ip_if_not_exists(self, ip):
-        if ip not in self._ip_list:
-            self._ip_list[ip] = ""
+        if ip not in self.ip_langs:
+            self.ip_langs[ip] = ""
 
     def set_ip_lang(self, ip, lang):
         if not lang:
             self.reset_ip_lang(ip)
             return
-        for _ip, _lang in self._ip_list.items():
+        for _ip, _lang in self.ip_langs.items():
             if _ip != ip and _lang == lang:
                 raise ValueError("Lang is already bound for another ip")
         self.add_ip_if_not_exists(ip)
-        self._ip_list[ip] = lang
+        self.ip_langs[ip] = lang
 
     def reset_ip_lang(self, ip):
         self.add_ip_if_not_exists(ip)
-        self._ip_list[ip] = ""
+        self.ip_langs[ip] = ""
 
     def remove_lang_if_exists(self, lang):
-        for ip in self._ip_list.keys():
-            if self._ip_list[ip] == lang:
+        for ip in self.ip_langs.keys():
+            if self.ip_langs[ip] == lang:
                 self.reset_ip_lang(ip)
 
     def remove_ip(self, ip):
-        if ip in self._ip_list:
-            self._ip_list.pop(ip)
+        if ip in self.ip_langs:
+            self.ip_langs.pop(ip)
 
     def ip_has_lang(self, ip):
-        return ip in self._ip_list
+        return ip in self.ip_langs
 
     def get_ip_lang(self, ip):
-        if ip not in self._ip_list:
+        if ip not in self.ip_langs:
             raise KeyError(f"IP: {ip}")
-        return self._ip_list[ip]
+        return self.ip_langs[ip]
 
     def get_lang_ip(self, lang):
-        for ip, _lang in self._ip_list.items():
+        for ip, _lang in self.ip_langs.items():
             if _lang == lang:
                 return ip
         raise KeyError(f"Lang: {lang}")
 
     def list_ips(self):
-        return list(self._ip_list.keys())
+        return list(self.ip_langs.keys())
 
     def list_free_ips(self):
-        return [ip for ip, lang in self._ip_list.items() if not lang]
+        return [ip for ip, lang in self.ip_langs.items() if not lang]
 
     def list_langs(self):
         """
         :return: List
         """
-        return [lang for ip, lang in self._ip_list.items() if lang]
+        return [lang for ip, lang in self.ip_langs.items() if lang]
 
     def ip_list(self):
         """
         :return: list of [... [lang, ip], ...]
         """
-        return [[lang, ip] for ip, lang in self._ip_list.items()]
+        return [[lang, ip] for ip, lang in self.ip_langs.items()]
 
     def cleanup(self):
-        for ip in list(self._ip_list.keys()):
+        for ip in list(self.ip_langs.keys()):
             self.remove_ip(ip)
 
 
@@ -121,6 +122,9 @@ class SSHContext:
         return self.request("create_vm", "POST", {"count": json.dumps(total_num_vms)})
 
     def get_ip(self):
+        """
+        Returns list of ips ["ip1", "ip2", ... ]
+        """
         return self.request("get_ip", "GET")
 
     def delete_vms(self):
@@ -142,6 +146,21 @@ class Spawner:
     def __init__(self):
         self.ssh_context = SSHContext(ip=SA_DEPLOY_IP)
         self.ip_dict = IPDict()
+
+    def json(self):
+        return self.ip_dict.json()
+
+    @classmethod
+    def from_json(cls, json_dump):
+        spawner = Spawner()
+        spawner.ip_dict = IPDict.parse_raw(json_dump)
+        ips = spawner.ssh_context.get_ip()
+
+        for ip in spawner.ip_dict.list_ips():
+            if ip not in ips:
+                spawner.ip_dict.remove_ip(ip)
+
+        return spawner
 
     def _ensure_minions(self, n_minions):
         assert n_minions > 0, "`n_minions` cannot be less than 1"

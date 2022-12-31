@@ -1165,11 +1165,58 @@ worker_eventlet()
 
 # -- client
 import socketio
-socketio.Server()
 sio = socketio.Client()
 sio.connect('http://localhost:8088')
 
-@sio.on("message")
-def my_message(data):
-    print('message received with ', data)
+class Responder:
+    def __init__(self, name):
+        self.name = name
+        sio.on("message", self.on_message)
 
+    def on_message(self, data):
+        print(f"{self.name} received message: {data}")
+
+r = Responder("R1")
+
+
+# -------------------------------- TESTING callbacks
+# --- Server side:
+
+from flask import Flask
+import socketio
+import eventlet
+import time
+
+
+sio = socketio.Server()
+app = socketio.WSGIApp(sio, Flask(__name__))
+
+def worker_eventlet():
+    eventlet.wsgi.server(eventlet.listen(('', 8088)), app)
+
+@sio.on("message")
+def on_message(sid, data):
+    print(f"Server received a message \"{data}\", sending it back")
+    time.sleep(1)
+    return "asd", 123, 345
+
+worker_eventlet()
+
+# --- Client side
+
+import socketio
+import time
+sio = socketio.Client()
+sio.connect('http://localhost:8088')
+
+class Cls:
+    def __init__(self, name):
+        self.name = name
+    def callback(self, *data):
+        print(f"Callback {self.name} received: {data}")
+
+c = Cls("B1")
+sio.emit("message", "test", callback=c.callback)
+print("t1")
+time.sleep(2)
+print("t2")
