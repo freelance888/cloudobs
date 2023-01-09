@@ -5,15 +5,12 @@ import sys
 import threading
 from threading import Lock
 import time
+import json
 from typing import List
 
 import aiohttp
 from asgiref import sync
 
-
-PLAYBACK_MODE_FORCE = "force"  # stop any media being played right now, and play media specified
-PLAYBACK_MODE_CHECK_ANY = "check_any"  # if any video is being played, skip
-PLAYBACK_MODE_CHECK_SAME = "check_same"  # if the same video is being played, skip, otherwise play
 
 def async_aiohttp_get_all(urls):
     """
@@ -204,9 +201,10 @@ class MultilangParams:
 
 
 class ExecutionStatus:
-    def __init__(self, status=True, message=""):
+    def __init__(self, status=True, message="", json_result=None):
         self.status = status
-        self.message = message
+        self.message = [message]
+        self.json_result = json_result
 
         if re.match(r"\d{3}$", str(status)):
             self._type = "http"
@@ -220,15 +218,10 @@ class ExecutionStatus:
             return bool(self.status)
 
     def append_warning(self, message):
-        if self.message:
-            self.message += "\n-----\n"
-        self.message += message
-        self.status = False
+        self.message.append(message)
 
     def append_error(self, message):
-        if self.message:
-            self.message += "\n-----\n"
-        self.message += message
+        self.message.append(message)
         self.status = False
 
     def to_http_status(self):
@@ -237,8 +230,26 @@ class ExecutionStatus:
         `(message, code)`
         """
         code = 200 if self.__bool__() else 500
-        msg = "Ok" if code == 200 and not self.message else self.message
-        return msg, code
+
+        if self.message:
+            message = "\n".join(self.message)
+        else:
+            message = "Ok"
+
+        return message, code
+
+    def to_json_result(self):
+        if self.json_result:
+            return json.dumps({
+                "result": self.__bool__(),
+                "details": self.message,
+                "json": self.json_result
+            })
+        else:
+            return json.dumps({
+                "result": self.__bool__(),
+                "details": self.message
+            })
 
 
 class DefaultDict:
@@ -406,27 +417,3 @@ class ServerState:
 
     def disposing(self):
         return self.state == ServerState.DISPOSING
-
-
-class WebsocketResponse:
-    @classmethod
-    def wait_for(cls, responses):
-        while not all([r.done() for r in responses]):
-            time.sleep(0.1)
-        return responses
-
-    def __init__(self, timeout=5.0):
-        self.t = time.time()
-        self.timeout = timeout
-        self.response = None
-        self._done = False
-
-    def callback(self, *data):
-        self.response = data
-        self._done = True
-
-    def done(self):
-        return self._done or (time.time() - self.t) >= self.timeout
-
-    def result(self):
-        return self.response

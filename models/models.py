@@ -26,6 +26,12 @@ class OBSCloudModel(BaseModel):
     def activate(self):
         self._objvers = "A"
 
+    def modify(self):
+        self._objvers = "M"
+
+    def deactivate(self):
+        self._objvers = ""
+
     def keys(self) -> List[str]:
         return list(self.dict().keys())
 
@@ -95,6 +101,10 @@ class MinionSettings(BaseModel):
                 subject.set(k, None)
         return t
 
+    @classmethod
+    def default(cls, minion_server_addr="localhost"):
+        return MinionSettings(addr_config={"minion_server_addr": minion_server_addr})
+
     def modify_from(self, other):
         d = other.dict()
         for subject in d.keys():
@@ -114,4 +124,8 @@ class MinionSettings(BaseModel):
         return self.dict()[subject]
 
     def active(self):
-        return all([self.__getattribute__(k).objvers() == "A" for k in self.dict().keys()])
+        return all([self.__getattribute__(subject).objvers() == "A" for subject in self.list_subjects()])
+
+    def activate(self):
+        for subject in self.list_subjects():
+            self.__getattribute__(subject).activate()
