@@ -11,15 +11,13 @@ from util.util import ExecutionStatus, WebsocketResponse
 import socketio
 from socketio.exceptions import ConnectionError, ConnectionRefusedError
 
-instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
-langs: list[str] = []
-server_state = ServerState(ServerState.SLEEPING)
-# init_status, wakeup_status = False, False
-media_scheduler = MediaScheduler()
-sheets = OBSGoogleSheets()
-timing_sheets = TimingGoogleSheets()
-vmix_selector = SourceSelector()
-minions = Minions()
+# instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
+# langs: list[str] = []
+# server_state = ServerState(ServerState.SLEEPING)
+# # init_status, wakeup_status = False, False
+# media_scheduler = MediaScheduler()
+# sheets = OBSGoogleSheets()
+# timing_sheets = TimingGoogleSheets()
 
 MINION_WS_PORT = 6006
 
@@ -27,6 +25,8 @@ MINION_WS_PORT = 6006
 class Skipper:
     class Registry(BaseModel):
         minion_configs: Dict[str, MinionSettings] = {}  # lang: config
+        vmix_sources: Dict[str, Dict] = {}  # ip: {"name": ""}
+        active_vmix_source: str = "*"  # "*" or ip
 
         def list_langs(self):
             return list(self.minion_configs.keys())
