@@ -1,15 +1,12 @@
 import glob
 import os
 import re
-from urllib.parse import urlencode
 
 import obswebsocket as obsws
-import requests
 from dotenv import load_dotenv
 
-import util.util as util
 from obs import OBS
-from util.util import ExecutionStatus
+from util import ExecutionStatus
 from models import MinionSettings
 
 load_dotenv()
@@ -22,7 +19,7 @@ TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 
 class OBSController:
     def __init__(self):
-        self.minion_settings = MinionSettings()
+        self.minion_settings = MinionSettings.default()
 
         self.obs_instance: OBS = None
         self.obs_client = None
@@ -215,6 +212,8 @@ class OBSController:
         if not os.path.isdir(self.media_dir):
             os.system(f"mkdir -p {self.media_dir}")
 
+        return ExecutionStatus(status=os.path.isdir(self.media_dir))
+
     def refresh_media_source(self):
         if not self._check_initialization():
             return ExecutionStatus(status=False, message="Couldn't initialize the server")
@@ -254,7 +253,6 @@ class OBSController:
         status = self.activate_source_volume()
         status = self.activate_sidechain()
         status = self.activate_transition()
-        status = self.activate_gdrive()
 
     def activate_server_langs(self):
         if self.minion_settings.addr_config.is_active():
@@ -385,30 +383,3 @@ class OBSController:
             return ExecutionStatus(True)
         except Exception as ex:
             return ExecutionStatus(False, f"Couldn't activate transition. Details: {ex}")
-
-    def activate_gdrive(self):
-        # TODO: check gdrive activation from gdrive_sync service
-        if self.minion_settings.gdrive_settings.is_active():
-            return ExecutionStatus(True)
-
-        gdrive_settings = self.minion_settings.gdrive_settings
-
-        try:
-            self.set_media_dir(gdrive_settings.media_dir)
-
-            # build a query
-            query_params = urlencode({
-                "drive_id": gdrive_settings.folder_id,
-                "media_dir": gdrive_settings.media_dir,
-                "api_key": gdrive_settings.api_key,
-                "sync_seconds": gdrive_settings.sync_seconds,
-            })
-
-            response = requests.post(f"{gdrive_settings.gdrive_sync_addr.rstrip('/')}/init?{query_params}")
-            if response.status_code != 200:
-                return ExecutionStatus(False, f"Couldn't activate gdrive settings. Details: {response.text}")
-            self.minion_settings.gdrive_settings.activate()
-
-            return ExecutionStatus(True)
-        except Exception as ex:
-            return ExecutionStatus(False, f"Couldn't activate gdrive settings. Details: {ex}")

@@ -1,1 +1,1 @@
-from google_sheets import OBSGoogleSheets, LangConfig, SheetConfig
+from googleapi.google_sheets import OBSGoogleSheets

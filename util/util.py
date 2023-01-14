@@ -19,7 +19,6 @@ def async_aiohttp_get_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.get(url) as response:
                     return Response(await response.text(), response.status)
@@ -37,7 +36,6 @@ def async_aiohttp_post_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.post(url) as response:
                     return Response(await response.text(), response.status)
@@ -55,7 +53,6 @@ def async_aiohttp_delete_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.delete(url) as response:
                     return Response(await response.text(), response.status)
@@ -73,7 +70,6 @@ def async_aiohttp_put_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.put(url) as response:
                     return Response(await response.text(), response.status)
@@ -110,7 +106,7 @@ def validate_media_play_params(name, use_file_num):
     return ExecutionStatus(status=True)
 
 
-def generate_file_md5(filename, blocksize=2**25):
+def generate_file_md5(filename, blocksize=2 ** 25):
     m = hashlib.md5()
     with open(filename, "rb") as f:
         while True:
@@ -119,20 +115,6 @@ def generate_file_md5(filename, blocksize=2**25):
                 break
             m.update(buf)
     return m.hexdigest()
-
-
-def to_seconds(timestamp_str):
-    """
-    :param timestamp_str: string representation of time. Format of 00:00:00
-    :return:
-    """
-    if not re.fullmatch(r"\d{1,2}\:\d{2}\:\d{2}", timestamp_str):
-        raise f"Timestamp has invalid format: {timestamp_str}"
-    r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})", timestamp_str)
-    hour, minute, second = r.group("hour"), r.group("minute"), r.group("second")
-    hour, minute, second = int(hour), int(minute), int(second)
-
-    return hour * 3600 + minute * 60 + second * 1
 
 
 def log(text):
@@ -417,3 +399,27 @@ class ServerState:
 
     def disposing(self):
         return self.state == ServerState.DISPOSING
+
+
+class WebsocketResponse:
+    @classmethod
+    def wait_for(cls, responses):
+        while not all([r.done() for r in responses]):
+            time.sleep(0.1)
+        return responses
+
+    def __init__(self, timeout=5.0):
+        self.t = time.time()
+        self.timeout = timeout
+        self.response = None
+        self._done = False
+
+    def callback(self, *data):
+        self.response = data
+        self._done = True
+
+    def done(self):
+        return self._done or (time.time() - self.t) >= self.timeout
+
+    def result(self):
+        return self.response

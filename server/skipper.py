@@ -2,12 +2,12 @@
 import json
 import os
 
-from googleapi import OBSGoogleSheets, LangConfig, SheetConfig
+from googleapi import OBSGoogleSheets
 from deployment import Spawner
 from typing import List, Dict
 from models import MinionSettings
 from pydantic import BaseModel
-from util.util import ExecutionStatus, WebsocketResponse
+from util import ExecutionStatus, WebsocketResponse
 import socketio
 from socketio.exceptions import ConnectionError, ConnectionRefusedError
 
@@ -45,7 +45,7 @@ class Skipper:
             self.spawner: Spawner = Spawner()
             self.skipper = skipper
 
-        def activate_registry(self):
+        def activate_registry(self) -> ExecutionStatus:
             try:
                 self.spawner.ensure_langs(self.skipper.registry.list_langs(),
                                           wait_for_provision=True)  # [... [lang, ip], ...]
@@ -56,17 +56,17 @@ class Skipper:
             # lang_ips = self.spawner.ip_dict.ip_list()
             for lang, ip in self.spawner.ip_dict.ip_list():
                 try:
+                    self.skipper.registry.minion_configs[lang].addr_config.minion_server_addr = ip
                     # if Minion instance have not been created yet
-                    if lang not in self.skipper.registry.minion_configs:
-                        self.skipper.registry.minion_configs[lang] = Skipper.Minion(minion_ip=ip, lang=lang)  # create
-                    elif self.skipper.registry.minion_configs[lang].minion_ip != ip or \
-                            self.skipper.registry.minion_configs[lang].lang != lang:  # if lang or ip has changed
-                        del self.skipper.registry.minion_configs[lang]  # delete old version
+                    if lang not in self.skipper.minions:
+                        self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang)  # create
+                    # else if lang or ip has changed
+                    if self.skipper.minions[lang].minion_ip != ip or self.skipper.minions[lang].lang != lang:
+                        del self.skipper.minions[lang]  # delete old version
                         # and replace with updated one
-                        self.skipper.registry.minion_configs[lang] = Skipper.Minion(minion_ip=ip, lang=lang)
+                        self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang)
                 except ConnectionError as ex:
-                    # TODO: handle errors
-                    pass
+                    return ExecutionStatus(False, f"Something happened while creating Minion instances. Details: {ex}")
 
             return ExecutionStatus(True)
 
@@ -86,29 +86,39 @@ class Skipper:
 
         def setup(self, sheet_url, sheet_name) -> ExecutionStatus:
             try:
-                if not self.obs_sheets.setup_status:
-                    self.obs_sheets.set_sheet(sheet_url, sheet_name)
+                self.obs_sheets.set_sheet(sheet_url, sheet_name)
                 return ExecutionStatus(True)
             except Exception as ex:
                 return ExecutionStatus(False, f"Couldn't set up obs sheet config.\nDetails: {ex}")
 
-        def pull(self, langs: List[str] = None):
-            minion_configs: Dict[str, MinionSettings] = self.obs_sheets.pull()
+        def pull(self, langs: List[str] = None) -> ExecutionStatus:
+            try:
+                if not self.obs_sheets.setup_status:
+                    return ExecutionStatus(False, f"setup_status of obs_sheets is False")
 
-            if langs is not None:  # if need to pull only specified langs
-                minion_configs = {lang: minion_configs[lang] for lang in minion_configs if lang in langs}
-            else:
-                for lang in self.skipper.registry.list_langs():  # list langs in registry
-                    if lang not in minion_configs:  # if lang has been deleted in google sheets
-                        self.skipper.registry.delete_minion(lang)
+                minion_configs: Dict[str, MinionSettings] = self.obs_sheets.pull()
 
-            for lang in minion_configs:
-                self.skipper.registry.update_minion(lang, minion_configs[lang])
+                if langs is not None:  # if need to pull only specified langs
+                    minion_configs = {lang: minion_configs[lang] for lang in minion_configs if lang in langs}
+                else:
+                    for lang in self.skipper.registry.list_langs():  # list langs in registry
+                        if lang not in minion_configs:  # if lang has been deleted in google sheets
+                            self.skipper.registry.delete_minion(lang)
 
-            self.skipper.activate_registry()
+                for lang in minion_configs:
+                    self.skipper.registry.update_minion(lang, minion_configs[lang])
+                return ExecutionStatus(True)
+            except Exception as ex:
+                return ExecutionStatus(False, str(ex))
 
-        def push(self):
-            pass
+        def push(self) -> ExecutionStatus:
+            try:
+                if not self.obs_sheets.setup_status:
+                    return ExecutionStatus(False, f"setup_status of obs_sheets is False")
+                self.obs_sheets.push(self.skipper.registry.minion_configs)
+                return ExecutionStatus(True)
+            except Exception as ex:
+                return ExecutionStatus(False, f"Something happened while pushing obs_config info. Details: {ex}")
 
     class Minion:
         def __init__(self, minion_ip, lang, ws_port=MINION_WS_PORT):
@@ -135,7 +145,9 @@ class Skipper:
         def apply_config(self, minion_config: MinionSettings) -> WebsocketResponse:
             response = WebsocketResponse()
             # TODO: command
-            self.sio.emit("#TODO", data=minion_config.json(), callback=response.callback)
+            self.sio.emit("command",
+                          data=json.dumps({"command": "set info", "details": {"info": minion_config.json()}}),
+                          callback=response.callback)
             return response
 
         def json(self):
@@ -152,27 +164,55 @@ class Skipper:
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
         self.minions: Dict[str, Skipper.Minion] = {}
 
+    def pull_obs_config(self, sheet_url=None, sheet_name=None, langs=None) -> ExecutionStatus:
+        """
+        Pulls and applies OBS configuration from google sheets
+        :param sheet_url: sheet url. No need to specify if it has been specified once before (cache)
+        :param sheet_name: works same as sheet_url
+        :param langs: if specified, takes only specified langs from google sheets
+        :return: ExecutionStatus
+        """
+        if sheet_url and sheet_name:
+            status: ExecutionStatus = self.obs_config.setup(sheet_url, sheet_name)
+            if not status:
+                return status
+
+        status: ExecutionStatus = self.obs_config.pull(langs=langs)
+        if not status:
+            return status
+
+        return self.activate_registry()
+
+    def push_obs_config(self) -> ExecutionStatus:
+        return self.obs_config.push()
+
     def activate_registry(self) -> ExecutionStatus:
         # check if there are all minions deployed
-        self.infrastructure.activate_registry()
-        # select only those configs which have been changed (not active)
-        configs_to_activate = [
-            [lang, minion_config]
-            for lang, minion_config in self.registry.minion_configs.items()
-            if not minion_config.active()
-        ]
-        # collect websocket responses
-        responses = [
-            [lang, self.minions[lang].apply_config(minion_config=minion_config)]
-            for lang, minion_config in configs_to_activate
-            if lang in self.minions
-        ]
-        # wait until websocket callback or timeout
-        WebsocketResponse.wait_for(responses=[r for _, r in responses])
+        status: ExecutionStatus = self.infrastructure.activate_registry()
+        if not status:
+            return status
 
-        for lang, response in responses:
-            if response.result() is "#TODO something":  # TODO: check if status is done
-                self.registry.minion_configs[lang].activate()
+        try:
+            # select only those configs which have been changed (not active)
+            configs_to_activate = [
+                [lang, minion_config]
+                for lang, minion_config in self.registry.minion_configs.items()
+                if not minion_config.active()
+            ]
+            # collect websocket responses
+            responses = [
+                [lang, self.minions[lang].apply_config(minion_config=minion_config)]
+                for lang, minion_config in configs_to_activate
+                if lang in self.minions
+            ]
+            # wait until websocket callback or timeout
+            WebsocketResponse.wait_for(responses=[r for _, r in responses])
+
+            for lang, response in responses:
+                if response.result() is "#TODO something":  # TODO: check if status is done
+                    self.registry.minion_configs[lang].activate()
+        except Exception as ex:
+            return ExecutionStatus(False, f"Something happened while activating skipper's registry. Details: {ex}")
 
         return ExecutionStatus(True)
 

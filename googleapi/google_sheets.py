@@ -6,13 +6,8 @@ import re
 import pandas as pd
 import pygsheets
 from dotenv import load_dotenv
-from pydantic import BaseModel, validator
-from typing import Dict, List
-
-from media import server
-from media.server import ServerSettings
+from typing import Dict
 from models import MinionSettings
-from util.util import (MultilangParams, to_seconds)
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -22,51 +17,51 @@ GDRIVE_SYNC_ADDR = "http://localhost:7000"
 SERVICE_FILE = os.getenv("SERVICE_ACCOUNT_FILE")
 
 
-class LangConfig(BaseModel):
-    lang: str
-    source_url: str = ""
-    target_server: str = ""
-    target_key: str = ""
-    gdrive_folder_id: str = ""
-    media_dir: str = MEDIA_DIR
-    api_key: str = API_KEY
-    sync_seconds: int = SYNC_SECONDS
-    gdrive_sync_addr: str = GDRIVE_SYNC_ADDR
+# class LangConfig(BaseModel):
+#     lang: str
+#     source_url: str = ""
+#     target_server: str = ""
+#     target_key: str = ""
+#     gdrive_folder_id: str = ""
+#     media_dir: str = MEDIA_DIR
+#     api_key: str = API_KEY
+#     sync_seconds: int = SYNC_SECONDS
+#     gdrive_sync_addr: str = GDRIVE_SYNC_ADDR
+#
+#     @classmethod
+#     def validate_lang(cls, lang):
+#         return re.fullmatch(r"[A-Za-z\_]+", lang)
+#
+#     @validator('lang')
+#     def _valid_lang(cls, v):
+#         if not LangConfig.validate_lang(v):
+#             raise ValueError(f"Invalid lang \"{v}\"")
+#         return v
 
-    @classmethod
-    def validate_lang(cls, lang):
-        return re.fullmatch(r"[A-Za-z\_]+", lang)
 
-    @validator('lang')
-    def _valid_lang(cls, v):
-        if not LangConfig.validate_lang(v):
-            raise ValueError(f"Invalid lang \"{v}\"")
-        return v
-
-
-class SheetConfig:
-    def __init__(self):
-        self._langs = {}
-
-    def __getitem__(self, item) -> LangConfig:
-        if item not in self._langs:
-            raise KeyError(f"No config found for lang \"{item}\"")
-        return self._langs[item]
-
-    def __len__(self):
-        return len(self._langs)
-
-    def set_lang_config(self, lang_config: LangConfig):
-        self._langs[lang_config.lang] = lang_config
-
-    def list_langs(self) -> List[str]:
-        return list(self._langs.keys())
-
-    def list_configs(self) -> List[LangConfig]:
-        return list(self._langs.values())
-
-    def items(self) -> List[List[str, LangConfig]]:
-
+# class SheetConfig:
+#     def __init__(self):
+#         self._langs = {}
+#
+#     def __getitem__(self, item) -> LangConfig:
+#         if item not in self._langs:
+#             raise KeyError(f"No config found for lang \"{item}\"")
+#         return self._langs[item]
+#
+#     def __len__(self):
+#         return len(self._langs)
+#
+#     def set_lang_config(self, lang_config: LangConfig):
+#         self._langs[lang_config.lang] = lang_config
+#
+#     def list_langs(self) -> List[str]:
+#         return list(self._langs.keys())
+#
+#     def list_configs(self) -> List[LangConfig]:
+#         return list(self._langs.values())
+#
+#     def items(self) -> List[List]:
+#         return list(self._langs.items())
 
 
 class OBSGoogleSheets:
@@ -76,20 +71,13 @@ class OBSGoogleSheets:
 
         self.sheet = None
         self.ws = None
-        # self.settings = {}  # dictionary of Lang: ServerSettings()
 
         self.setup_status = False
-
-    # def ok(self):
-    #     return self._ok
 
     def set_sheet(self, sheet_url, worksheet_name):
         self.sheet = self.gc.open_by_url(sheet_url)
         self.ws = self.sheet.worksheet_by_title(worksheet_name)
         self.setup_status = True
-
-    # def langs(self):
-    #     return list(self.settings.keys())
 
     def pull(self) -> Dict[str, MinionSettings]:
         df = self.ws.get_as_df()  # load data from google sheets
@@ -151,105 +139,6 @@ class OBSGoogleSheets:
         return pd.DataFrame(rows, columns=["lang", "source_url", "target_server", "target_key",
                                            "gdrive_folder_url"])
 
-    # TODO: remove method
-    # def from_info(self, lang, info):
-    #     """
-    #     Updates server settings from the given `info`. Also pushes the dataframe to the google sheet
-    #     """
-    #     # TODO
-    #     langs = self.langs()
-    #     if lang not in langs:  # skip lang if it is not in our langs
-    #         raise KeyError(f"Invalid lang {lang}")
-    #     for subject, data in info.items():  # for each subject
-    #         for k, v in data.items():  # for each key-value pair
-    #             self._set_subject_value(lang, subject, k, v)
-    #     self.push()
-    #
-    # # TODO: remove method
-    # def dump_info(self, lang):
-    #     # TODO
-    #     return self.settings[lang].to_dict()
-    #
-    # # TODO: remove
-    # def to_multilang_params(
-    #         self, subjects=(server.SUBJECT_SERVER_LANGS, server.SUBJECT_GDRIVE_SETTINGS, server.SUBJECT_STREAM_SETTINGS)
-    # ):
-    #     params = {}
-    #     for lang in self.settings:
-    #         info_ = self.dump_info(lang)
-    #         for subject in list(info_.keys()):
-    #             if subject not in subjects:  # leave only those subjects specified in `subjects` parameter
-    #                 info_.pop(subject)
-    #         params[lang] = info_
-    #     return MultilangParams(params, langs=list(self.settings.keys()))
-    #
-    # # TODO: remove
-    # def _update_lang(self, lang, **kwargs):
-    #     """
-    #     Updates a single language settings.
-    #     **kwargs available keys: [source_url, target_server, target_key, gdrive_folder_id]
-    #     """
-    #     if lang not in self.settings:
-    #         self._init_settings(lang)
-    #     for k, v in kwargs.items():
-    #         self._set_value(lang, k, v)
-    #
-    # # TODO: remove
-    # def _get_value(self, lang, k):
-    #     if k == "source_url":
-    #         return self.settings[lang].get(server.SUBJECT_SERVER_LANGS, "original_media_url")
-    #     elif k == "target_server":
-    #         return self.settings[lang].get(server.SUBJECT_STREAM_SETTINGS, "server")
-    #     elif k == "target_key":
-    #         return self.settings[lang].get(server.SUBJECT_STREAM_SETTINGS, "key")
-    #     elif k == "gdrive_folder_id":
-    #         return self.settings[lang].get(server.SUBJECT_GDRIVE_SETTINGS, "drive_id")
-    #     elif k == "media_dir":
-    #         return self.settings[lang].get(server.SUBJECT_GDRIVE_SETTINGS, "media_dir")
-    #     elif k == "api_key":
-    #         return self.settings[lang].get(server.SUBJECT_GDRIVE_SETTINGS, "api_key")
-    #     elif k == "sync_seconds":
-    #         return self.settings[lang].get(server.SUBJECT_GDRIVE_SETTINGS, "sync_seconds")
-    #     elif k == "gdrive_sync_addr":
-    #         return self.settings[lang].get(server.SUBJECT_GDRIVE_SETTINGS, "gdrive_sync_addr")
-    #     else:
-    #         raise KeyError(f"Invalid key: {k}")
-    #
-    # # TODO: remove
-    # def _set_value(self, lang, k, v):
-    #     if k == "source_url":
-    #         self.settings[lang].set(server.SUBJECT_SERVER_LANGS, "original_media_url", v)
-    #     elif k == "target_server":
-    #         self.settings[lang].set(server.SUBJECT_STREAM_SETTINGS, "server", v)
-    #     elif k == "target_key":
-    #         self.settings[lang].set(server.SUBJECT_STREAM_SETTINGS, "key", v)
-    #     elif k == "gdrive_folder_id":
-    #         self.settings[lang].set(server.SUBJECT_GDRIVE_SETTINGS, "drive_id", v)
-    #     elif k == "media_dir":
-    #         self.settings[lang].set(server.SUBJECT_GDRIVE_SETTINGS, "media_dir", v)
-    #     elif k == "api_key":
-    #         self.settings[lang].set(server.SUBJECT_GDRIVE_SETTINGS, "api_key", v)
-    #     elif k == "sync_seconds":
-    #         self.settings[lang].set(server.SUBJECT_GDRIVE_SETTINGS, "sync_seconds", v)
-    #     elif k == "gdrive_sync_addr":
-    #         self.settings[lang].set(server.SUBJECT_GDRIVE_SETTINGS, "gdrive_sync_addr", v)
-    #     else:
-    #         raise KeyError(f"Invalid key: {k}")
-    #
-    # # TODO: remove
-    # def _set_subject_value(self, lang, subject, k, v):
-    #     if lang not in self.settings:
-    #         self._init_settings(lang)
-    #     self.settings[lang].set(subject, k, v)
-    #
-    # # TODO: remove
-    # def _init_settings(self, lang):
-    #     self.settings[lang] = ServerSettings()
-    #     self._set_value(lang, "media_dir", MEDIA_DIR)
-    #     self._set_value(lang, "api_key", API_KEY)
-    #     self._set_value(lang, "sync_seconds", SYNC_SECONDS)
-    #     self._set_value(lang, "gdrive_sync_addr", GDRIVE_SYNC_ADDR)
-
 
 class TimingGoogleSheets:
     def __init__(self):
@@ -259,19 +148,26 @@ class TimingGoogleSheets:
         self.sheet = None
         self.ws = None
 
-        self._ok = False
-        self.timing_df = None
+        self.setup_status = False
 
-    def cleanup(self):
-        self._ok = False
+    @classmethod
+    def to_seconds(cls, timestamp_str):
+        """
+        :param timestamp_str: string representation of time. Format of 00:00:00
+        :return:
+        """
+        if not re.fullmatch(r"\d{1,2}\:\d{2}\:\d{2}", timestamp_str):
+            raise f"Timestamp has invalid format: {timestamp_str}"
+        r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})", timestamp_str)
+        hour, minute, second = r.group("hour"), r.group("minute"), r.group("second")
+        hour, minute, second = int(hour), int(minute), int(second)
 
-    def ok(self):
-        return self._ok
+        return hour * 3600 + minute * 60 + second * 1
 
     def set_sheet(self, sheet_url, worksheet_name):
         self.sheet = self.gc.open_by_url(sheet_url)
         self.ws = self.sheet.worksheet_by_title(worksheet_name)
-        self._ok = True
+        self.setup_status = True
 
     def pull(self):
         """
@@ -283,7 +179,7 @@ class TimingGoogleSheets:
         """
         df = self.ws.get_as_df()  # load data from google sheets
 
-        df["timestamp"] = df["timestamp"].apply(to_seconds)
+        df["timestamp"] = df["timestamp"].apply(TimingGoogleSheets.to_seconds)
         df = df[["timestamp", "name"]]
 
-        self.timing_df = df
+        return df

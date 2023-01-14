@@ -1,39 +1,51 @@
-from typing import List, Dict
 from models import MinionSettings
 from pydantic import BaseModel
-from util.util import ExecutionStatus
 from flask import Flask
 import socketio
 import eventlet
-import time
 import json
 import os
-from obs import OBSController, OBS
+from obs import OBSController
 from threading import Lock
 from googleapiclient.discovery import build
-from util.util import generate_file_md5
+from util import ExecutionStatus, generate_file_md5
 import random
 import gdown
+from dotenv import load_dotenv
 
-SERVICE_FILE = "/home/stream/sa.json"  # os.getenv("SERVICE_ACCOUNT_FILE")
 
-
-class Streamer:
+class Minion:
     class Registry(BaseModel):
         minion_settings: MinionSettings = MinionSettings.default("localhost")
 
     class GDriveFileWorker:
         def __init__(self, streamer):
-            self.streamer: Streamer = streamer
+            self.streamer: Minion = streamer
             self.lock = Lock()
             self.files = {}
 
+            load_dotenv()
+            self.service_file = os.getenv("SERVICE_ACCOUNT_FILE", "/home/stream/sa.json")
+
+        def activate_registry(self):
+            settings = self.streamer.registry.minion_settings.gdrive_settings
+
+            if settings.is_active():
+                return True
+
+            if not settings.api_key or \
+                    not self.streamer.command.obs.set_media_dir(settings.media_dir):
+                return False
+
+            settings.activate()
+            return True
+
         def check_files(self):
+            if not self.activate_registry():
+                return
+
             settings = self.streamer.registry.minion_settings.gdrive_settings
             media_dir = settings.media_dir
-
-            if not settings.api_key:
-                return
 
             with build("drive", "v3", developerKey=settings.api_key) as service:
                 # list the drive files, the response is like the following structure:
@@ -64,11 +76,13 @@ class Streamer:
 
                 for fileinfo in gfiles["files"]:  # for each file on google drive
                     fid, fname = fileinfo["id"], fileinfo["name"]
+                    if "md5Checksum" not in fileinfo:
+                        continue  # if there is no md5Checksum that means it's not a file, probably a folder
                     if fname not in self.files:  # if we haven't downloaded it before
                         with self.lock:
                             self.files[fname] = False
 
-                gdrive_files = [f["name"] for f in gfiles["files"]]
+                gdrive_files = [f["name"] for f in gfiles["files"] if f["name"] in self.files]
                 for fname in self.files:  # for each file we have already downloaded
                     # if we have downloaded this file, but it doesn't appear on google drive
                     if fname not in gdrive_files:
@@ -91,7 +105,7 @@ class Streamer:
                     if not self.files[fname]:
                         try:
                             self.streamer.sio.sleep(random.randint(3, 7))
-                            gdown.download_via_gdrive_api(fid, flocal, SERVICE_FILE)
+                            gdown.download_via_gdrive_api(fid, flocal, self.service_file)
 
                             if generate_file_md5(flocal) == fmd5Checksum:
                                 with self.lock:
@@ -148,7 +162,15 @@ class Streamer:
             return True
 
         def exec(self, command: str) -> ExecutionStatus:
-            if not Streamer.Command.valid(command):
+            """
+            Command structure for a Streamer:
+            {
+                "command": "play media|media stop|set ts volume|get ts volume|...",
+                "details": ... may be dict, str, list, int, bool, etc.
+            }
+            :return: ExecutionStatus
+            """
+            if not Minion.Command.valid(command):
                 raise ValueError("Invalid command")
 
             command = json.loads(command)
@@ -182,13 +204,13 @@ class Streamer:
             else:
                 return ExecutionStatus(False, "Invalid command")
 
-    def __init__(self, port):
+    def __init__(self, port=6006):
         self.port = port
         self.sio = socketio.Server()
         self.app = socketio.WSGIApp(self.sio, Flask("__main__"))
-        self.registry = Streamer.Registry()
-        self.gdrive_worker = Streamer.GDriveFileWorker(self)
-        self.command = Streamer.Command(self)
+        self.registry = Minion.Registry()
+        self.gdrive_worker = Minion.GDriveFileWorker(self)
+        self.command = Minion.Command(self)
 
     def _do_background_work(self):
         self.sio.sleep(0.5)
@@ -207,7 +229,6 @@ class Streamer:
                 self.sio.sleep(60)
             except Exception as ex:
                 print(f"E Streamer::_gdrive_sync_worker: {ex}")
-
 
     def _setup_event_handlers(self):
         self.sio.on("connect", handler=self._on_connect)
@@ -246,4 +267,5 @@ class Streamer:
     def run(self):
         self._setup_event_handlers()
         self.sio.start_background_task(self._background_worker)
+        self.sio.start_background_task(self._gdrive_sync_worker)
         eventlet.wsgi.server(eventlet.listen(('', self.port)), self.app)

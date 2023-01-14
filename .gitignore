@@ -326,3 +326,4 @@ restart.sh
 ip.list
 content/*
 docker-compose.yml
+testing.py

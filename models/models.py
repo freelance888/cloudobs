@@ -1,4 +1,4 @@
-from pydantic import BaseModel, validator, PrivateAttr
+from pydantic import BaseModel, PrivateAttr
 from pydantic.schema import Optional
 from typing import List
 
