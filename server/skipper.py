@@ -2,14 +2,17 @@
 import json
 import os
 
-from googleapi import OBSGoogleSheets
+from googleapi import OBSGoogleSheets, TimingGoogleSheets
 from deployment import Spawner
 from typing import List, Dict
-from models import MinionSettings
-from pydantic import BaseModel
-from util import ExecutionStatus, WebsocketResponse
+from models import MinionSettings, VmixPlayer
+from pydantic import BaseModel, PrivateAttr
+from util import ExecutionStatus, WebsocketResponse, CallbackThread
 import socketio
 from socketio.exceptions import ConnectionError, ConnectionRefusedError
+from datetime import datetime, timedelta
+from obs import OBS
+from threading import Lock, RLock, Thread
 
 # instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
 # langs: list[str] = []
@@ -22,11 +25,53 @@ from socketio.exceptions import ConnectionError, ConnectionRefusedError
 MINION_WS_PORT = 6006
 
 
+class State:
+    sleeping = "sleeping"
+    initializing = "initializing"
+    running = "running"
+    disposing = "disposing"
+    error = "error"
+
+
 class Skipper:
     class Registry(BaseModel):
+        obs_sheet_url: str = None
+        obs_sheet_name: str = None
         minion_configs: Dict[str, MinionSettings] = {}  # lang: config
-        vmix_sources: Dict[str, Dict] = {}  # ip: {"name": ""}
-        active_vmix_source: str = "*"  # "*" or ip
+        infrastructure_lock: bool = False  # points if needed to lock infrastructure
+
+        server_status: str = State.sleeping
+        _last_server_status: str = PrivateAttr(State.sleeping)
+
+        timing_sheet_url: str = None
+        timing_sheet_name: str = None
+        timing_list = []
+        timing_start_time: datetime = None  # system time when the timing will be/was started
+
+        # ip: {"name": "", active: True/False}
+        vmix_players: Dict[str, VmixPlayer] = {"*": VmixPlayer(name="All", active=True)}
+        active_vmix_player: str = "*"  # "*" or ip
+
+        _lock = PrivateAttr()
+
+        def __init__(self, **kwargs):
+            self._lock = RLock()
+            super(Skipper.Registry, self).__init__(**kwargs)
+
+        def __getattr__(self, item):
+            if item == "_lock":
+                return super(Skipper.Registry, self).__getattr__(item)
+            with self._lock:
+                return super(Skipper.Registry, self).__getattr__(item)
+
+        def __setattr__(self, key, value):
+            if key == "_lock":
+                super(Skipper.Registry, self).__setattr__(key, value)
+            else:
+                with self._lock:
+                    if key == "server_status":
+                        self._last_server_status = self.server_status
+                    super(Skipper.Registry, self).__setattr__(key, value)
 
         def list_langs(self):
             return list(self.minion_configs.keys())
@@ -38,7 +83,12 @@ class Skipper:
                 self.minion_configs[lang].modify_from(minion_config)
 
         def delete_minion(self, lang):
-            pass
+            if lang in self.minion_configs:
+                self.minion_configs.pop(lang)
+
+        def revert_server_state(self):
+            with self._lock:
+                super().__setattr__("server_status", self._last_server_status)
 
     class Infrastructure:
         def __init__(self, skipper):
@@ -46,29 +96,48 @@ class Skipper:
             self.skipper = skipper
 
         def activate_registry(self) -> ExecutionStatus:
-            try:
-                self.spawner.ensure_langs(self.skipper.registry.list_langs(),
-                                          wait_for_provision=True)  # [... [lang, ip], ...]
-            except Exception as ex:
-                # TODO: log
-                return ExecutionStatus(False, message=f"Something happened while deploying minions: {ex}")
+            # with self.skipper.registry_lock:
+            if self.skipper.registry.infrastructure_lock:
+                return ExecutionStatus(False, "Infrastructure is locked")
 
-            # lang_ips = self.spawner.ip_dict.ip_list()
-            for lang, ip in self.spawner.ip_dict.ip_list():
+            with self.skipper.infrastructure_lock:
                 try:
-                    self.skipper.registry.minion_configs[lang].addr_config.minion_server_addr = ip
-                    # if Minion instance have not been created yet
-                    if lang not in self.skipper.minions:
-                        self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang)  # create
-                    # else if lang or ip has changed
-                    if self.skipper.minions[lang].minion_ip != ip or self.skipper.minions[lang].lang != lang:
-                        del self.skipper.minions[lang]  # delete old version
-                        # and replace with updated one
-                        self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang)
-                except ConnectionError as ex:
-                    return ExecutionStatus(False, f"Something happened while creating Minion instances. Details: {ex}")
+                    # with self.skipper.registry_lock:
+                    self.skipper.registry.server_status = State.initializing
+                    langs = self.skipper.registry.list_langs()
+                    self.spawner.ensure_langs(langs=langs, wait_for_provision=True)  # [... [lang, ip], ...]
+                except Exception as ex:
+                    # TODO: log
+                    # with self.skipper.registry_lock:
+                    self.skipper.registry.revert_server_state()
+                    return ExecutionStatus(False, message=f"Something happened while deploying minions: {ex}")
 
+                # lang_ips = self.spawner.ip_dict.ip_list()
+                for lang, ip in self.spawner.ip_dict.ip_list():
+                    try:
+                        # with self.skipper.registry_lock:
+                        self.skipper.registry.minion_configs[lang].addr_config.minion_server_addr = ip
+                        # if Minion instance have not been created yet
+                        if lang not in self.skipper.minions:
+                            self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang)  # create
+                        # else if lang or ip has changed
+                        if self.skipper.minions[lang].minion_ip != ip or self.skipper.minions[lang].lang != lang:
+                            del self.skipper.minions[lang]  # delete old version
+                            # and replace with updated one
+                            self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang)
+                    except ConnectionError as ex:
+                        # with self.skipper.registry_lock:
+                        self.skipper.registry.revert_server_state()
+                        return ExecutionStatus(False,
+                                               f"Something happened while creating Minion instances. Details: {ex}")
+
+            # with self.skipper.registry_lock:
+            self.skipper.registry.server_status = State.running
             return ExecutionStatus(True)
+
+        def delete_servers(self) -> ExecutionStatus:
+            with self.skipper.infrastructure_lock:
+                return ExecutionStatus(self.spawner.cleanup())
 
         @classmethod
         def from_json(cls, skipper, json_dump):
@@ -85,16 +154,20 @@ class Skipper:
             self.skipper = skipper
 
         def setup(self, sheet_url, sheet_name) -> ExecutionStatus:
+            # with self.skipper.registry_lock:
             try:
                 self.obs_sheets.set_sheet(sheet_url, sheet_name)
+                self.skipper.registry.obs_sheet_url = sheet_url
+                self.skipper.registry.obs_sheet_name = sheet_name
                 return ExecutionStatus(True)
             except Exception as ex:
                 return ExecutionStatus(False, f"Couldn't set up obs sheet config.\nDetails: {ex}")
 
         def pull(self, langs: List[str] = None) -> ExecutionStatus:
+            # with self.skipper.registry_lock:
             try:
                 if not self.obs_sheets.setup_status:
-                    return ExecutionStatus(False, f"setup_status of obs_sheets is False")
+                    return ExecutionStatus(False, f"OBS sheets has not been set up yet")
 
                 minion_configs: Dict[str, MinionSettings] = self.obs_sheets.pull()
 
@@ -112,6 +185,7 @@ class Skipper:
                 return ExecutionStatus(False, str(ex))
 
         def push(self) -> ExecutionStatus:
+            # with self.skipper.registry_lock:
             try:
                 if not self.obs_sheets.setup_status:
                     return ExecutionStatus(False, f"setup_status of obs_sheets is False")
@@ -143,11 +217,16 @@ class Skipper:
             self.sio.disconnect()
 
         def apply_config(self, minion_config: MinionSettings) -> WebsocketResponse:
+            return self.command(command="set info",
+                                details={"info": minion_config.json()})
+
+        def command(self, command, details=None) -> WebsocketResponse:
             response = WebsocketResponse()
-            # TODO: command
+
             self.sio.emit("command",
-                          data=json.dumps({"command": "set info", "details": {"info": minion_config.json()}}),
+                          data=json.dumps({"command": command, "details": details}),
                           callback=response.callback)
+
             return response
 
         def json(self):
@@ -158,11 +237,141 @@ class Skipper:
             data = json.loads(json_dump)
             return Skipper.Minion(minion_ip=data["minion_ip"], ws_port=data["ws_port"], lang=data["lang"])
 
+    class Timing:
+        class Entry(BaseModel):
+            name: str
+            timestamp: timedelta
+            is_enabled: bool = True
+            is_played: bool = False
+
+        def __init__(self, skipper):
+            self.sheets = TimingGoogleSheets()
+            self.skipper = skipper
+            self.cb_thread = CallbackThread()
+            self.cb_thread.start()
+
+        def setup(self, sheet_url, sheet_name) -> ExecutionStatus:
+            """
+            Sets up the google sheet settings
+            :param sheet_url: url of google sheets
+            :param sheet_name: sheet name
+            :return: ExecutionStatus
+            """
+            try:
+                self.sheets.set_sheet(sheet_url, sheet_name)
+                self.skipper.registry.timing_sheet_url = sheet_url
+                self.skipper.registry.timing_sheet_name = sheet_name
+                return ExecutionStatus(True)
+            except Exception as ex:
+                return ExecutionStatus(False, f"Couldn't set up timing sheet config.\nDetails: {ex}")
+
+        def _sync_callbacks(self) -> ExecutionStatus:
+            """
+            Synchronizes the timing, delays, etc.
+            Every time you modify skipper.registry.timing_list -> you should call this function
+            :return: ExecutionStatus
+            """
+
+            def foo_maker(skipper: Skipper, id: int):
+                def foo() -> ExecutionStatus:
+                    entry: Skipper.Timing.Entry = skipper.registry.timing_list[id]
+                    if not entry.is_enabled or entry.is_played:  # if disabled or already has been played
+                        return ExecutionStatus(True)
+
+                    status: ExecutionStatus = skipper.command(command="play media", details={
+                        "name": "name", "search_by_num": True, "mode": OBS.PLAYBACK_MODE_CHECK_SAME
+                    })
+
+                    entry.is_played = True
+                    return status
+
+                return foo
+
+            try:
+                self.cb_thread.delete_cb_type("timing")
+
+                time_from_start = self.get_current_timedelta()
+                for i, entry in enumerate(self.skipper.registry.timing_list):
+                    self.cb_thread.append_callback(foo=foo_maker(self.skipper, i),
+                                                   delay=(entry.timestamp - time_from_start).total_seconds(),
+                                                   cb_type="timing")
+                return ExecutionStatus()
+            except Exception as ex:
+                return ExecutionStatus(False, f"Something happened while synchronizing the timing. Details: {ex}")
+
+        def get_current_timedelta(self) -> timedelta:
+            if self.skipper.registry.timing_start_time is None:
+                return timedelta(days=-999)
+            return datetime.now() - self.skipper.registry.timing_start_time
+
+        def pull(self) -> ExecutionStatus:
+            """
+            Pulls and applies timing from google sheets. Returns ExecutionStatus(False) if sheets
+            have not been set up yet. Note that this function does not reset timing, current timestamp
+            of the timing (if it is running) remains. To reset the timing (timestamp) use stop() function.
+            :return: ExecutionStatus
+            """
+            try:
+                if not self.sheets.setup_status:
+                    return ExecutionStatus(False, f"setup_status of timing_sheets is False")
+
+                timing_df = self.sheets.pull()
+
+                # if timing_delta < 0 -> timing has not been started yet
+                timing_delta = self.get_current_timedelta()  # now() - timing_start_time
+                self.skipper.registry.timing_list = [
+                    Skipper.Timing.Entry(name=name, timestamp=timestamp,
+                                         is_enabled=True,
+                                         is_played=timing_delta > timestamp)
+                    for timestamp, name in timing_df.values
+                ]
+                return self._sync_callbacks()
+            except Exception as ex:
+                return ExecutionStatus(False, str(ex))
+
+        def run(self, countdown: timedelta = None, daytime: datetime = None) -> ExecutionStatus:
+            """
+            Runs the timing. Note that the timing should be pulled before calling `run()`.
+            If neither countdown nor daytime not specified -> runs the timing instantly.
+            :param countdown: If specified, daytime will be ignored
+            :param daytime: system time to start the timing. Format: hh:mm:ss
+            :return: ExecutionStatus
+            """
+            try:
+                if countdown is not None:
+                    self.skipper.registry.timing_start_time = datetime.now() + countdown
+                elif daytime is not None:
+                    self.skipper.registry.timing_start_time = daytime
+                else:  # if both are None
+                    self.skipper.registry.timing_start_time = datetime.now()
+            except Exception as ex:
+                return ExecutionStatus(False, f"Something happened while running the timing. Details: {ex}")
+            return self._sync_callbacks()
+
+        def stop(self) -> ExecutionStatus:
+            try:
+                self.skipper.command("stop media")
+                # with self.skipper.registry_lock:
+                self.skipper.registry.timing_start_time = None
+                self.cb_thread.delete_cb_type("timing")
+                return ExecutionStatus(True)
+            except Exception as ex:
+                return ExecutionStatus(False, f"Something happened while stopping the timing. Details: {ex}")
+
+        def remove(self) -> ExecutionStatus:
+            status = self.stop()
+            self.skipper.registry.timing_list = []
+            return status
+
     def __init__(self):
         self.registry: Skipper.Registry = Skipper.Registry()
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
         self.minions: Dict[str, Skipper.Minion] = {}
+        self.timing: Skipper.Timing = Skipper.Timing(self)
+
+        # self.registry_lock = RLock()
+        self.infrastructure_lock = RLock()
 
     def pull_obs_config(self, sheet_url=None, sheet_name=None, langs=None) -> ExecutionStatus:
         """
@@ -172,6 +381,7 @@ class Skipper:
         :param langs: if specified, takes only specified langs from google sheets
         :return: ExecutionStatus
         """
+        # with self.registry_lock:
         if sheet_url and sheet_name:
             status: ExecutionStatus = self.obs_config.setup(sheet_url, sheet_name)
             if not status:
@@ -187,34 +397,211 @@ class Skipper:
         return self.obs_config.push()
 
     def activate_registry(self) -> ExecutionStatus:
-        # check if there are all minions deployed
-        status: ExecutionStatus = self.infrastructure.activate_registry()
-        if not status:
-            return status
+        # with self.registry_lock:
+        if not self.registry.infrastructure_lock:
+            # check if there are all minions deployed
+            status: ExecutionStatus = self.infrastructure.activate_registry()
+            if not status:
+                return status
 
         try:
+            # with self.registry_lock:
             # select only those configs which have been changed (not active)
             configs_to_activate = [
                 [lang, minion_config]
                 for lang, minion_config in self.registry.minion_configs.items()
                 if not minion_config.active()
             ]
-            # collect websocket responses
-            responses = [
-                [lang, self.minions[lang].apply_config(minion_config=minion_config)]
-                for lang, minion_config in configs_to_activate
-                if lang in self.minions
-            ]
-            # wait until websocket callback or timeout
-            WebsocketResponse.wait_for(responses=[r for _, r in responses])
+            with self.infrastructure_lock:
+                # collect websocket responses
+                responses = [
+                    [lang, self.minions[lang].apply_config(minion_config=minion_config)]
+                    for lang, minion_config in configs_to_activate
+                    if lang in self.minions
+                ]
+                # wait until websocket callback or timeout
+                WebsocketResponse.wait_for(responses=[r for _, r in responses])
 
-            for lang, response in responses:
-                if response.result() is "#TODO something":  # TODO: check if status is done
-                    self.registry.minion_configs[lang].activate()
+                statuses: Dict[str, ExecutionStatus] = {}  # lang: ExecutionStatus
+
+                for lang, response in responses:
+                    if response.result():
+                        statuses[lang] = ExecutionStatus.from_json(response.result())  # convert result into status
+                        if statuses[lang]:  # and check it
+                            # with self.registry_lock:
+                            self.registry.minion_configs[lang].activate()
+                    else:
+                        statuses[lang] = ExecutionStatus(False, "Minion didn't return")
+
+                return ExecutionStatus(all([status.status for status in statuses]),  # one vs all
+                                       serializable_object={  # form status as a dictionary of statuses
+                                           lang: status.dict() for lang, status in statuses.items()
+                                       })
         except Exception as ex:
             return ExecutionStatus(False, f"Something happened while activating skipper's registry. Details: {ex}")
 
-        return ExecutionStatus(True)
+    def delete_minions(self) -> ExecutionStatus:
+        if self.registry.infrastructure_lock:
+            return ExecutionStatus(False, "Cannot delete minions, infrastructure is locked")
+        try:
+            # with self.registry_lock:
+            self.registry.server_status = State.disposing
+            with self.infrastructure_lock:
+                self.timing.remove()
+                for lang, minion in self.minions.items():
+                    minion.close()
+                self.minions = {}
+                # with self.registry_lock:
+                self.registry.minion_configs = {}
+                self.registry.server_status = State.sleeping
+                return ExecutionStatus(self.infrastructure.delete_servers())
+        except Exception as ex:
+            # with self.registry_lock:
+            self.registry.server_status = State.sleeping
+            return ExecutionStatus(False, f"Something happened while disposing. Details: {ex}")
+
+    def command(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
+        """
+        :return:
+        """
+        if lang is None:
+            lang = "*"
+
+        remote_addr = environ["REMOTE_ADDR"] if environ and "REMOTE_ADDR" in environ else "*"
+
+        try:
+            if command == "pull obs config":
+                # details:
+                # note that all the parameters are optional
+                # {"sheet_url": "url", "sheet_name": "name", "langs": ["lang1", "lang2", ...]}
+                sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
+                sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
+                # check if details is not None and has "langs" and details["lang"] is a list of strings
+                langs = None if not details or "langs" not in details or not isinstance(details["langs"], list) \
+                                or not all([isinstance(obj, str) for obj in details["langs"]]) else details["langs"]
+                # pull_obs_config() manages registry lock itself
+                return self.pull_obs_config(sheet_url=sheet_url, sheet_name=sheet_name, langs=langs)
+            elif command == "dispose":
+                return self.delete_minions()
+            elif command == "#TODO: get info":
+                pass
+            elif command == "lock infrastructure":
+                # with self.registry_lock:
+                self.registry.infrastructure_lock = True
+            elif command == "unlock infrastructure":
+                # with self.registry_lock:
+                self.registry.infrastructure_lock = False
+            elif command == "add vmix player":
+                # details: {"ip": "ip address", "name": "... 01_video_name.mp4 ..."}
+                if not details or "ip" not in details or "name" not in details:  # validate
+                    return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
+                if details["ip"] == "*":
+                    return ExecutionStatus(False, f"Adding '*' is not allowed")
+
+                # with self.registry_lock:
+                # add vmix player into registry
+                self.registry.vmix_players[details["ip"]] = VmixPlayer(name=details["name"], active=False)
+                return ExecutionStatus(True)
+            elif command == "remove vmix player":
+                # details: {"ip": "ip address"}
+                if not details or "ip" not in details:
+                    return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
+                # with self.registry_lock:
+                if details["ip"] not in self.registry.vmix_players:
+                    return ExecutionStatus(True)
+                if details["ip"] == "*":
+                    return ExecutionStatus(False, "Removing '*' is not allowed")
+
+                # with self.registry_lock:
+                self.registry.vmix_players.pop(details["ip"])
+                return ExecutionStatus(True)
+            elif command == "list vmix players":
+                # no details needed
+                # returns ExecutionStatus(True, serializable_object={ip: vmix_player.dict(), ...})
+                # with self.registry_lock:
+                return ExecutionStatus(True, serializable_object={
+                    ip: vmix_player.dict() for ip, vmix_player in self.registry.vmix_players.items()
+                })
+            elif command == "set active vmix player":
+                # details: {"ip": "ip address"}. ip address may be '*' - all active
+                if not details or "ip" not in details:
+                    return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
+
+                # with self.registry_lock:
+                self.registry.active_vmix_player = details["ip"]
+                for ip in self.registry.vmix_players:
+                    self.registry.vmix_players[ip].active = (self.registry.active_vmix_player == ip)
+                return ExecutionStatus(True)
+            elif command == "#TODO timing":
+                pass
+            else:
+                with self.infrastructure_lock:
+                    return self._minion_command(command=command, details=details, lang=lang)
+        except Exception as ex:
+            return ExecutionStatus(False, f"Something happened while executing the command.\n"
+                                          f"Command '{command}', details '{details}'.\n"
+                                          f"Error details: {ex}")
+
+    def _minion_command(self, command, details=None, lang=None) -> ExecutionStatus:
+        """
+        If lang is None -> broadcasts the command across all minions. Note that for specific commands
+        lang is not needed. Lang can be either a single lang code or None ('*' - equal to None).
+        Returns ExecutionStatus, where serializable object of status will have the following structure:
+        {
+            lang1: lang1_execution_status.dict(),
+            lang2: lang2_execution_status.dict(),
+            ...
+        }
+        """
+        try:
+            if lang == "*":
+                ws_responses = [[lang, self.minions[lang].command(command=command, details=details)]
+                                for lang in self.minions]  # emit commands
+                WebsocketResponse.wait_for([ws_response for _, ws_response in ws_responses])  # wait for responses
+                # parse websocket results into ExecutionStatus instances and then into dictionaries
+                # if websocket result was a timeout error, or a minion didn't return anything ->
+                # ExecutionStatus(False)
+                statuses: Dict[str, Dict] = {
+                    # parse a status and convert it into a dictionary
+                    lang: (ExecutionStatus.from_json(ws_response.result())
+                           # minion has not returned - means the minion didn't return anything
+                           # or a timeout error has been thrown
+                           if ws_response.result() else ExecutionStatus(False, "Minion has not returned")).dict()
+                    for lang, ws_response in ws_responses
+                }
+                # here we use principle - if all statuses are True - then common status is also True, otherwise - False
+                return ExecutionStatus(all([status.status for status in statuses.values()]),
+                                       serializable_object=statuses)
+            elif lang not in self.minions:  # if lang is specified, and it is not present in self.minions
+                return ExecutionStatus(False, f"Invalid lang '{lang}'",
+                                       serializable_object={
+                                           lang: ExecutionStatus(False, f"Invalid lang '{lang}'").dict()
+                                       })
+            else:  # if lang is specified and is present in self.minions
+                # emit command
+                ws_response: WebsocketResponse = self.minions[lang].command(command=command, details=details)
+                WebsocketResponse.wait_for([ws_response])  # wait for the response
+
+                if ws_response.result():  # if minion has returned
+                    status: ExecutionStatus = ExecutionStatus.from_json(ws_response.result())
+                    return ExecutionStatus(status.status,
+                                           message=status.message,
+                                           serializable_object={
+                                               lang: status.dict()
+                                           })
+                else:  # if minion has not returned or timeout error has thrown
+                    return ExecutionStatus(False,
+                                           serializable_object={
+                                               lang: ExecutionStatus(False, "Minion has not returned").dict()
+                                           })
+        except Exception as ex:
+            return ExecutionStatus(False,
+                                   message=f"Something happened while sending a command.\n"
+                                           f"Command: '{command}', details: '{details}'.\n"
+                                           f"Error details: {ex}",
+                                   serializable_object={
+                                       lang: ExecutionStatus(False, "Exception has been thrown").dict()
+                                   })
 
     def save_to_disk(self):
         registry_json = self.registry.json()

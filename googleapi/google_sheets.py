@@ -8,6 +8,7 @@ import pygsheets
 from dotenv import load_dotenv
 from typing import Dict
 from models import MinionSettings
+from datetime import timedelta
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -15,53 +16,6 @@ API_KEY = os.getenv("GDRIVE_API_KEY", "")
 SYNC_SECONDS = int(os.getenv("GDRIVE_SYNC_SECONDS", 120))
 GDRIVE_SYNC_ADDR = "http://localhost:7000"
 SERVICE_FILE = os.getenv("SERVICE_ACCOUNT_FILE")
-
-
-# class LangConfig(BaseModel):
-#     lang: str
-#     source_url: str = ""
-#     target_server: str = ""
-#     target_key: str = ""
-#     gdrive_folder_id: str = ""
-#     media_dir: str = MEDIA_DIR
-#     api_key: str = API_KEY
-#     sync_seconds: int = SYNC_SECONDS
-#     gdrive_sync_addr: str = GDRIVE_SYNC_ADDR
-#
-#     @classmethod
-#     def validate_lang(cls, lang):
-#         return re.fullmatch(r"[A-Za-z\_]+", lang)
-#
-#     @validator('lang')
-#     def _valid_lang(cls, v):
-#         if not LangConfig.validate_lang(v):
-#             raise ValueError(f"Invalid lang \"{v}\"")
-#         return v
-
-
-# class SheetConfig:
-#     def __init__(self):
-#         self._langs = {}
-#
-#     def __getitem__(self, item) -> LangConfig:
-#         if item not in self._langs:
-#             raise KeyError(f"No config found for lang \"{item}\"")
-#         return self._langs[item]
-#
-#     def __len__(self):
-#         return len(self._langs)
-#
-#     def set_lang_config(self, lang_config: LangConfig):
-#         self._langs[lang_config.lang] = lang_config
-#
-#     def list_langs(self) -> List[str]:
-#         return list(self._langs.keys())
-#
-#     def list_configs(self) -> List[LangConfig]:
-#         return list(self._langs.values())
-#
-#     def items(self) -> List[List]:
-#         return list(self._langs.items())
 
 
 class OBSGoogleSheets:
@@ -151,7 +105,7 @@ class TimingGoogleSheets:
         self.setup_status = False
 
     @classmethod
-    def to_seconds(cls, timestamp_str):
+    def to_timedelta(cls, timestamp_str):
         """
         :param timestamp_str: string representation of time. Format of 00:00:00
         :return:
@@ -162,14 +116,14 @@ class TimingGoogleSheets:
         hour, minute, second = r.group("hour"), r.group("minute"), r.group("second")
         hour, minute, second = int(hour), int(minute), int(second)
 
-        return hour * 3600 + minute * 60 + second * 1
+        return timedelta(hours=hour, minutes=minute, seconds=second)
 
     def set_sheet(self, sheet_url, worksheet_name):
         self.sheet = self.gc.open_by_url(sheet_url)
         self.ws = self.sheet.worksheet_by_title(worksheet_name)
         self.setup_status = True
 
-    def pull(self):
+    def pull(self) -> pd.DataFrame:
         """
         df - dataframe, e.g.:
         timestamp   name
@@ -179,7 +133,7 @@ class TimingGoogleSheets:
         """
         df = self.ws.get_as_df()  # load data from google sheets
 
-        df["timestamp"] = df["timestamp"].apply(TimingGoogleSheets.to_seconds)
+        df["timestamp"] = df["timestamp"].apply(TimingGoogleSheets.to_timedelta)
         df = df[["timestamp", "name"]]
 
         return df

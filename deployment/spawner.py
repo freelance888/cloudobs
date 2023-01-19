@@ -216,9 +216,9 @@ class Spawner:
         return self.ip_dict.ip_list()
 
     def cleanup(self):
-        self.ip_dict.cleanup()
         try:
             self.ssh_context.delete_vms()
+            self.ip_dict.cleanup()
         except Exception as ex:
             logger.warning(f"Failed to cleanup: {ex}")
             return False

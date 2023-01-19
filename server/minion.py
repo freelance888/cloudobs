@@ -12,6 +12,7 @@ from util import ExecutionStatus, generate_file_md5
 import random
 import gdown
 from dotenv import load_dotenv
+from typing import Dict
 
 
 class Minion:
@@ -116,7 +117,7 @@ class Minion:
                         except Exception as ex:
                             print(f"Couldn't download file {fid} via gdown. Details: {ex}")
 
-        def list_files(self):
+        def list_files(self) -> Dict[str, bool]:
             with self.lock:
                 return self.files
 
@@ -178,9 +179,11 @@ class Minion:
 
             if command == "get info":
                 # returns "... minion_settings json ..."
-                return ExecutionStatus(True, json_result=self.streamer.registry.minion_settings.json())
+                return ExecutionStatus(True, serializable_object=self.streamer.registry.minion_settings.dict())
             elif command == "set info":
                 # input: {"info": "... minion_settings json ..."}
+                if not details or "info" not in details:
+                    return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
                 self.streamer.registry.minion_settings.modify_from(MinionSettings.parse_raw(details["info"]))
                 return self.obs.apply_info(minion_settings=self.streamer.registry.minion_settings)
             elif command == "cleanup":
@@ -188,8 +191,8 @@ class Minion:
                 return ExecutionStatus(False, "Not implemented")
             elif command == "play media":
                 # details: {"name": "... 01_video_name.mp4 ...", "search_by_num": True/False, "mode": "check_same|..."}
-                if "name" not in details:
-                    return ExecutionStatus(False, "Not media name provided")
+                if not details or "name" not in details:
+                    return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
                 search_by_num = None if "search_by_num" not in details else details["search_by_num"]
                 mode = None if "mode" not in details else details["mode"]
                 return self.obs.run_media(name=details["name"], search_by_num=search_by_num, mode=mode)
@@ -198,16 +201,18 @@ class Minion:
             elif command == "refresh source":
                 return self.obs.refresh_media_source()
             elif command == "list gdrive files":
-                return ExecutionStatus(True, "Ok", json_result=json.dumps(
-                    self.streamer.gdrive_worker.list_files()
-                ))
+                # returns ExecutionStatus(True, serializable_object={"video_1.mp4": True/False, ...})
+                return ExecutionStatus(True, "Ok", serializable_object=self.streamer.gdrive_worker.list_files())
             else:
                 return ExecutionStatus(False, "Invalid command")
 
     def __init__(self, port=6006):
         self.port = port
-        self.sio = socketio.Server()
-        self.app = socketio.WSGIApp(self.sio, Flask("__main__"))
+        self.sio = socketio.Server(async_mode="threading")
+        self.app = Flask(__name__)
+        self.app.wsgi_app = socketio.WSGIApp(self.sio, self.app.wsgi_app)
+
+        # self.app = socketio.WSGIApp(self.sio, Flask("__main__"))
         self.registry = Minion.Registry()
         self.gdrive_worker = Minion.GDriveFileWorker(self)
         self.command = Minion.Command(self)
@@ -260,12 +265,13 @@ class Minion:
 
     def _on_command(self, sid, data):
         try:
-            return self.command.exec(data).to_json_result()
+            return self.command.exec(data).json()
         except Exception as ex:
-            return ExecutionStatus(False, f"Details: {ex}").to_json_result()
+            return ExecutionStatus(False, f"Details: {ex}").json()
 
     def run(self):
         self._setup_event_handlers()
         self.sio.start_background_task(self._background_worker)
         self.sio.start_background_task(self._gdrive_sync_worker)
-        eventlet.wsgi.server(eventlet.listen(('', self.port)), self.app)
+        self.app.run(port=self.port)
+        # eventlet.wsgi.server(eventlet.listen(('', self.port)), self.app)

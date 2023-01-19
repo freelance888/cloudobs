@@ -1,7 +1,6 @@
 import obswebsocket as obs
 import obswebsocket.requests
 from util import CallbackThread
-import util.util as util
 
 # ORIGINAL_STREAM_SOURCE_NAME = "original_stream"
 # TS_INPUT_NAME = "ts_input"

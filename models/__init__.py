@@ -1,1 +1,1 @@
-from models.models import OBSCloudModel, MinionSettings
+from models.models import OBSCloudModel, MinionSettings, VmixPlayer

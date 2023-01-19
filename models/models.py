@@ -129,3 +129,8 @@ class MinionSettings(BaseModel):
     def activate(self):
         for subject in self.list_subjects():
             self.__getattribute__(subject).activate()
+
+
+class VmixPlayer(BaseModel):
+    name: str
+    active: bool = False

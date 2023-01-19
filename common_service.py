@@ -1136,28 +1136,64 @@ if __name__ == "__main__":
 from flask import Flask
 import socketio
 import eventlet
+import time
+
+sio = socketio.Server(async_mode='threading')
+app = Flask(__name__)
+app.wsgi_app = socketio.WSGIApp(sio, app.wsgi_app)
 
 
-sio = socketio.Server()
-app = socketio.WSGIApp(sio, Flask(__name__))
+from pydantic import BaseModel, PrivateAttr
+class T(BaseModel):
+    num = 123
+    data = {}
+    _lock = PrivateAttr()
+    def __init__(self, *args, **kwargs):
+        self._lock = threading.RLock()
+        super().__init__(*args, **kwargs)
+    def __getattr__(self, item):
+        if item == "_lock":
+            return super(T, self).__getattr__(item)
+        with self._lock:
+            print("getattr", self._lock)
+            return super(T, self).__getattr__(item)
+    def __setattr__(self, key, value):
+        if key == "_lock":
+            super(T, self).__setattr__(key, value)
+        else:
+            with self._lock:
+                print("setattr")
+                super(T, self).__setattr__(key, value)
+t = T()
+# sio = socketio.Server()
+# app = socketio.WSGIApp(sio, Flask(__name__))
 
 def worker_eventlet():
-    eventlet.wsgi.server(eventlet.listen(('', 8088)), app)
+    app.run(port=8088)
+    # eventlet.wsgi.server(eventlet.listen(('', 8088)), app)
 
 def worker_1():
     while True:
-        sio.sleep(2)
-        print("ttt")
-        sio.emit("message", "msg")
+        sio.sleep(5)
+        # print("ttt")
+        # sio.emit("message", "msg")
 
 @sio.event
 def connect(sid, environ):
     print('connect ', sid)
+    print(sio.environ)
 
-@sio.on("message")
+@sio.on("message1")
 def on_message(sid, data):
-    print(f"Server received a message \"{data}\", sending it back")
+    print(f"Server received a message \"{data}\"...")
+    time.sleep(10)
     sio.emit("message", data)
+    print(f"Sent back message \"{data}\"")
+@sio.on("message2")
+def on_message(sid, data):
+    print(f"Server received a message \"{data}\"...")
+    sio.emit("message", data)
+    print(f"Sent back message \"{data}\"")
 
 sio.start_background_task(worker_1)
 worker_eventlet()
@@ -1167,6 +1203,7 @@ worker_eventlet()
 import socketio
 sio = socketio.Client()
 sio.connect('http://localhost:8088')
+sio.emit("message2", "msg2")
 
 class Responder:
     def __init__(self, name):

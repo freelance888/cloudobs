@@ -183,10 +183,15 @@ class MultilangParams:
 
 
 class ExecutionStatus:
-    def __init__(self, status=True, message="", json_result=None):
+    def __init__(self, status=True, message="", serializable_object=None):
+        """
+        :param status:
+        :param message:
+        :param json_result:
+        """
         self.status = status
         self.message = [message]
-        self.json_result = json_result
+        self.serializable_object = serializable_object
 
         if re.match(r"\d{3}$", str(status)):
             self._type = "http"
@@ -220,18 +225,38 @@ class ExecutionStatus:
 
         return message, code
 
-    def to_json_result(self):
-        if self.json_result:
-            return json.dumps({
-                "result": self.__bool__(),
-                "details": self.message,
-                "json": self.json_result
-            })
-        else:
-            return json.dumps({
-                "result": self.__bool__(),
-                "details": self.message
-            })
+    def json(self):
+        """
+        Converts the ExecutionStatus into json string.
+        Has the following structure:
+        {
+            "result": True/False,
+            "details": "message",
+            "serializable_object": some_serializable_object
+        }
+        :return:
+        """
+        return json.dumps({
+            "result": self.__bool__(),
+            "details": self.message,
+            "serializable_object": self.serializable_object
+        })
+
+    def dict(self):
+        return {
+            "result": self.__bool__(),
+            "details": self.message,
+            "serializable_object": self.serializable_object
+        }
+
+    @classmethod
+    def from_json(cls, json_string: str):
+        obj = json.loads(json_string)
+
+        return ExecutionStatus(status=obj["result"],
+                               message=obj["details"],
+                               serializable_object=(obj["serializable_object"]
+                                                    if "serializable_object" in obj else None))
 
 
 class DefaultDict:
@@ -335,9 +360,9 @@ class CallbackThread(threading.Thread):
             time.sleep(0.01)
 
     def _check_callbacks(self):
-        for cb in self.callbacks.copy():
-            self._check_callback(cb)
         with self.lock:
+            for cb in self.callbacks.copy():
+                self._check_callback(cb)
             self.callbacks = [cb for cb in self.callbacks if not cb["__done__"]]
 
     def _check_callback(self, cb):
