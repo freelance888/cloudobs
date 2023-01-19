@@ -1131,6 +1131,13 @@ if __name__ == "__main__":
     eventlet.wsgi.server(eventlet.listen(('', COMMON_SERVICE_PORT)), app)
     # app.run("0.0.0.0", COMMON_SERVICE_PORT)
 
+
+from server import Skipper
+skipper = Skipper()
+status = skipper.pull_obs_config("https://docs.google.com/spreadsheets/d/10J2FG-6nKodpXcTVPmNwKGOwGXSxPUWf1MppT7yUgME",
+                                 "table_4")
+
+
 # -- server side -- #
 
 from flask import Flask

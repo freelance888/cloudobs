@@ -273,5 +273,5 @@ class Minion:
         self._setup_event_handlers()
         self.sio.start_background_task(self._background_worker)
         self.sio.start_background_task(self._gdrive_sync_worker)
-        self.app.run(port=self.port)
+        self.app.run(host="0.0.0.0", port=self.port)
         # eventlet.wsgi.server(eventlet.listen(('', self.port)), self.app)
