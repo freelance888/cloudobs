@@ -2,7 +2,7 @@ from models import MinionSettings
 from pydantic import BaseModel
 from flask import Flask
 import socketio
-import eventlet
+# import eventlet
 import json
 import os
 from obs import OBSController
