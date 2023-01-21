@@ -14,6 +14,7 @@ import random
 import gdown
 from dotenv import load_dotenv
 from typing import Dict
+from multiprocessing import Process
 
 
 class Minion:
@@ -118,7 +119,10 @@ class Minion:
                     if not status:
                         try:
                             time.sleep(random.randint(3, 7))
-                            gdown.download_via_gdrive_api(fid, flocal, self.service_file)
+                            p = Process(target=gdown.download_via_gdrive_api, args=(fid, flocal, self.service_file))
+                            p.start()
+                            p.join()
+                            # gdown.download_via_gdrive_api(fid, flocal, self.service_file)
 
                             if generate_file_md5(flocal) == fmd5Checksum:
                                 with self.lock:
