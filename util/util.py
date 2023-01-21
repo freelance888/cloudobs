@@ -190,7 +190,10 @@ class ExecutionStatus:
         :param json_result:
         """
         self.status = status
-        self.message = [message]
+        if isinstance(message, list):
+            self.message = message
+        else:
+            self.message = [message]
         self.serializable_object = serializable_object
 
         if re.match(r"\d{3}$", str(status)):
