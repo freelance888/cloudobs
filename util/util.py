@@ -441,6 +441,8 @@ class WebsocketResponse:
 
     def callback(self, *data):
         self.response = data
+        if isinstance(self.response, tuple) and len(self.response) == 1:
+            self.response = self.response[0]
         self._done = True
 
     def done(self):

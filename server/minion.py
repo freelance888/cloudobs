@@ -5,8 +5,9 @@ import socketio
 # import eventlet
 import json
 import os
+import time
 from obs import OBSController
-from threading import Lock
+from threading import RLock, Thread
 from googleapiclient.discovery import build
 from util import ExecutionStatus, generate_file_md5
 import random
@@ -19,14 +20,24 @@ class Minion:
     class Registry(BaseModel):
         minion_settings: MinionSettings = MinionSettings.default("localhost")
 
-    class GDriveFileWorker:
+    class GDriveFileWorker(Thread):
         def __init__(self, streamer):
+            super(Minion.GDriveFileWorker, self).__init__()
+
             self.streamer: Minion = streamer
-            self.lock = Lock()
+            self.lock = RLock()
             self.files = {}
 
             load_dotenv()
             self.service_file = os.getenv("SERVICE_ACCOUNT_FILE", "/home/stream/sa.json")
+
+        def run(self) -> None:
+            while True:
+                try:
+                    self.check_files()
+                    time.sleep(60)
+                except Exception as ex:
+                    print(f"E Minion::GDriveFileWorker::run(): {ex}")
 
         def activate_registry(self):
             settings = self.streamer.registry.minion_settings.gdrive_settings
@@ -79,16 +90,16 @@ class Minion:
                     fid, fname = fileinfo["id"], fileinfo["name"]
                     if "md5Checksum" not in fileinfo:
                         continue  # if there is no md5Checksum that means it's not a file, probably a folder
-                    if fname not in self.files:  # if we haven't downloaded it before
-                        with self.lock:
+                    with self.lock:
+                        if fname not in self.files:  # if we haven't downloaded it before
                             self.files[fname] = False
 
                 gdrive_files = [f["name"] for f in gfiles["files"] if f["name"] in self.files]
-                for fname in self.files:  # for each file we have already downloaded
-                    # if we have downloaded this file, but it doesn't appear on google drive
-                    if fname not in gdrive_files:
-                        os.system(f"rm {os.path.join(media_dir, fname)}")  # remove it
-                        with self.lock:
+                with self.lock:
+                    for fname in self.files:  # for each file we have already downloaded
+                        # if we have downloaded this file, but it doesn't appear on google drive
+                        if fname not in gdrive_files:
+                            os.system(f"rm {os.path.join(media_dir, fname)}")  # remove it
                             self.files.pop(fname)
 
                 print(f"I PYSERVER::run_drive_sync(): Sync {len(gdrive_files)} files")
@@ -98,14 +109,15 @@ class Minion:
                     fid, fname, fmd5Checksum = fileinfo["id"], fileinfo["name"], fileinfo["md5Checksum"]
                     # if file already exists - check its md5
                     flocal = os.path.join(media_dir, fname)
-                    if not self.files[fname] and os.path.isfile(flocal):
-                        if generate_file_md5(flocal) == fmd5Checksum:
-                            with self.lock:
+                    with self.lock:
+                        if not self.files[fname] and os.path.isfile(flocal):
+                            if generate_file_md5(flocal) == fmd5Checksum:
                                 self.files[fname] = True
+                        status = self.files[fname]
 
-                    if not self.files[fname]:
+                    if not status:
                         try:
-                            self.streamer.sio.sleep(random.randint(3, 7))
+                            time.sleep(random.randint(3, 7))
                             gdown.download_via_gdrive_api(fid, flocal, self.service_file)
 
                             if generate_file_md5(flocal) == fmd5Checksum:
@@ -119,7 +131,7 @@ class Minion:
 
         def list_files(self) -> Dict[str, bool]:
             with self.lock:
-                return self.files
+                return self.files.copy()
 
     class Command:
         """
@@ -227,14 +239,6 @@ class Minion:
             except Exception as ex:
                 pass
 
-    def _gdrive_sync_worker(self):
-        while True:
-            try:
-                self.gdrive_worker.check_files()
-                self.sio.sleep(60)
-            except Exception as ex:
-                print(f"E Streamer::_gdrive_sync_worker: {ex}")
-
     def _setup_event_handlers(self):
         self.sio.on("connect", handler=self._on_connect)
         self.sio.on("disconnect", handler=self._on_disconnect)
@@ -272,6 +276,6 @@ class Minion:
     def run(self):
         self._setup_event_handlers()
         self.sio.start_background_task(self._background_worker)
-        self.sio.start_background_task(self._gdrive_sync_worker)
+        self.gdrive_worker.start()
         self.app.run(host="0.0.0.0", port=self.port)
         # eventlet.wsgi.server(eventlet.listen(('', self.port)), self.app)

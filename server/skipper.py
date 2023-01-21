@@ -433,7 +433,7 @@ class Skipper:
                     else:
                         statuses[lang] = ExecutionStatus(False, "Minion didn't return")
 
-                return ExecutionStatus(all([status.status for status in statuses]),  # one vs all
+                return ExecutionStatus(all([status.status for status in statuses.values()]),  # one vs all
                                        serializable_object={  # form status as a dictionary of statuses
                                            lang: status.dict() for lang, status in statuses.items()
                                        })
@@ -570,7 +570,7 @@ class Skipper:
                     for lang, ws_response in ws_responses
                 }
                 # here we use principle - if all statuses are True - then common status is also True, otherwise - False
-                return ExecutionStatus(all([status.status for status in statuses.values()]),
+                return ExecutionStatus(all([status["result"] for status in statuses.values()]),
                                        serializable_object=statuses)
             elif lang not in self.minions:  # if lang is specified, and it is not present in self.minions
                 return ExecutionStatus(False, f"Invalid lang '{lang}'",
