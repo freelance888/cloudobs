@@ -3,7 +3,7 @@ import json
 import os
 
 from googleapi import OBSGoogleSheets, TimingGoogleSheets
-from deployment import Spawner
+from deployment import Spawner, IPDict
 from typing import List, Dict
 from models import MinionSettings, VmixPlayer
 from pydantic import BaseModel, PrivateAttr
@@ -13,6 +13,7 @@ from socketio.exceptions import ConnectionError, ConnectionRefusedError
 from datetime import datetime, timedelta
 from obs import OBS
 from threading import Lock, RLock, Thread
+from flask import Flask
 
 # instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
 # langs: list[str] = []
@@ -98,7 +99,8 @@ class Skipper:
         def activate_registry(self) -> ExecutionStatus:
             # with self.skipper.registry_lock:
             if self.skipper.registry.infrastructure_lock:
-                return ExecutionStatus(False, "Infrastructure is locked")
+                self.skipper.registry.server_status = State.running
+                return ExecutionStatus(True, "Infrastructure is locked")
 
             with self.skipper.infrastructure_lock:
                 try:
@@ -138,6 +140,13 @@ class Skipper:
         def delete_servers(self) -> ExecutionStatus:
             with self.skipper.infrastructure_lock:
                 return ExecutionStatus(self.spawner.cleanup())
+
+        def set_ip_langs(self, ip_langs: Dict[str, str]):
+            """
+            :param ip_langs: dict of (ip: lang)
+            :return:
+            """
+            self.spawner = Spawner.from_json(IPDict(ip_langs=ip_langs).json())
 
         @classmethod
         def from_json(cls, skipper, json_dump):
@@ -217,7 +226,7 @@ class Skipper:
             self.sio.disconnect()
 
         def apply_config(self, minion_config: MinionSettings) -> WebsocketResponse:
-            return self.command(command="set info",
+            return self.command(command="set config",
                                 details={"info": minion_config.json()})
 
         def command(self, command, details=None) -> WebsocketResponse:
@@ -278,7 +287,7 @@ class Skipper:
                     if not entry.is_enabled or entry.is_played:  # if disabled or already has been played
                         return ExecutionStatus(True)
 
-                    status: ExecutionStatus = skipper.command(command="play media", details={
+                    status: ExecutionStatus = skipper.command.exec(command="play media", details={
                         "name": "name", "search_by_num": True, "mode": OBS.PLAYBACK_MODE_CHECK_SAME
                     })
 
@@ -338,6 +347,8 @@ class Skipper:
             :return: ExecutionStatus
             """
             try:
+                if not self.sheets.setup_status:
+                    return ExecutionStatus(False, f"setup_status of timing_sheets is False")
                 if countdown is not None:
                     self.skipper.registry.timing_start_time = datetime.now() + countdown
                 elif daytime is not None:
@@ -363,46 +374,361 @@ class Skipper:
             self.skipper.registry.timing_list = []
             return status
 
-    def __init__(self):
+    class Command:
+        """
+        Command structure for a Skipper:
+        {
+            "command": "play media|media stop|set ts volume|get ts volume|...",
+            "details": ... may be dict, str, list, int, bool, etc.
+        }
+        Example:
+        {
+            "command": "play media",
+            "details": {"name": "01_video.mp4", "search_by_num": "1", "mode": "check_same"}
+        }
+        Note that the command is a json string, which being parsed by Streamer.Command class
+
+        Command response has the following structure (json):
+        {
+            "status": True/False,
+            "return_value": ...,
+            "details": ...
+        }
+        """
+
+        def __init__(self, skipper):
+            self.skipper: Skipper = skipper
+
+        @classmethod
+        def valid(cls, command: str):
+            """
+            See valid command structure in class description
+            """
+            try:
+                command = json.loads(command)
+                if not isinstance(command, dict):
+                    return False
+                if "command" not in command:
+                    return False
+            except:
+                return False
+            return True
+
+        def _check_caller(self, ip, command, details=None, lang=None) -> ExecutionStatus:
+            # if the server is sleeping, only allow commands listed below
+            if self.skipper.registry.server_status == State.sleeping:
+                if command in ("pull config", "get info", "infrastructure unlock"):
+                    return ExecutionStatus(True)
+                else:
+                    return ExecutionStatus(False)
+            if self.skipper.registry.server_status in (State.initializing, State.disposing):
+                if command == "get info":
+                    return ExecutionStatus(True)
+                else:
+                    return ExecutionStatus(False, f"Server is '{self.skipper.registry.server_status}'...")
+
+            if self.skipper.registry.active_vmix_player == "*":
+                return ExecutionStatus(True)
+            if command in ("play media", "run timing") and ip != self.skipper.registry.active_vmix_player:
+                return ExecutionStatus(False, f"Command '{command}' is not allowed from {ip}")
+
+            return ExecutionStatus(True)
+
+        def _fix_infrastructure_lock(self):
+            if self.skipper.registry.server_status == State.sleeping:
+                self.skipper.registry.infrastructure_lock = False
+
+        def exec_raw(self, command_raw, environ=None) -> ExecutionStatus:
+            """
+            Command structure for a Skipper:
+            {
+                "command": "pull config|play media|media stop|set ts volume|get ts volume|...",
+                "details": ... may be dict, str, list, int, bool, etc. - optional
+            }
+            :return: ExecutionStatus
+            """
+            if not Skipper.Command.valid(command_raw):
+                raise ValueError(f"SKIPPER: Validation error. Invalid command '{command_raw}'")
+
+            command = json.loads(command_raw)
+            if "details" not in command:
+                command["details"] = {}
+            if "lang" not in command:
+                command["lang"] = "*"
+            command, details, lang = command["command"], command["details"], command["lang"]
+
+            return self.exec(command, details=details, lang=lang, environ=environ)
+
+        def exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
+            """
+            Command structure for a Streamer:
+            {
+                "command": "play media|media stop|set ts volume|get ts volume|...",
+                "details": ... may be dict, str, list, int, bool, etc.
+            }
+            :return: ExecutionStatus
+            """
+            if lang is None:
+                lang = "*"
+
+            remote_addr = environ["REMOTE_ADDR"] if environ and "REMOTE_ADDR" in environ else "*"
+            if not self._check_caller(remote_addr, command):
+                return self._check_caller(remote_addr, command)
+            self._fix_infrastructure_lock()  # if the server is sleeping - infrastructure should not be locked
+
+            try:
+                if command == "pull config":
+                    # details:
+                    # note that all the parameters are optional
+                    # {
+                    #   "sheet_url": "url",
+                    #   "sheet_name": "name",
+                    #   "langs": ["lang1", "lang2", ...],
+                    #   "ip_langs": {... "ip": "lang", ...}
+                    # }
+                    sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
+                    sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
+                    # check if details is not None and has "langs" and details["lang"] is a list of strings
+                    langs = None if (
+                            (not details) or ("langs" not in details) or (not isinstance(details["langs"], list))
+                            or (not all([isinstance(obj, str) for obj in details["langs"]]))
+                    ) else details["langs"]
+                    # if "ip_langs" has been specified - set infrastructure's ip_langs and lock environment
+                    if "ip_langs" in details and details["ip_langs"] and not self.skipper.registry.infrastructure_lock:
+                        self.skipper.infrastructure.set_ip_langs(details["ip_langs"])
+                        self.skipper.registry.infrastructure_lock = True  # make sure that infrastructure is locked
+                    # pull_obs_config() manages registry lock itself
+                    return self.pull_obs_config(sheet_url=sheet_url, sheet_name=sheet_name, langs=langs)
+                elif command == "dispose":
+                    return self.delete_minions()
+                elif command == "get info":
+                    return ExecutionStatus(True, serializable_object={
+                        "registry": self.skipper.registry.dict()
+                    })
+                elif command == "infrastructure lock":
+                    # with self.registry_lock:
+                    self.skipper.registry.infrastructure_lock = True
+                elif command == "infrastructure unlock":
+                    # with self.registry_lock:
+                    self.skipper.registry.infrastructure_lock = False
+                elif command == "vmix players add":
+                    # details: {"ip": "ip address", "name": "... 01_video_name.mp4 ..."}
+                    if not details or "ip" not in details or "name" not in details:  # validate
+                        return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
+                    if details["ip"] == "*":
+                        return ExecutionStatus(False, f"Adding '*' is not allowed")
+                    # with self.registry_lock:
+                    # add vmix player into registry
+                    self.skipper.registry.vmix_players[details["ip"]] = VmixPlayer(name=details["name"], active=False)
+                    return ExecutionStatus(True)
+                elif command == "vmix players remove":
+                    # details: {"ip": "ip address"}
+                    if not details or "ip" not in details:
+                        return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
+                    # with self.registry_lock:
+                    if details["ip"] not in self.skipper.registry.vmix_players:
+                        return ExecutionStatus(True)
+                    if details["ip"] == "*":
+                        return ExecutionStatus(False, "Removing '*' is not allowed")
+
+                    # with self.registry_lock:
+                    self.skipper.registry.vmix_players.pop(details["ip"])
+                    return ExecutionStatus(True)
+                elif command == "vmix players list":
+                    # no details needed
+                    # returns ExecutionStatus(True, serializable_object={ip: vmix_player.dict(), ...})
+                    # with self.registry_lock:
+                    return ExecutionStatus(True, serializable_object={
+                        ip: vmix_player.dict() for ip, vmix_player in self.skipper.registry.vmix_players.items()
+                    })
+                elif command == "vmix players set active":
+                    # details: {"ip": "ip address"}. ip address may be '*' - all active
+                    if not details or "ip" not in details:
+                        return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
+
+                    # with self.registry_lock:
+                    self.skipper.registry.active_vmix_player = details["ip"]
+                    for ip in self.skipper.registry.vmix_players:
+                        self.skipper.registry.vmix_players[ip].active = (self.skipper.registry.active_vmix_player == ip)
+                    return ExecutionStatus(True)
+                elif command == "pull timing":
+                    # details:
+                    # parameters are optional
+                    # {"sheet_url": "url", "sheet_name": "name"}
+                    sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
+                    sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
+                    # pull_obs_config() manages registry lock itself
+                    if sheet_url and sheet_name:
+                        status: ExecutionStatus = self.skipper.timing.setup(sheet_url=sheet_url, sheet_name=sheet_name)
+                        if not status:
+                            return status
+                    return self.skipper.timing.pull()
+                elif command == "run timing":
+                    # details:
+                    # parameters are optional
+                    # {"countdown": "hh24:mm:ss", "daytime": "hh24:mm:ss"}
+                    countdown, daytime = None, None
+                    if details and "countdown" in details and details["countdown"]:
+                        try:
+                            dt = datetime.strptime(details["countdown"], "%H:%M:%S")
+                            countdown = timedelta(hours=dt.hour, minutes=dt.minute, seconds=dt.second)
+                        except Exception as ex:
+                            return ExecutionStatus(False, f"Invalid 'countdown'. Details: {ex}")
+                    if details and "daytime" in details and details["daytime"]:
+                        try:
+                            dt = datetime.strptime(details["daytime"], "%H:%M:%S")
+                            today = datetime.today()
+                            daytime = datetime(year=today.year, month=today.month, day=today.day,
+                                               hour=dt.hour, minute=dt.minute, second=dt.second)
+                        except Exception as ex:
+                            return ExecutionStatus(False, f"Invalid 'daytime'. Details: {ex}")
+                    return self.skipper.timing.run(countdown=countdown, daytime=daytime)
+                elif command == "stop timing":
+                    return self.skipper.timing.stop()
+                elif command == "remove timing":
+                    return self.skipper.timing.remove()
+                else:
+                    with self.skipper.infrastructure_lock:
+                        return self._minion_command(command=command, details=details, lang=lang)
+            except Exception as ex:
+                return ExecutionStatus(False, f"Something happened while executing the command.\n"
+                                              f"Command '{command}', details '{details}'.\n"
+                                              f"Error details: {ex}")
+
+        def _minion_command(self, command, details=None, lang=None) -> ExecutionStatus:
+            """
+            If lang is None -> broadcasts the command across all minions. Note that for specific commands
+            lang is not needed. Lang can be either a single lang code or None ('*' - equal to None).
+            Returns ExecutionStatus, where serializable object of status will have the following structure:
+            {
+                lang1: lang1_execution_status.dict(),
+                lang2: lang2_execution_status.dict(),
+                ...
+            }
+            """
+            try:
+                if lang == "*":
+                    ws_responses = [[lang, self.skipper.minions[lang].command(command=command, details=details)]
+                                    for lang in self.skipper.minions]  # emit commands
+                    WebsocketResponse.wait_for([ws_response for _, ws_response in ws_responses])  # wait for responses
+                    # parse websocket results into ExecutionStatus instances and then into dictionaries
+                    # if websocket result was a timeout error, or a minion didn't return anything ->
+                    # ExecutionStatus(False)
+                    statuses: Dict[str, Dict] = {
+                        # parse a status and convert it into a dictionary
+                        lang: (ExecutionStatus.from_json(ws_response.result())
+                               # minion has not returned - means the minion didn't return anything
+                               # or a timeout error has been thrown
+                               if ws_response.result() else ExecutionStatus(False, "Minion has not returned")).dict()
+                        for lang, ws_response in ws_responses
+                    }
+                    # one vs all
+                    return ExecutionStatus(all([status["result"] for status in statuses.values()]),
+                                           serializable_object=statuses)
+                elif lang not in self.skipper.minions:  # if lang is specified, and it is not present in self.minions
+                    return ExecutionStatus(False, f"Invalid lang '{lang}'",
+                                           serializable_object={
+                                               lang: ExecutionStatus(False, f"Invalid lang '{lang}'").dict()
+                                           })
+                else:  # if lang is specified and is present in self.minions
+                    # emit command
+                    ws_response: WebsocketResponse = self.skipper.minions[lang].command(command=command, details=details)
+                    WebsocketResponse.wait_for([ws_response])  # wait for the response
+
+                    if ws_response.result():  # if minion has returned
+                        status: ExecutionStatus = ExecutionStatus.from_json(ws_response.result())
+                        return ExecutionStatus(status.status,
+                                               message=status.message,
+                                               serializable_object={
+                                                   lang: status.dict()
+                                               })
+                    else:  # if minion has not returned or timeout error has thrown
+                        return ExecutionStatus(False,
+                                               serializable_object={
+                                                   lang: ExecutionStatus(False, "Minion has not returned").dict()
+                                               })
+            except Exception as ex:
+                return ExecutionStatus(False,
+                                       message=f"Something happened while sending a command.\n"
+                                               f"Command: '{command}', details: '{details}'.\n"
+                                               f"Error details: {ex}",
+                                       serializable_object={
+                                           lang: ExecutionStatus(False, "Exception has been thrown").dict()
+                                       })
+
+        def pull_obs_config(self, sheet_url=None, sheet_name=None, langs=None) -> ExecutionStatus:
+            """
+            Pulls and applies OBS configuration from google sheets
+            :param sheet_url: sheet url. No need to specify if it has been specified once before (cache)
+            :param sheet_name: works same as sheet_url
+            :param langs: if specified, takes only specified langs from google sheets
+            :return: ExecutionStatus
+            """
+            with self.skipper.registry_lock:
+                if sheet_url and sheet_name:
+                    status: ExecutionStatus = self.skipper.obs_config.setup(sheet_url, sheet_name)
+                    if not status:
+                        return status
+
+                status: ExecutionStatus = self.skipper.obs_config.pull(langs=langs)
+                if not status:
+                    return status
+
+            return self.skipper.activate_registry()
+
+        def push_obs_config(self) -> ExecutionStatus:
+            return self.skipper.obs_config.push()
+
+        def delete_minions(self) -> ExecutionStatus:
+            if self.skipper.registry.infrastructure_lock:
+                return ExecutionStatus(False, "Cannot delete minions, infrastructure is locked")
+            try:
+                # with self.registry_lock:
+                self.skipper.registry.server_status = State.disposing
+                with self.skipper.infrastructure_lock:
+                    self.skipper.timing.remove()
+                    for lang, minion in self.skipper.minions.items():
+                        minion.close()
+                    self.skipper.minions = {}
+                    # with self.registry_lock:
+                    self.skipper.registry.minion_configs = {}
+                    self.skipper.registry.server_status = State.sleeping
+                    return ExecutionStatus(self.skipper.infrastructure.delete_servers())
+            except Exception as ex:
+                # with self.registry_lock:
+                self.skipper.registry.server_status = State.sleeping
+                return ExecutionStatus(False, f"Something happened while disposing. Details: {ex}")
+
+    class HTTPApi:
+        def __init__(self, skipper):
+            self.skipper: Skipper = skipper
+
+        def setup_event_handlers(self):
+            pass
+
+    def __init__(self, port=5000):
         self.registry: Skipper.Registry = Skipper.Registry()
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
         self.minions: Dict[str, Skipper.Minion] = {}
         self.timing: Skipper.Timing = Skipper.Timing(self)
+        self.command: Skipper.Command = Skipper.Command(self)
+        self.http_api: Skipper.HTTPApi = Skipper.HTTPApi(self)
 
-        # self.registry_lock = RLock()
+        self.registry_lock = RLock()
         self.infrastructure_lock = RLock()
 
-    def pull_obs_config(self, sheet_url=None, sheet_name=None, langs=None) -> ExecutionStatus:
-        """
-        Pulls and applies OBS configuration from google sheets
-        :param sheet_url: sheet url. No need to specify if it has been specified once before (cache)
-        :param sheet_name: works same as sheet_url
-        :param langs: if specified, takes only specified langs from google sheets
-        :return: ExecutionStatus
-        """
-        # with self.registry_lock:
-        if sheet_url and sheet_name:
-            status: ExecutionStatus = self.obs_config.setup(sheet_url, sheet_name)
-            if not status:
-                return status
-
-        status: ExecutionStatus = self.obs_config.pull(langs=langs)
-        if not status:
-            return status
-
-        return self.activate_registry()
-
-    def push_obs_config(self) -> ExecutionStatus:
-        return self.obs_config.push()
+        self.port = port
+        self.sio = socketio.Server(async_mode="threading")
+        self.app = Flask(__name__)
+        self.app.wsgi_app = socketio.WSGIApp(self.sio, self.app.wsgi_app)
 
     def activate_registry(self) -> ExecutionStatus:
         # with self.registry_lock:
-        if not self.registry.infrastructure_lock:
-            # check if there are all minions deployed
-            status: ExecutionStatus = self.infrastructure.activate_registry()
-            if not status:
-                return status
+        # check if there are all minions deployed
+        status: ExecutionStatus = self.infrastructure.activate_registry()
+        if not status:
+            return status
 
         try:
             # with self.registry_lock:
@@ -439,169 +765,6 @@ class Skipper:
                                        })
         except Exception as ex:
             return ExecutionStatus(False, f"Something happened while activating skipper's registry. Details: {ex}")
-
-    def delete_minions(self) -> ExecutionStatus:
-        if self.registry.infrastructure_lock:
-            return ExecutionStatus(False, "Cannot delete minions, infrastructure is locked")
-        try:
-            # with self.registry_lock:
-            self.registry.server_status = State.disposing
-            with self.infrastructure_lock:
-                self.timing.remove()
-                for lang, minion in self.minions.items():
-                    minion.close()
-                self.minions = {}
-                # with self.registry_lock:
-                self.registry.minion_configs = {}
-                self.registry.server_status = State.sleeping
-                return ExecutionStatus(self.infrastructure.delete_servers())
-        except Exception as ex:
-            # with self.registry_lock:
-            self.registry.server_status = State.sleeping
-            return ExecutionStatus(False, f"Something happened while disposing. Details: {ex}")
-
-    def command(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
-        """
-        :return:
-        """
-        if lang is None:
-            lang = "*"
-
-        remote_addr = environ["REMOTE_ADDR"] if environ and "REMOTE_ADDR" in environ else "*"
-
-        try:
-            if command == "pull obs config":
-                # details:
-                # note that all the parameters are optional
-                # {"sheet_url": "url", "sheet_name": "name", "langs": ["lang1", "lang2", ...]}
-                sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
-                sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
-                # check if details is not None and has "langs" and details["lang"] is a list of strings
-                langs = None if not details or "langs" not in details or not isinstance(details["langs"], list) \
-                                or not all([isinstance(obj, str) for obj in details["langs"]]) else details["langs"]
-                # pull_obs_config() manages registry lock itself
-                return self.pull_obs_config(sheet_url=sheet_url, sheet_name=sheet_name, langs=langs)
-            elif command == "dispose":
-                return self.delete_minions()
-            elif command == "#TODO: get info":
-                pass
-            elif command == "lock infrastructure":
-                # with self.registry_lock:
-                self.registry.infrastructure_lock = True
-            elif command == "unlock infrastructure":
-                # with self.registry_lock:
-                self.registry.infrastructure_lock = False
-            elif command == "add vmix player":
-                # details: {"ip": "ip address", "name": "... 01_video_name.mp4 ..."}
-                if not details or "ip" not in details or "name" not in details:  # validate
-                    return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
-                if details["ip"] == "*":
-                    return ExecutionStatus(False, f"Adding '*' is not allowed")
-
-                # with self.registry_lock:
-                # add vmix player into registry
-                self.registry.vmix_players[details["ip"]] = VmixPlayer(name=details["name"], active=False)
-                return ExecutionStatus(True)
-            elif command == "remove vmix player":
-                # details: {"ip": "ip address"}
-                if not details or "ip" not in details:
-                    return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
-                # with self.registry_lock:
-                if details["ip"] not in self.registry.vmix_players:
-                    return ExecutionStatus(True)
-                if details["ip"] == "*":
-                    return ExecutionStatus(False, "Removing '*' is not allowed")
-
-                # with self.registry_lock:
-                self.registry.vmix_players.pop(details["ip"])
-                return ExecutionStatus(True)
-            elif command == "list vmix players":
-                # no details needed
-                # returns ExecutionStatus(True, serializable_object={ip: vmix_player.dict(), ...})
-                # with self.registry_lock:
-                return ExecutionStatus(True, serializable_object={
-                    ip: vmix_player.dict() for ip, vmix_player in self.registry.vmix_players.items()
-                })
-            elif command == "set active vmix player":
-                # details: {"ip": "ip address"}. ip address may be '*' - all active
-                if not details or "ip" not in details:
-                    return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
-
-                # with self.registry_lock:
-                self.registry.active_vmix_player = details["ip"]
-                for ip in self.registry.vmix_players:
-                    self.registry.vmix_players[ip].active = (self.registry.active_vmix_player == ip)
-                return ExecutionStatus(True)
-            elif command == "#TODO timing":
-                pass
-            else:
-                with self.infrastructure_lock:
-                    return self._minion_command(command=command, details=details, lang=lang)
-        except Exception as ex:
-            return ExecutionStatus(False, f"Something happened while executing the command.\n"
-                                          f"Command '{command}', details '{details}'.\n"
-                                          f"Error details: {ex}")
-
-    def _minion_command(self, command, details=None, lang=None) -> ExecutionStatus:
-        """
-        If lang is None -> broadcasts the command across all minions. Note that for specific commands
-        lang is not needed. Lang can be either a single lang code or None ('*' - equal to None).
-        Returns ExecutionStatus, where serializable object of status will have the following structure:
-        {
-            lang1: lang1_execution_status.dict(),
-            lang2: lang2_execution_status.dict(),
-            ...
-        }
-        """
-        try:
-            if lang == "*":
-                ws_responses = [[lang, self.minions[lang].command(command=command, details=details)]
-                                for lang in self.minions]  # emit commands
-                WebsocketResponse.wait_for([ws_response for _, ws_response in ws_responses])  # wait for responses
-                # parse websocket results into ExecutionStatus instances and then into dictionaries
-                # if websocket result was a timeout error, or a minion didn't return anything ->
-                # ExecutionStatus(False)
-                statuses: Dict[str, Dict] = {
-                    # parse a status and convert it into a dictionary
-                    lang: (ExecutionStatus.from_json(ws_response.result())
-                           # minion has not returned - means the minion didn't return anything
-                           # or a timeout error has been thrown
-                           if ws_response.result() else ExecutionStatus(False, "Minion has not returned")).dict()
-                    for lang, ws_response in ws_responses
-                }
-                # here we use principle - if all statuses are True - then common status is also True, otherwise - False
-                return ExecutionStatus(all([status["result"] for status in statuses.values()]),
-                                       serializable_object=statuses)
-            elif lang not in self.minions:  # if lang is specified, and it is not present in self.minions
-                return ExecutionStatus(False, f"Invalid lang '{lang}'",
-                                       serializable_object={
-                                           lang: ExecutionStatus(False, f"Invalid lang '{lang}'").dict()
-                                       })
-            else:  # if lang is specified and is present in self.minions
-                # emit command
-                ws_response: WebsocketResponse = self.minions[lang].command(command=command, details=details)
-                WebsocketResponse.wait_for([ws_response])  # wait for the response
-
-                if ws_response.result():  # if minion has returned
-                    status: ExecutionStatus = ExecutionStatus.from_json(ws_response.result())
-                    return ExecutionStatus(status.status,
-                                           message=status.message,
-                                           serializable_object={
-                                               lang: status.dict()
-                                           })
-                else:  # if minion has not returned or timeout error has thrown
-                    return ExecutionStatus(False,
-                                           serializable_object={
-                                               lang: ExecutionStatus(False, "Minion has not returned").dict()
-                                           })
-        except Exception as ex:
-            return ExecutionStatus(False,
-                                   message=f"Something happened while sending a command.\n"
-                                           f"Command: '{command}', details: '{details}'.\n"
-                                           f"Error details: {ex}",
-                                   serializable_object={
-                                       lang: ExecutionStatus(False, "Exception has been thrown").dict()
-                                   })
 
     def save_to_disk(self):
         registry_json = self.registry.json()
@@ -643,3 +806,19 @@ class Skipper:
                     }
 
         self.activate_registry()
+
+    def _setup_event_handlers(self):
+        # self.sio.on("connect", handler=self._on_connect)
+        # self.sio.on("disconnect", handler=self._on_disconnect)
+        self.sio.on("command", handler=self._on_command)
+        self.http_api.setup_event_handlers()
+
+    def _on_command(self, sid, data):
+        try:
+            return self.command.exec_raw(data, environ=self.sio.environ[sid]).json()
+        except Exception as ex:
+            return ExecutionStatus(False, f"Details: {ex}").json()
+
+    def run(self):
+        self._setup_event_handlers()
+        self.app.run(host="0.0.0.0", port=self.port)

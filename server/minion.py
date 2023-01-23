@@ -22,10 +22,10 @@ class Minion:
         minion_settings: MinionSettings = MinionSettings.default("localhost")
 
     class GDriveFileWorker(Thread):
-        def __init__(self, streamer):
+        def __init__(self, minion):
             super(Minion.GDriveFileWorker, self).__init__()
 
-            self.streamer: Minion = streamer
+            self.minion: Minion = minion
             self.lock = RLock()
             self.files = {}
 
@@ -41,24 +41,26 @@ class Minion:
                     print(f"E Minion::GDriveFileWorker::run(): {ex}")
 
         def activate_registry(self):
-            settings = self.streamer.registry.minion_settings.gdrive_settings
+            with self.minion.registry_lock:
+                settings = self.minion.registry.minion_settings.gdrive_settings
 
-            if settings.is_active():
+                if settings.is_active():
+                    return True
+
+                if not settings.api_key or \
+                        not self.minion.command.obs.set_media_dir(settings.media_dir):
+                    return False
+
+                settings.activate()
                 return True
-
-            if not settings.api_key or \
-                    not self.streamer.command.obs.set_media_dir(settings.media_dir):
-                return False
-
-            settings.activate()
-            return True
 
         def check_files(self):
             if not self.activate_registry():
                 return
 
-            settings = self.streamer.registry.minion_settings.gdrive_settings
-            media_dir = settings.media_dir
+            with self.minion.registry_lock:
+                settings = self.minion.registry.minion_settings.gdrive_settings
+                media_dir = settings.media_dir
 
             with build("drive", "v3", developerKey=settings.api_key) as service:
                 # list the drive files, the response is like the following structure:
@@ -159,8 +161,8 @@ class Minion:
         }
         """
 
-        def __init__(self, streamer):
-            self.streamer = streamer
+        def __init__(self, minion):
+            self.minion: Minion = minion
             self.obs = OBSController()
 
         @classmethod
@@ -172,7 +174,7 @@ class Minion:
                 command = json.loads(command)
                 if not isinstance(command, dict):
                     return False
-                if "command" not in command or "details" not in command:
+                if "command" not in command:
                     return False
             except:
                 return False
@@ -188,27 +190,31 @@ class Minion:
             :return: ExecutionStatus
             """
             if not Minion.Command.valid(command):
-                raise ValueError("Invalid command")
+                raise ValueError(f"MINION: Validation error. Invalid command '{command}'")
 
             command = json.loads(command)
+            if "details" not in command:
+                command["details"] = {}
             command, details = command["command"], command["details"]
 
-            if command == "get info":
+            if command == "get config":
                 # returns "... minion_settings json ..."
-                return ExecutionStatus(True, serializable_object=self.streamer.registry.minion_settings.dict())
-            elif command == "set info":
+                with self.minion.registry_lock:
+                    return ExecutionStatus(True, serializable_object=self.minion.registry.minion_settings.dict())
+            elif command == "set config":
                 # input: {"info": "... minion_settings json ..."}
                 if not details or "info" not in details:
-                    return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
-                self.streamer.registry.minion_settings.modify_from(MinionSettings.parse_raw(details["info"]))
-                return self.obs.apply_info(minion_settings=self.streamer.registry.minion_settings)
-            elif command == "cleanup":
+                    return ExecutionStatus(False, f"MINION: Invalid details for command '{command}':\n '{details}'")
+                with self.minion.registry_lock:
+                    self.minion.registry.minion_settings.modify_from(MinionSettings.parse_raw(details["info"]))
+                    return self.obs.apply_info(minion_settings=self.minion.registry.minion_settings)
+            elif command == "dispose":
                 # TODO
-                return ExecutionStatus(False, "Not implemented")
+                return ExecutionStatus(False, "MINION: Not implemented")
             elif command == "play media":
                 # details: {"name": "... 01_video_name.mp4 ...", "search_by_num": True/False, "mode": "check_same|..."}
                 if not details or "name" not in details:
-                    return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
+                    return ExecutionStatus(False, f"MINION: Invalid details for command '{command}':\n '{details}'")
                 search_by_num = None if "search_by_num" not in details else details["search_by_num"]
                 mode = None if "mode" not in details else details["mode"]
                 return self.obs.run_media(name=details["name"], search_by_num=search_by_num, mode=mode)
@@ -218,9 +224,9 @@ class Minion:
                 return self.obs.refresh_media_source()
             elif command == "list gdrive files":
                 # returns ExecutionStatus(True, serializable_object={"video_1.mp4": True/False, ...})
-                return ExecutionStatus(True, "Ok", serializable_object=self.streamer.gdrive_worker.list_files())
+                return ExecutionStatus(True, "Ok", serializable_object=self.minion.gdrive_worker.list_files())
             else:
-                return ExecutionStatus(False, "Invalid command")
+                return ExecutionStatus(False, f"MINION: Invalid command {command}")
 
     def __init__(self, port=6006):
         self.port = port
@@ -232,6 +238,8 @@ class Minion:
         self.registry = Minion.Registry()
         self.gdrive_worker = Minion.GDriveFileWorker(self)
         self.command = Minion.Command(self)
+
+        self.registry_lock = RLock()
 
     def _do_background_work(self):
         self.sio.sleep(0.5)

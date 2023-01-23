@@ -200,7 +200,7 @@ class OBSController:
 
         return status
 
-    def set_media_dir(self, media_dir):
+    def set_media_dir(self, media_dir) -> ExecutionStatus:
         """
         :param media_dir
         :return:
