@@ -11,10 +11,10 @@ from models import MinionSettings
 
 load_dotenv()
 BASE_MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
-DEFAULT_API_KEY = os.getenv("GDRIVE_API_KEY", "")
-DEFAULT_SYNC_SECONDS = int(os.getenv("GDRIVE_SYNC_SECONDS", 60))
+# DEFAULT_API_KEY = os.getenv("GDRIVE_API_KEY", "")
+# DEFAULT_SYNC_SECONDS = int(os.getenv("GDRIVE_SYNC_SECONDS", 60))
 MEDIA_DIR = os.path.join(BASE_MEDIA_DIR, "media")
-TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "media")
+# TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 
 
 class OBSController:
@@ -205,8 +205,8 @@ class OBSController:
         :param media_dir
         :return:
         """
-        if not self._check_initialization():
-            return ExecutionStatus(status=False, message="Couldn't initialize the server")
+        # if not self._check_initialization():
+        #     return ExecutionStatus(status=False, message="Couldn't initialize the server")
 
         self.media_dir = media_dir
         if not os.path.isdir(self.media_dir):

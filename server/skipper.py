@@ -5,7 +5,7 @@ import os
 from googleapi import OBSGoogleSheets, TimingGoogleSheets
 from deployment import Spawner, IPDict
 from typing import List, Dict
-from models import MinionSettings, VmixPlayer
+from models import MinionSettings, VmixPlayer, Registry, State
 from pydantic import BaseModel, PrivateAttr
 from util import ExecutionStatus, WebsocketResponse, CallbackThread
 import socketio
@@ -26,70 +26,62 @@ from flask import Flask
 MINION_WS_PORT = 6006
 
 
-class State:
-    sleeping = "sleeping"
-    initializing = "initializing"
-    running = "running"
-    disposing = "disposing"
-    error = "error"
-
-
 class Skipper:
-    class Registry(BaseModel):
-        obs_sheet_url: str = None
-        obs_sheet_name: str = None
-        minion_configs: Dict[str, MinionSettings] = {}  # lang: config
-        infrastructure_lock: bool = False  # points if needed to lock infrastructure
-
-        server_status: str = State.sleeping
-        _last_server_status: str = PrivateAttr(State.sleeping)
-
-        timing_sheet_url: str = None
-        timing_sheet_name: str = None
-        timing_list = []
-        timing_start_time: datetime = None  # system time when the timing will be/was started
-
-        # ip: {"name": "", active: True/False}
-        vmix_players: Dict[str, VmixPlayer] = {"*": VmixPlayer(name="All", active=True)}
-        active_vmix_player: str = "*"  # "*" or ip
-
-        _lock = PrivateAttr()
-
-        def __init__(self, **kwargs):
-            self._lock = RLock()
-            super(Skipper.Registry, self).__init__(**kwargs)
-
-        def __getattr__(self, item):
-            if item == "_lock":
-                return super(Skipper.Registry, self).__getattr__(item)
-            with self._lock:
-                return super(Skipper.Registry, self).__getattr__(item)
-
-        def __setattr__(self, key, value):
-            if key == "_lock":
-                super(Skipper.Registry, self).__setattr__(key, value)
-            else:
-                with self._lock:
-                    if key == "server_status":
-                        self._last_server_status = self.server_status
-                    super(Skipper.Registry, self).__setattr__(key, value)
-
-        def list_langs(self):
-            return list(self.minion_configs.keys())
-
-        def update_minion(self, lang, minion_config: MinionSettings):
-            if lang not in self.minion_configs:
-                self.minion_configs[lang] = minion_config
-            else:
-                self.minion_configs[lang].modify_from(minion_config)
-
-        def delete_minion(self, lang):
-            if lang in self.minion_configs:
-                self.minion_configs.pop(lang)
-
-        def revert_server_state(self):
-            with self._lock:
-                super().__setattr__("server_status", self._last_server_status)
+    # class Registry(BaseModel):
+    #     obs_sheet_url: str = None
+    #     obs_sheet_name: str = None
+    #     minion_configs: Dict[str, MinionSettings] = {}  # lang: config
+    #     infrastructure_lock: bool = False  # points if needed to lock infrastructure
+    #
+    #     server_status: str = State.sleeping
+    #     _last_server_status: str = PrivateAttr(State.sleeping)
+    #
+    #     timing_sheet_url: str = None
+    #     timing_sheet_name: str = None
+    #     timing_list = []
+    #     timing_start_time: datetime = None  # system time when the timing will be/was started
+    #
+    #     # ip: {"name": "", active: True/False}
+    #     vmix_players: Dict[str, VmixPlayer] = {"*": VmixPlayer(name="All", active=True)}
+    #     active_vmix_player: str = "*"  # "*" or ip
+    #
+    #     _lock = PrivateAttr()
+    #
+    #     def __init__(self, **kwargs):
+    #         self._lock = RLock()
+    #         super(Skipper.Registry, self).__init__(**kwargs)
+    #
+    #     def __getattr__(self, item):
+    #         if item == "_lock":
+    #             return super(Skipper.Registry, self).__getattr__(item)
+    #         with self._lock:
+    #             return super(Skipper.Registry, self).__getattr__(item)
+    #
+    #     def __setattr__(self, key, value):
+    #         if key == "_lock":
+    #             super(Skipper.Registry, self).__setattr__(key, value)
+    #         else:
+    #             with self._lock:
+    #                 if key == "server_status":
+    #                     self._last_server_status = self.server_status
+    #                 super(Skipper.Registry, self).__setattr__(key, value)
+    #
+    #     def list_langs(self):
+    #         return list(self.minion_configs.keys())
+    #
+    #     def update_minion(self, lang, minion_config: MinionSettings):
+    #         if lang not in self.minion_configs:
+    #             self.minion_configs[lang] = minion_config
+    #         else:
+    #             self.minion_configs[lang].modify_from(minion_config)
+    #
+    #     def delete_minion(self, lang):
+    #         if lang in self.minion_configs:
+    #             self.minion_configs.pop(lang)
+    #
+    #     def revert_server_state(self):
+    #         with self._lock:
+    #             super().__setattr__("server_status", self._last_server_status)
 
     class Infrastructure:
         def __init__(self, skipper):
@@ -444,6 +436,7 @@ class Skipper:
             {
                 "command": "pull config|play media|media stop|set ts volume|get ts volume|...",
                 "details": ... may be dict, str, list, int, bool, etc. - optional
+                "lang": ...
             }
             :return: ExecutionStatus
             """
@@ -469,7 +462,12 @@ class Skipper:
             :return: ExecutionStatus
             """
             if lang is None:
-                lang = "*"
+                lang = "*"  # langs
+            # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
+            minion_configs: List[MinionSettings] = [
+                minion_config for lang_, minion_config in self.skipper.registry.minion_configs
+                if (lang == "*" or lang_ == lang)
+            ]
 
             remote_addr = environ["REMOTE_ADDR"] if environ and "REMOTE_ADDR" in environ else "*"
             if not self._check_caller(remote_addr, command):
@@ -505,6 +503,9 @@ class Skipper:
                     return ExecutionStatus(True, serializable_object={
                         "registry": self.skipper.registry.dict()
                     })
+                elif command in ("set stream settings", "set teamspeak offset", "set teamspeak volume",
+                                 "set source volume", "set sidechain settings", "set transition settings"):
+                    return self.set_info(command=command, details=details, lang=lang, environ=environ)
                 elif command == "infrastructure lock":
                     # with self.registry_lock:
                     self.skipper.registry.infrastructure_lock = True
@@ -512,7 +513,7 @@ class Skipper:
                     # with self.registry_lock:
                     self.skipper.registry.infrastructure_lock = False
                 elif command == "vmix players add":
-                    # details: {"ip": "ip address", "name": "... 01_video_name.mp4 ..."}
+                    # details: {"ip": "ip address", "name": "... Moscow ..."}
                     if not details or "ip" not in details or "name" not in details:  # validate
                         return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
                     if details["ip"] == "*":
@@ -534,13 +535,13 @@ class Skipper:
                     # with self.registry_lock:
                     self.skipper.registry.vmix_players.pop(details["ip"])
                     return ExecutionStatus(True)
-                elif command == "vmix players list":
-                    # no details needed
-                    # returns ExecutionStatus(True, serializable_object={ip: vmix_player.dict(), ...})
-                    # with self.registry_lock:
-                    return ExecutionStatus(True, serializable_object={
-                        ip: vmix_player.dict() for ip, vmix_player in self.skipper.registry.vmix_players.items()
-                    })
+                # elif command == "vmix players list":
+                #     # no details needed
+                #     # returns ExecutionStatus(True, serializable_object={ip: vmix_player.dict(), ...})
+                #     # with self.registry_lock:
+                #     return ExecutionStatus(True, serializable_object={
+                #         ip: vmix_player.dict() for ip, vmix_player in self.skipper.registry.vmix_players.items()
+                #     })
                 elif command == "vmix players set active":
                     # details: {"ip": "ip address"}. ip address may be '*' - all active
                     if not details or "ip" not in details:
@@ -551,6 +552,14 @@ class Skipper:
                     for ip in self.skipper.registry.vmix_players:
                         self.skipper.registry.vmix_players[ip].active = (self.skipper.registry.active_vmix_player == ip)
                     return ExecutionStatus(True)
+                elif command == "start streaming":
+                    for minion_config in minion_configs:
+                        minion_config.stream_on.value = True
+                    return self.skipper.activate_registry()
+                elif command == "stop streaming":
+                    for minion_config in minion_configs:
+                        minion_config.stream_on.value = False
+                    return self.skipper.activate_registry()
                 elif command == "pull timing":
                     # details:
                     # parameters are optional
@@ -577,9 +586,11 @@ class Skipper:
                     if details and "daytime" in details and details["daytime"]:
                         try:
                             dt = datetime.strptime(details["daytime"], "%H:%M:%S")
-                            today = datetime.today()
-                            daytime = datetime(year=today.year, month=today.month, day=today.day,
+                            now = datetime.now()
+                            daytime = datetime(year=now.year, month=now.month, day=now.day,
                                                hour=dt.hour, minute=dt.minute, second=dt.second)
+                            if daytime < now:  # if time specified is less than current time -> add 1 day
+                                daytime = daytime + timedelta(days=1)
                         except Exception as ex:
                             return ExecutionStatus(False, f"Invalid 'daytime'. Details: {ex}")
                     return self.skipper.timing.run(countdown=countdown, daytime=daytime)
@@ -594,6 +605,90 @@ class Skipper:
                 return ExecutionStatus(False, f"Something happened while executing the command.\n"
                                               f"Command '{command}', details '{details}'.\n"
                                               f"Error details: {ex}")
+
+        def set_info(self, command, details, lang=None, environ=None) -> ExecutionStatus:
+            if lang is None:
+                lang = "*"
+            minion_settings: List[MinionSettings] = [
+                settings for lang_, settings in self.skipper.registry.minion_configs.items()
+                if (lang == "*" or lang_ == lang)
+            ]
+
+            if command == "set stream settings":
+                # details: {"server": "...", "key": "..."}
+                if "server" not in details or "key" not in details:
+                    return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
+                for settings in minion_settings:
+                    settings.stream_settings.server = details["server"]
+                    settings.stream_settings.key = details["key"]
+                return self.skipper.activate_registry()
+            elif command == "set teamspeak offset":
+                # details: {"value": numeric_value}  - offset in milliseconds
+                if "value" not in details:
+                    return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
+                try:
+                    value = int(details["value"])
+                except Exception as ex:
+                    return ExecutionStatus(False, f"Couldn't parse teamspeak offset: {details}")
+                for settings in minion_settings:
+                    settings.ts_offset.value = value
+                return self.skipper.activate_registry()
+            elif command == "set teamspeak volume":
+                # details: {"value": numeric_value}  - volume in decibels
+                if "value" not in details:
+                    return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
+                try:
+                    value = float(details["value"])
+                except Exception as ex:
+                    return ExecutionStatus(False, f"Couldn't parse teamspeak volume: {details}")
+                for settings in minion_settings:
+                    settings.ts_volume.value = value
+                return self.skipper.activate_registry()
+            elif command == "set source volume":
+                # details: {"value": numeric_value}  - volume in decibels
+                if "value" not in details:
+                    return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
+                try:
+                    value = float(details["value"])
+                except Exception as ex:
+                    return ExecutionStatus(False, f"Couldn't parse source volume: {details}")
+                for settings in minion_settings:
+                    settings.source_volume.value = value
+                return self.skipper.activate_registry()
+            elif command == "set sidechain settings":
+                # details: {"ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...}
+                # all parameters are numeric
+                if "ratio" not in details and "release_time" not in details and "threshold" not in details\
+                        and "output_gain" not in details:
+                    return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
+                try:
+                    for settings in minion_settings:
+                        if "ratio" in details:
+                            settings.sidechain_settings.ratio = float(details["ratio"])
+                        if "release_time" in details:
+                            settings.sidechain_settings.release_time = float(details["release_time"])
+                        if "threshold" in details:
+                            settings.sidechain_settings.threshold = float(details["threshold"])
+                        if "output_gain" in details:
+                            settings.sidechain_settings.output_gain = float(details["output_gain"])
+                except Exception as ex:
+                    return ExecutionStatus(False, f"Couldn't parse sidechain settings: {details}")
+                return self.skipper.activate_registry()
+            elif command == "set transition settings":
+                # details: {"transition_point": ...}
+                # all parameters are numeric
+                if "transition_point" not in details:
+                    return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
+                try:
+                    transition_point = float(details["transition_point"])
+                except Exception as ex:
+                    return ExecutionStatus(False, f"Couldn't parse transition settings: {details}")
+                for settings in minion_settings:
+                    settings.transition_settings.transition_point = transition_point
+                return self.skipper.activate_registry()
+            else:
+                return ExecutionStatus(False, f"Invalid command '{command}'")
+
 
         def _minion_command(self, command, details=None, lang=None) -> ExecutionStatus:
             """
@@ -707,7 +802,7 @@ class Skipper:
             pass
 
     def __init__(self, port=5000):
-        self.registry: Skipper.Registry = Skipper.Registry()
+        self.registry: Registry = Registry()
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
         self.minions: Dict[str, Skipper.Minion] = {}
@@ -780,12 +875,12 @@ class Skipper:
 
     def load_from_disk(self):
         # Load registry
-        self.registry = Skipper.Registry()
+        self.registry = Registry()
         if os.path.isfile("./dump_registry.json"):
             with open("./dump_registry.json", "rt") as fp:
                 content = fp.read()
                 if content:
-                    self.registry = Skipper.Registry.parse_raw(content)
+                    self.registry = Registry.parse_raw(content)
         # Load infrastructure
         self.infrastructure = Skipper.Infrastructure(self)
         if os.path.isfile("./dump_infra.json"):

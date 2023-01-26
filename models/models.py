@@ -1,6 +1,8 @@
 from pydantic import BaseModel, PrivateAttr
 from pydantic.schema import Optional
-from typing import List
+from typing import List, Dict
+from datetime import datetime
+from threading import Lock, RLock, Thread
 
 
 class OBSCloudModel(BaseModel):
@@ -134,3 +136,68 @@ class MinionSettings(BaseModel):
 class VmixPlayer(BaseModel):
     name: str
     active: bool = False
+
+
+class State:
+    sleeping = "sleeping"
+    initializing = "initializing"
+    running = "running"
+    disposing = "disposing"
+    error = "error"
+
+
+class Registry(BaseModel):
+    obs_sheet_url: str = None
+    obs_sheet_name: str = None
+    minion_configs: Dict[str, MinionSettings] = {}  # lang: config
+    infrastructure_lock: bool = False  # points if needed to lock infrastructure
+
+    server_status: str = State.sleeping
+    _last_server_status: str = PrivateAttr(State.sleeping)
+
+    timing_sheet_url: str = None
+    timing_sheet_name: str = None
+    timing_list = []
+    timing_start_time: datetime = None  # system time when the timing will be/was started
+
+    # ip: {"name": "", active: True/False}
+    vmix_players: Dict[str, VmixPlayer] = {"*": VmixPlayer(name="All", active=True)}
+    active_vmix_player: str = "*"  # "*" or ip
+
+    _lock = PrivateAttr()
+
+    def __init__(self, **kwargs):
+        self._lock = RLock()
+        super(Registry, self).__init__(**kwargs)
+
+    def __getattr__(self, item):
+        if item == "_lock":
+            return super(Registry, self).__getattr__(item)
+        with self._lock:
+            return super(Registry, self).__getattr__(item)
+
+    def __setattr__(self, key, value):
+        if key == "_lock":
+            super(Registry, self).__setattr__(key, value)
+        else:
+            with self._lock:
+                if key == "server_status":
+                    self._last_server_status = self.server_status
+                super(Registry, self).__setattr__(key, value)
+
+    def list_langs(self):
+        return list(self.minion_configs.keys())
+
+    def update_minion(self, lang, minion_config: MinionSettings):
+        if lang not in self.minion_configs:
+            self.minion_configs[lang] = minion_config
+        else:
+            self.minion_configs[lang].modify_from(minion_config)
+
+    def delete_minion(self, lang):
+        if lang in self.minion_configs:
+            self.minion_configs.pop(lang)
+
+    def revert_server_state(self):
+        with self._lock:
+            super().__setattr__("server_status", self._last_server_status)

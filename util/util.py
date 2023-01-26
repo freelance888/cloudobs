@@ -239,16 +239,34 @@ class ExecutionStatus:
         }
         :return:
         """
+        # if there is only one message, leave it as string
+        if isinstance(self.message, list):
+            if len(self.message) == 1:
+                message = self.message[0]
+            else:
+                message = self.message
+        else:
+            message = self.message
+
         return json.dumps({
             "result": self.__bool__(),
-            "details": self.message,
+            "details": message,
             "serializable_object": self.serializable_object
         })
 
     def dict(self):
+        # if there is only one message, leave it as string
+        if isinstance(self.message, list):
+            if len(self.message) == 1:
+                message = self.message[0]
+            else:
+                message = self.message
+        else:
+            message = self.message
+
         return {
             "result": self.__bool__(),
-            "details": self.message,
+            "details": message,
             "serializable_object": self.serializable_object
         }
 

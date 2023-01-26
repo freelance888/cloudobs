@@ -27,7 +27,7 @@ class Minion:
 
             self.minion: Minion = minion
             self.lock = RLock()
-            self.files = {}
+            self.files = {}  # filename: true/false
 
             load_dotenv()
             self.service_file = os.getenv("SERVICE_ACCOUNT_FILE", "/home/stream/sa.json")
