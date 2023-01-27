@@ -6,22 +6,14 @@ from googleapi import OBSGoogleSheets, TimingGoogleSheets
 from deployment import Spawner, IPDict
 from typing import List, Dict
 from models import MinionSettings, VmixPlayer, Registry, State
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel
 from util import ExecutionStatus, WebsocketResponse, CallbackThread
 import socketio
 from socketio.exceptions import ConnectionError, ConnectionRefusedError
 from datetime import datetime, timedelta
 from obs import OBS
-from threading import Lock, RLock, Thread
+from threading import RLock
 from flask import Flask
-
-# instance_service_addrs = util.ServiceAddrStorage()  # dict of `"lang": {"addr": "address"}
-# langs: list[str] = []
-# server_state = ServerState(ServerState.SLEEPING)
-# # init_status, wakeup_status = False, False
-# media_scheduler = MediaScheduler()
-# sheets = OBSGoogleSheets()
-# timing_sheets = TimingGoogleSheets()
 
 MINION_WS_PORT = 6006
 
@@ -658,7 +650,7 @@ class Skipper:
             elif command == "set sidechain settings":
                 # details: {"ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...}
                 # all parameters are numeric
-                if "ratio" not in details and "release_time" not in details and "threshold" not in details\
+                if "ratio" not in details and "release_time" not in details and "threshold" not in details \
                         and "output_gain" not in details:
                     return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
                 try:
@@ -688,7 +680,6 @@ class Skipper:
                 return self.skipper.activate_registry()
             else:
                 return ExecutionStatus(False, f"Invalid command '{command}'")
-
 
         def _minion_command(self, command, details=None, lang=None) -> ExecutionStatus:
             """
@@ -727,7 +718,8 @@ class Skipper:
                                            })
                 else:  # if lang is specified and is present in self.minions
                     # emit command
-                    ws_response: WebsocketResponse = self.skipper.minions[lang].command(command=command, details=details)
+                    ws_response: WebsocketResponse = self.skipper.minions[lang].command(command=command,
+                                                                                        details=details)
                     WebsocketResponse.wait_for([ws_response])  # wait for the response
 
                     if ws_response.result():  # if minion has returned
