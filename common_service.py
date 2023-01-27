@@ -7,7 +7,7 @@ COMMON_SERVICE_PORT = int(os.getenv("COMMON_SERVICE_PORT", 5000))
 
 # Setup Sentry
 # ------------
-# if env var set - setup integration #
+# if env var set - setup integration
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 if SENTRY_DSN:
     import sentry_sdk

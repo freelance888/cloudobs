@@ -109,7 +109,7 @@
 ### `GET /media/schedule`
  - Returns current media schedule
  - Has the following format:
-```
+```json
 {
   id_1: {
     "name": "...",
@@ -124,6 +124,15 @@
   ...
 }
 ```
+### `GET /media/schedule/status`
+ - Returns a status of current media schedule
+ - Has the following response format:
+```json
+{
+    "running": true/false,
+    "timestamp": "yyyy-MM-ddTHH:mm:ss+00:00" # datetime as ISO-8601 UTC,
+}
+```
 ### `PUT /media/schedule`
  - Updates media schedule
  - Accepts the following parameters:
@@ -131,6 +140,9 @@
    - `name` - new video name, optional
    - `timestamp` - new timestamp, optional (format of `hh:mm:ss`)
    - `is_enabled` - enables/disables specified schedule, optional
+### `POST /media/schedule/reset`
+ - Resets current timing, so it can be started again
+ - Also stops the video playing
 ### `DELETE /media/schedule`
  - Removes current media schedule
 ## MEDIA PLAY

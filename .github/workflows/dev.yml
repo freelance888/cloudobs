@@ -2,7 +2,7 @@ name: DEV | Build and Deploy
 
 on:
   push:
-    branches: ["dev", "feature/**"]
+    branches: dev
 
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}
