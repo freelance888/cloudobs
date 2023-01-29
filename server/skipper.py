@@ -13,9 +13,9 @@ from socketio.exceptions import ConnectionError, ConnectionRefusedError
 from datetime import datetime, timedelta
 from obs import OBS
 from threading import RLock
-from flask import Flask
+from flask import Flask, request
 
-MINION_WS_PORT = 6006
+MINION_WS_PORT = 6000
 
 
 class Skipper:
@@ -23,6 +23,22 @@ class Skipper:
         def __init__(self, skipper):
             self.spawner: Spawner = Spawner()
             self.skipper = skipper
+
+        def _ensure_minions(self):
+            for lang, ip in self.spawner.ip_dict.ip_list():
+                # with self.skipper.registry_lock:
+                if lang not in self.skipper.registry.minion_configs:
+                    raise KeyError(f"No lang {lang} found in google sheets, but passed in `ip_langs`")
+                self.skipper.registry.minion_configs[lang].addr_config.minion_server_addr = ip
+                # if Minion instance have not been created yet
+                if lang not in self.skipper.minions:
+                    self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang,
+                                                                ws_port=MINION_WS_PORT)  # create
+                # else if lang or ip has changed
+                if self.skipper.minions[lang].minion_ip != ip or self.skipper.minions[lang].lang != lang:
+                    del self.skipper.minions[lang]  # delete old version
+                    # and replace with updated one
+                    self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang)
 
         def activate_registry(self) -> ExecutionStatus:
             # with self.skipper.registry_lock:
@@ -43,38 +59,36 @@ class Skipper:
                     return ExecutionStatus(False, message=f"Something happened while deploying minions: {ex}")
 
                 # lang_ips = self.spawner.ip_dict.ip_list()
-                for lang, ip in self.spawner.ip_dict.ip_list():
-                    try:
-                        # with self.skipper.registry_lock:
-                        self.skipper.registry.minion_configs[lang].addr_config.minion_server_addr = ip
-                        # if Minion instance have not been created yet
-                        if lang not in self.skipper.minions:
-                            self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang)  # create
-                        # else if lang or ip has changed
-                        if self.skipper.minions[lang].minion_ip != ip or self.skipper.minions[lang].lang != lang:
-                            del self.skipper.minions[lang]  # delete old version
-                            # and replace with updated one
-                            self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang)
-                    except ConnectionError as ex:
-                        # with self.skipper.registry_lock:
-                        self.skipper.registry.revert_server_state()
-                        return ExecutionStatus(False,
-                                               f"Something happened while creating Minion instances. Details: {ex}")
+                try:
+                    self._ensure_minions()
+                except ConnectionError as ex:
+                    # with self.skipper.registry_lock:
+                    self.skipper.registry.revert_server_state()
+                    return ExecutionStatus(False,
+                                           f"Something happened while creating Minion instances. Details: {ex}")
 
             # with self.skipper.registry_lock:
             self.skipper.registry.server_status = State.running
+            self.skipper.registry.infrastructure_lock = True
             return ExecutionStatus(True)
 
         def delete_servers(self) -> ExecutionStatus:
             with self.skipper.infrastructure_lock:
                 return ExecutionStatus(self.spawner.cleanup())
 
-        def set_ip_langs(self, ip_langs: Dict[str, str]):
+        def set_ip_langs(self, ip_langs: Dict[str, str]) -> ExecutionStatus:
             """
             :param ip_langs: dict of (ip: lang)
             :return:
             """
-            self.spawner = Spawner.from_json(IPDict(ip_langs=ip_langs).json())
+            try:
+                self.spawner = Spawner.from_json(IPDict(ip_langs=ip_langs).json())
+                self._ensure_minions()
+                self.skipper.registry.server_status = State.running
+                self.skipper.registry.infrastructure_lock = True
+                return ExecutionStatus(True)
+            except Exception as ex:
+                return ExecutionStatus(False, f"Couldn't set ip_langs. Details: {ex}")
 
         @classmethod
         def from_json(cls, skipper, json_dump):
@@ -401,7 +415,7 @@ class Skipper:
                 lang = "*"  # langs
             # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
             minion_configs: List[MinionSettings] = [
-                minion_config for lang_, minion_config in self.skipper.registry.minion_configs
+                minion_config for lang_, minion_config in self.skipper.registry.minion_configs.items()
                 if (lang == "*" or lang_ == lang)
             ]
 
@@ -427,12 +441,19 @@ class Skipper:
                             (not details) or ("langs" not in details) or (not isinstance(details["langs"], list))
                             or (not all([isinstance(obj, str) for obj in details["langs"]]))
                     ) else details["langs"]
+                    # pull_obs_config() manages registry lock itself
+                    status: ExecutionStatus = self.pull_obs_config(sheet_url=sheet_url,
+                                                                   sheet_name=sheet_name,
+                                                                   langs=langs)
+                    if not status:
+                        return status
+
                     # if "ip_langs" has been specified - set infrastructure's ip_langs and lock environment
                     if "ip_langs" in details and details["ip_langs"] and not self.skipper.registry.infrastructure_lock:
-                        self.skipper.infrastructure.set_ip_langs(details["ip_langs"])
-                        self.skipper.registry.infrastructure_lock = True  # make sure that infrastructure is locked
-                    # pull_obs_config() manages registry lock itself
-                    return self.pull_obs_config(sheet_url=sheet_url, sheet_name=sheet_name, langs=langs)
+                        status: ExecutionStatus = self.skipper.infrastructure.set_ip_langs(details["ip_langs"])
+                        if not status:
+                            return status
+                    return self.skipper.activate_registry()
                 elif command == "dispose":
                     return self.delete_minions()
                 elif command == "get info":
@@ -445,9 +466,11 @@ class Skipper:
                 elif command == "infrastructure lock":
                     # with self.registry_lock:
                     self.skipper.registry.infrastructure_lock = True
+                    return ExecutionStatus(True)
                 elif command == "infrastructure unlock":
                     # with self.registry_lock:
                     self.skipper.registry.infrastructure_lock = False
+                    return ExecutionStatus(True)
                 elif command == "vmix players add":
                     # details: {"ip": "ip address", "name": "... Moscow ..."}
                     if not details or "ip" not in details or "name" not in details:  # validate
@@ -701,11 +724,7 @@ class Skipper:
                     if not status:
                         return status
 
-                status: ExecutionStatus = self.skipper.obs_config.pull(langs=langs)
-                if not status:
-                    return status
-
-            return self.skipper.activate_registry()
+                return self.skipper.obs_config.pull(langs=langs)
 
         def push_obs_config(self) -> ExecutionStatus:
             return self.skipper.obs_config.push()
@@ -737,7 +756,7 @@ class Skipper:
         def setup_event_handlers(self):
             pass
 
-    def __init__(self, port=5000):
+    def __init__(self, port=None):
         self.registry: Registry = Registry()
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
@@ -754,48 +773,50 @@ class Skipper:
         self.app = Flask(__name__)
         self.app.wsgi_app = socketio.WSGIApp(self.sio, self.app.wsgi_app)
 
+        self._sid_envs = {}
+
     def activate_registry(self) -> ExecutionStatus:
-        # with self.registry_lock:
-        # check if there are all minions deployed
-        status: ExecutionStatus = self.infrastructure.activate_registry()
-        if not status:
-            return status
+        with self.registry_lock:
+            # check if there are all minions deployed
+            status: ExecutionStatus = self.infrastructure.activate_registry()
+            if not status:
+                return status
 
-        try:
-            # with self.registry_lock:
-            # select only those configs which have been changed (not active)
-            configs_to_activate = [
-                [lang, minion_config]
-                for lang, minion_config in self.registry.minion_configs.items()
-                if not minion_config.active()
-            ]
-            with self.infrastructure_lock:
-                # collect websocket responses
-                responses = [
-                    [lang, self.minions[lang].apply_config(minion_config=minion_config)]
-                    for lang, minion_config in configs_to_activate
-                    if lang in self.minions
+            try:
+                # with self.registry_lock:
+                # select only those configs which have been changed (not active)
+                configs_to_activate = [
+                    [lang, minion_config]
+                    for lang, minion_config in self.registry.minion_configs.items()
+                    if not minion_config.active()
                 ]
-                # wait until websocket callback or timeout
-                WebsocketResponse.wait_for(responses=[r for _, r in responses])
+                with self.infrastructure_lock:
+                    # collect websocket responses
+                    responses = [
+                        [lang, self.minions[lang].apply_config(minion_config=minion_config)]
+                        for lang, minion_config in configs_to_activate
+                        if lang in self.minions
+                    ]
+                    # wait until websocket callback or timeout
+                    WebsocketResponse.wait_for(responses=[r for _, r in responses])
 
-                statuses: Dict[str, ExecutionStatus] = {}  # lang: ExecutionStatus
+                    statuses: Dict[str, ExecutionStatus] = {}  # lang: ExecutionStatus
 
-                for lang, response in responses:
-                    if response.result():
-                        statuses[lang] = ExecutionStatus.from_json(response.result())  # convert result into status
-                        if statuses[lang]:  # and check it
-                            # with self.registry_lock:
-                            self.registry.minion_configs[lang].activate()
-                    else:
-                        statuses[lang] = ExecutionStatus(False, "Minion didn't return")
+                    for lang, response in responses:
+                        if response.result():
+                            statuses[lang] = ExecutionStatus.from_json(response.result())  # convert result into status
+                            if statuses[lang]:  # and check it
+                                # with self.registry_lock:
+                                self.registry.minion_configs[lang].activate()
+                        else:
+                            statuses[lang] = ExecutionStatus(False, "Minion didn't return")
 
-                return ExecutionStatus(all([status.status for status in statuses.values()]),  # one vs all
-                                       serializable_object={  # form status as a dictionary of statuses
-                                           lang: status.dict() for lang, status in statuses.items()
-                                       })
-        except Exception as ex:
-            return ExecutionStatus(False, f"Something happened while activating skipper's registry. Details: {ex}")
+                    return ExecutionStatus(all([status.status for status in statuses.values()]),  # one vs all
+                                           serializable_object={  # form status as a dictionary of statuses
+                                               lang: status.dict() for lang, status in statuses.items()
+                                           })
+            except Exception as ex:
+                return ExecutionStatus(False, f"Something happened while activating skipper's registry. Details: {ex}")
 
     def save_to_disk(self):
         registry_json = self.registry.json()
@@ -839,14 +860,22 @@ class Skipper:
         self.activate_registry()
 
     def _setup_event_handlers(self):
-        # self.sio.on("connect", handler=self._on_connect)
-        # self.sio.on("disconnect", handler=self._on_disconnect)
+        self.sio.on("connect", handler=self._on_connect)
+        self.sio.on("disconnect", handler=self._on_disconnect)
         self.sio.on("command", handler=self._on_command)
         self.http_api.setup_event_handlers()
 
+    def _on_connect(self, sid, environ):
+        self._sid_envs[sid] = environ
+        # self.sio.save_session(sid, {'env': environ})
+
+    def _on_disconnect(self, sid):
+        self._sid_envs.pop(sid)
+
     def _on_command(self, sid, data):
         try:
-            return self.command.exec_raw(data, environ=self.sio.environ[sid]).json()
+            session = self._sid_envs[sid]
+            return self.command.exec_raw(data, environ=session).json()
         except Exception as ex:
             return ExecutionStatus(False, f"Details: {ex}").json()
 

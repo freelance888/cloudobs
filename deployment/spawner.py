@@ -202,7 +202,7 @@ class Spawner:
                 ip_list_for_provision.append([lang, ip])
 
         if len(ip_list_for_provision) > 0:
-            time.sleep(10)
+            # time.sleep(10)
             self.ssh_context.provision(ip_list_for_provision)  # provision for those servers
             # if needed to wait until provision
             if wait_for_provision:

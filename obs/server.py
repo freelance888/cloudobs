@@ -141,7 +141,7 @@ class OBSController:
 
         status = ExecutionStatus(status=True)
 
-        media_dir = os.path.join(self.media_dir, "media")
+        media_dir = self.media_dir
 
         # search for the file
         if search_by_num:
