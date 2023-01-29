@@ -24,12 +24,30 @@ if __name__ == "__main__":
     skipper.run()
 
 """
+from threading import Thread
+
 import os
 from dotenv import load_dotenv
 from server import Skipper
 
 skipper = Skipper(port=5010)
-skipper.run()
+
+class T(Thread):
+    def __init__(self, skipper):
+        super().__init__()
+        self.skipper = skipper
+    
+    def run(self):
+        self.skipper.run()
+        
+t = T(skipper)
+t.start()
+
+###
+skipper.registry.minion_configs["Bel"].addr_config.obs_host = skipper.registry.minion_configs["Bel"].addr_config.minion_server_addr
+skipper.registry.minion_configs["Bel"].addr_config.minion_server_addr = "localhost"
+skipper.minions["Bel"] = Skipper.Minion(minion_ip="localhost", lang="Bel", ws_port=6000)
+skipper.activate_registry()
 """
 """
 # -- client

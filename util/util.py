@@ -344,7 +344,7 @@ class GDriveFiles:
 
 class CallbackThread(threading.Thread):
     def __init__(self):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.callbacks = []  # list of {"foo": foo, "args": args, "delay": delay}, note: delay in seconds
         self.running = True
         threading.Thread.__init__(self)
