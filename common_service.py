@@ -53,6 +53,7 @@ sio.emit(event="command", data=json.dumps(command), callback=ws_response.callbac
 time.sleep(2)
 ws_response.result()
 
+# ----- get info
 ws_response = WebsocketResponse()
 command = {
     "command": "get info"
@@ -61,7 +62,7 @@ sio.emit(event="command", data=json.dumps(command), callback=ws_response.callbac
 time.sleep(2)
 json.loads(ws_response.result())
 
-
+# ----- play media
 ws_response = WebsocketResponse()
 command = {
     "command": "play media",
@@ -74,14 +75,4 @@ command = {
 sio.emit(event="command", data=json.dumps(command), callback=ws_response.callback)
 time.sleep(2)
 ws_response.result()
-
-
-
-ws_response = WebsocketResponse()
-command = {
-    "command": "pull config"
-}
-sio.emit(event="command", data=json.dumps(command), callback=ws_response.callback)
-time.sleep(2)
-json.loads(ws_response.result())
 """
