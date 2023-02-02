@@ -24,6 +24,8 @@ if __name__ == "__main__":
     skipper.run()
 
 """
+# Run the following code to run the server:
+
 from threading import Thread
 
 import os
@@ -43,6 +45,8 @@ class T(Thread):
 t = T(skipper)
 t.start()
 
+# end
+
 ###
 skipper.registry.minion_configs["Bel"].addr_config.obs_host = skipper.registry.minion_configs["Bel"].addr_config.minion_server_addr
 skipper.registry.minion_configs["Bel"].addr_config.minion_server_addr = "localhost"
@@ -51,6 +55,7 @@ skipper.activate_registry()
 """
 """
 # -- client
+# Run the following code to connect to the server
 import socketio
 import json
 import time
