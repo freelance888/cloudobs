@@ -78,7 +78,7 @@
   "result": true/false,
   "details": "... message ...",
   "serializable_object": {
-    "registry": See Skipper.Registry().dict()
+    "registry": See models.Registry().dict()
   }
 }
 ```

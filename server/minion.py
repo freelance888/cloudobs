@@ -230,7 +230,7 @@ class Minion:
 
     def __init__(self, port=6006):
         self.port = port
-        self.sio = socketio.Server(async_mode="threading")
+        self.sio = socketio.Server(async_mode="threading", cors_allowed_origins="*")
         self.app = Flask(__name__)
         self.app.wsgi_app = socketio.WSGIApp(self.sio, self.app.wsgi_app)
 
