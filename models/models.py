@@ -190,9 +190,8 @@ class Registry(BaseModel):
 
     def update_minion(self, lang, minion_config: MinionSettings):
         if lang not in self.minion_configs:
-            self.minion_configs[lang] = minion_config
-        else:
-            self.minion_configs[lang].modify_from(minion_config)
+            self.minion_configs[lang] = MinionSettings.default()
+        self.minion_configs[lang].modify_from(minion_config)
 
     def delete_minion(self, lang):
         if lang in self.minion_configs:
