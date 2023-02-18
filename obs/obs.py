@@ -128,18 +128,18 @@ class OBS:
         response = self.client.call(request)
         if not response.status:
             raise RuntimeError(
-                f"OBS::add_or_replace_stream(): "
-                f"datain: {response.datain}, dataout: {response.dataout}"
+                f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
             )
 
-        response = self.client.call(obs.requests.SetSourceSettings(
-            stream_name,
-            source_settings,
-        ))
+        response = self.client.call(
+            obs.requests.SetSourceSettings(
+                stream_name,
+                source_settings,
+            )
+        )
         if not response.status:
             raise RuntimeError(
-                f"OBS::add_or_replace_stream(): "
-                f"datain: {response.datain}, dataout: {response.dataout}"
+                f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
             )
 
         request = obs.requests.SetAudioMonitorType(sourceName=stream_name, monitorType="none")
@@ -147,12 +147,10 @@ class OBS:
 
         if not response.status:
             raise RuntimeError(
-                f"OBS::add_or_replace_stream(): "
-                f"datain: {response.datain}, dataout: {response.dataout}"
+                f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
             )
 
-    def run_media(self, path, mode=None, source_name=None,
-                  on_start=None, on_error=None, on_finish=None):
+    def run_media(self, path, mode=None, source_name=None, on_start=None, on_error=None, on_finish=None):
         """
         Mutes original media, adds and runs the media located at `path`, and appends a listener which removes
         the media when it has finished. Fires Exception when couldn't add or mute a source.
@@ -209,8 +207,9 @@ class OBS:
             self.delete_source_if_exist(source_name=source_name)
             if self.transition_name == "Stinger":
                 self._run_media(self.transition_path, OBS.TRANSITION_INPUT_NAME)
-                self.media_cb_thread.append_callback(transition_end_foo,
-                                                     self.transition_point / 1000, cb_type=source_name)
+                self.media_cb_thread.append_callback(
+                    transition_end_foo, self.transition_point / 1000, cb_type=source_name
+                )
             elif self.transition_name == "Cut":
                 self.media_cb_thread.append_callback(transition_end_foo, 0, cb_type=source_name)
 
@@ -279,9 +278,7 @@ class OBS:
         )
 
         if not response.status:
-            raise RuntimeError(
-                f"OBS::setup_ts_sound(): " f"datain: {response.datain}, dataout: {response.dataout}"
-            )
+            raise RuntimeError(f"OBS::setup_ts_sound(): " f"datain: {response.datain}, dataout: {response.dataout}")
 
     def setup_transition(self, transition_name="Cut", transition_settings=None):
         """
@@ -317,9 +314,7 @@ class OBS:
         response = self.client.call(obs.requests.GetSyncOffset(source=source_name))
 
         if not response.status:
-            raise Exception(
-                f"OBS::get_sync_offset(): " f"datain: {response.datain}, dataout: {response.dataout}"
-            )
+            raise Exception(f"OBS::get_sync_offset(): " f"datain: {response.datain}, dataout: {response.dataout}")
 
         return response.getOffset() // 1_000_000
 
@@ -338,9 +333,7 @@ class OBS:
         )
 
         if not response.status:
-            raise Exception(
-                f"OBS::set_sound_sync_offset(): datain: {response.datain}, dataout: {response.dataout}"
-            )
+            raise Exception(f"OBS::set_sound_sync_offset(): datain: {response.datain}, dataout: {response.dataout}")
 
     def get_sound_volume_db(self, source_name):
         """
@@ -350,9 +343,7 @@ class OBS:
         response = self.client.call(obs.requests.GetVolume(source=source_name, useDecibel=True))
 
         if not response.status:
-            raise Exception(
-                f"OBS::get_sound_volume_db(): " f"datain: {response.datain}, dataout: {response.dataout}"
-            )
+            raise Exception(f"OBS::get_sound_volume_db(): " f"datain: {response.datain}, dataout: {response.dataout}")
 
         return response.getVolume()
 
@@ -365,13 +356,17 @@ class OBS:
         response = self.client.call(obs.requests.SetVolume(source=source_name, volume=volume_db, useDecibel=True))
 
         if not response.status:
-            raise RuntimeError(
-                f"OBS::set_ts_volume_db(): " f"datain: {response.datain}, dataout: {response.dataout}"
-            )
+            raise RuntimeError(f"OBS::set_ts_volume_db(): " f"datain: {response.datain}, dataout: {response.dataout}")
 
-    def setup_sidechain(self, ratio=None, release_time=None,
-                        threshold=None, output_gain=None,
-                        sidechain_target=None, sidechain_source=None):
+    def setup_sidechain(
+        self,
+        ratio=None,
+        release_time=None,
+        threshold=None,
+        output_gain=None,
+        sidechain_target=None,
+        sidechain_source=None,
+    ):
         """
         [{'enabled': True,
           'name': 'sidechain',
@@ -391,9 +386,7 @@ class OBS:
         response = self.client.call(obs.requests.GetSourceFilters(sourceName=sidechain_target))
 
         if not response.status:
-            raise RuntimeError(
-                f"OBS::setup_sidechain(): " f"datain: {response.datain}, dataout: {response.dataout}"
-            )
+            raise RuntimeError(f"OBS::setup_sidechain(): " f"datain: {response.datain}, dataout: {response.dataout}")
 
         filters = response.getFilters()  # [... {'enabled': ..., 'name': ..., 'settings': ..., 'type': ...} ...]
 
@@ -447,9 +440,7 @@ class OBS:
 
         response = self.client.call(obs.requests.SetStreamSettings(type=type, settings=settings_, save=True))
         if not response.status:
-            raise Exception(
-                f"OBS::set_stream_settings(): datain: {response.datain}, dataout: {response.dataout}"
-            )
+            raise Exception(f"OBS::set_stream_settings(): datain: {response.datain}, dataout: {response.dataout}")
 
     def start_streaming(self):
         """
@@ -457,9 +448,7 @@ class OBS:
         """
         response = self.client.call(obs.requests.StartStreaming())
         if not response.status:
-            raise Exception(
-                f"OBS::start_streaming(): datain: {response.datain}, dataout: {response.dataout}"
-            )
+            raise Exception(f"OBS::start_streaming(): datain: {response.datain}, dataout: {response.dataout}")
 
     def stop_streaming(self):
         """
@@ -534,8 +523,7 @@ class OBS:
         """
         Returns (item_id, scene_name) given a source_name
         """
-        scene_names = [scene_name] if scene_name is not None \
-            else [x["name"] for x in self.obsws_get_scenes_list()]
+        scene_names = [scene_name] if scene_name is not None else [x["name"] for x in self.obsws_get_scenes_list()]
 
         for scene_name in scene_names:
             items = self.obsws_get_scene_items_list(scene_name=scene_name)

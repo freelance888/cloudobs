@@ -5,7 +5,7 @@ from util.util import (
     MultilangParams,
     ServiceAddrStorage,
     DefaultDict,
-    CallbackThread
+    CallbackThread,
 )
 from util.util import (
     async_aiohttp_get_all,
@@ -15,5 +15,5 @@ from util.util import (
     validate_init_params,
     validate_media_play_params,
     generate_file_md5,
-    log
+    log,
 )

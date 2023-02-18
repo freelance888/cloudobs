@@ -26,7 +26,7 @@
    returns data with `host_url` filled.
 ### `GET /state`
  - Returns current server state
- - Possible values: `["sleeping", "initializing", "not initialized", 
+ - Possible values: `["sleeping", "initializing", "not initialized",
                       "running", "disposing"]`
 ### `GET /info`
  - Returns current server state.
@@ -154,13 +154,13 @@
     {"lang": {"name": "...", "search_by_num": "0/1", "mode": "..."}, ...}
     ```
      - `name` - the name of the video
-     - `search_by_num` - points the server needs to search a file by 
-       first `n` numbers in name, for example if `name="001_test.mp4"`, 
-       the server will search for a file which full name even does not 
-       match `001_test.mp4`, but it's name starts with `001`, it may 
+     - `search_by_num` - points the server needs to search a file by
+       first `n` numbers in name, for example if `name="001_test.mp4"`,
+       the server will search for a file which full name even does not
+       match `001_test.mp4`, but it's name starts with `001`, it may
        be `001_test2.mp4`, `001.mp4`, etc.
      - `mode` - media play mode. Possible values:
-       - `force` - stop any media being played right now, and play 
+       - `force` - stop any media being played right now, and play
                    media specified (default value)
        - `check_any` - if any video is being played, skip
        - `check_same` - if the same video is being played, skip, otherwise - play

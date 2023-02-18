@@ -69,9 +69,11 @@ class OBSController:
                 self.obs_client.connect()
                 self.obs_connected = True
         except BaseException as ex:
-            status.append_error("Server::_establish_connections(): Couldn't connect to obs server. "
-                                f"Host '{addr_config.obs_host}', "
-                                f"port {addr_config.websocket_port}. Details: {ex}")
+            status.append_error(
+                "Server::_establish_connections(): Couldn't connect to obs server. "
+                f"Host '{addr_config.obs_host}', "
+                f"port {addr_config.websocket_port}. Details: {ex}"
+            )
 
         return status
 
@@ -94,8 +96,9 @@ class OBSController:
             )
             self.obs_instance.setup_ts_sound()
         except BaseException as ex:
-            status.append_error(f"Server::_initialize_obs_controllers(): "
-                                f"Couldn't initialize obs controller. Details: {ex}")
+            status.append_error(
+                f"Server::_initialize_obs_controllers(): " f"Couldn't initialize obs controller. Details: {ex}"
+            )
 
         return status
 
@@ -148,8 +151,10 @@ class OBSController:
             # extract file number
             file_num = re.search(r"^[\d\.]+.", name)
             if not file_num:  # if the pattern is incorrect (name doesn't start with numbers)
-                status.append_error(f"Server::run_media(): while `use_file_num` is set, "
-                                    f"`name` doesn't start with a number. name {name}")
+                status.append_error(
+                    f"Server::run_media(): while `use_file_num` is set, "
+                    f"`name` doesn't start with a number. name {name}"
+                )
                 return status
             else:
                 file_num = file_num.group()
@@ -167,6 +172,7 @@ class OBSController:
                 return status
 
         try:
+
             def on_start():
                 self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=True)
                 self.obs_instance.set_mute(source_name=OBS.MAIN_MEDIA_NAME, mute=True)
@@ -175,8 +181,9 @@ class OBSController:
                 self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=False)
                 self.obs_instance.set_mute(source_name=OBS.MAIN_MEDIA_NAME, mute=False)
 
-            self.obs_instance.run_media(path, mode=mode, source_name=source_name,
-                                        on_start=on_start, on_error=on_finish, on_finish=on_finish)
+            self.obs_instance.run_media(
+                path, mode=mode, source_name=source_name, on_start=on_start, on_error=on_finish, on_finish=on_finish
+            )
         except BaseException as ex:
             status.append_error(f"Server::run_media(): couldn't play media. Details: {ex}")
 

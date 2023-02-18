@@ -19,6 +19,7 @@ def async_aiohttp_get_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
+
             async def fetch(url):
                 async with session.get(url) as response:
                     return Response(await response.text(), response.status)
@@ -36,6 +37,7 @@ def async_aiohttp_post_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
+
             async def fetch(url):
                 async with session.post(url) as response:
                     return Response(await response.text(), response.status)
@@ -53,6 +55,7 @@ def async_aiohttp_delete_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
+
             async def fetch(url):
                 async with session.delete(url) as response:
                     return Response(await response.text(), response.status)
@@ -70,6 +73,7 @@ def async_aiohttp_put_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
+
             async def fetch(url):
                 async with session.put(url) as response:
                     return Response(await response.text(), response.status)
@@ -106,7 +110,7 @@ def validate_media_play_params(name, use_file_num):
     return ExecutionStatus(status=True)
 
 
-def generate_file_md5(filename, blocksize=2 ** 25):
+def generate_file_md5(filename, blocksize=2**25):
     m = hashlib.md5()
     with open(filename, "rb") as f:
         while True:
@@ -248,11 +252,9 @@ class ExecutionStatus:
         else:
             message = self.message
 
-        return json.dumps({
-            "result": self.__bool__(),
-            "details": message,
-            "serializable_object": self.serializable_object
-        })
+        return json.dumps(
+            {"result": self.__bool__(), "details": message, "serializable_object": self.serializable_object}
+        )
 
     def dict(self):
         # if there is only one message, leave it as string
@@ -264,20 +266,17 @@ class ExecutionStatus:
         else:
             message = self.message
 
-        return {
-            "result": self.__bool__(),
-            "details": message,
-            "serializable_object": self.serializable_object
-        }
+        return {"result": self.__bool__(), "details": message, "serializable_object": self.serializable_object}
 
     @classmethod
     def from_json(cls, json_string: str):
         obj = json.loads(json_string)
 
-        return ExecutionStatus(status=obj["result"],
-                               message=obj["details"],
-                               serializable_object=(obj["serializable_object"]
-                                                    if "serializable_object" in obj else None))
+        return ExecutionStatus(
+            status=obj["result"],
+            message=obj["details"],
+            serializable_object=(obj["serializable_object"] if "serializable_object" in obj else None),
+        )
 
 
 class DefaultDict:
@@ -416,14 +415,24 @@ class ServerState:
     DISPOSING = "disposing"
 
     def __init__(self, state):
-        assert state in (ServerState.SLEEPING, ServerState.NOT_INITIALIZED, ServerState.INITIALIZING,
-                         ServerState.RUNNING, ServerState.DISPOSING)
+        assert state in (
+            ServerState.SLEEPING,
+            ServerState.NOT_INITIALIZED,
+            ServerState.INITIALIZING,
+            ServerState.RUNNING,
+            ServerState.DISPOSING,
+        )
         self.state = state
         self.lock = Lock()
 
     def set(self, state):
-        assert state in (ServerState.SLEEPING, ServerState.NOT_INITIALIZED, ServerState.INITIALIZING,
-                         ServerState.RUNNING, ServerState.DISPOSING)
+        assert state in (
+            ServerState.SLEEPING,
+            ServerState.NOT_INITIALIZED,
+            ServerState.INITIALIZING,
+            ServerState.RUNNING,
+            ServerState.DISPOSING,
+        )
         with self.lock:
             self.state = state
 

@@ -71,7 +71,7 @@ class OBSGoogleSheets:
             settings.gdrive_settings.folder_id = gdrive_folder_id
 
             if lang in langs:
-                raise KeyError(f"Multiple entries for lang \"{lang}\"")
+                raise KeyError(f'Multiple entries for lang "{lang}"')
 
             langs[lang] = settings
 
@@ -87,11 +87,8 @@ class OBSGoogleSheets:
                 gdrive_folder_url = f"https://drive.google.com/drive/folders/{settings.gdrive_settings.folder_id}"
             else:
                 gdrive_folder_url = ""
-            rows.append([
-                lang, source_url, target_server, target_key, gdrive_folder_url
-            ])
-        return pd.DataFrame(rows, columns=["lang", "source_url", "target_server", "target_key",
-                                           "gdrive_folder_url"])
+            rows.append([lang, source_url, target_server, target_key, gdrive_folder_url])
+        return pd.DataFrame(rows, columns=["lang", "source_url", "target_server", "target_key", "gdrive_folder_url"])
 
 
 class TimingGoogleSheets:

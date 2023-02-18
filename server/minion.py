@@ -2,6 +2,7 @@ from models import MinionSettings
 from pydantic import BaseModel
 from flask import Flask
 import socketio
+
 # import eventlet
 import json
 import os
@@ -47,8 +48,7 @@ class Minion:
                 if settings.is_active():
                     return True
 
-                if not settings.api_key or \
-                        not self.minion.command.obs.set_media_dir(settings.media_dir):
+                if not settings.api_key or not self.minion.command.obs.set_media_dir(settings.media_dir):
                     return False
 
                 settings.activate()
