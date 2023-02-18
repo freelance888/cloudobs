@@ -1,5 +1,18 @@
 # Common
  - Every command should contain at least `command`
+ - You cannot query change events, only subscribe to those changes
+
+# Change Events
+
+###  - `registry change`
+ - **Description:** Triggers on every registry change.
+ - **Returns:**
+```json
+{
+  "<changed_key>": "<new_value>"
+}
+```
+------------------------------------------------------------------------------
 
 # Commands
 ## Skipper commands
@@ -13,7 +26,7 @@
    - `ip_langs` - will set up infrastructure. This parameter's is used
                     for **manual server deployment**.
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -22,18 +35,18 @@
 ```
  - **Notes:**
    - if `sheet_url` or `sheet_name` are not specified (both) skipper
-     will use cached ones from last time (it is preferred to specify 
+     will use cached ones from last time (it is preferred to specify
      them only once).
    - If `langs` is specified - the server will take into account only those langs
      which are specified. Note that if minions were deployed, and `langs`
-     specifies list of langs which is less than the one in sheets 
+     specifies list of langs which is less than the one in sheets
      (or just one lang), the server will not delete minions outside this list.
    - If `ip_langs` is not specified - the server will deploy minions itself
      using the configuration specified in google sheets.
-   - If `ip_langs` is specified - after initialization -> skipper locks 
+   - If `ip_langs` is specified - after initialization -> skipper locks
      infrastructure.
  - **Command example (json):**
-```
+```json
 {
   "command": "pull config",
   "details": {
@@ -54,7 +67,7 @@
    - `ip_langs` - will set up infrastructure. This parameter's is used
                     for **manual server deployment**.
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -63,7 +76,7 @@
 ```
  - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "dispose"
 }
@@ -73,7 +86,7 @@
  - **Description:** Returns current server registry.
  - **Parameters:**
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -82,13 +95,13 @@
   }
 }
 ```
- - **Notes:** 
+ - **Notes:**
    - registry - is the object which contains all the information
      you need. It contains minions configurations, cached google sheets,
      vmix players, infrastructure lock, timing and server state.
      See models.Registry
  - **Command example (json):**
-```
+```json
 {
   "command": "get info"
 }
@@ -102,16 +115,16 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "set stream settings",
   "details": {"server": "...", "key": "..."},
@@ -126,16 +139,16 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "set teamspeak offset",
   "details": {"value": numeric_value},
@@ -150,16 +163,16 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "set teamspeak volume",
   "details": {"value": numeric_value},
@@ -174,16 +187,16 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "set source volume",
   "details": {"value": numeric_value},
@@ -201,17 +214,17 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
    - You may specify only those parameters you want to change (not all).
  - **Command example (json):**
-```
+```json
 {
   "command": "set sidechain settings",
   "details": {
@@ -228,16 +241,16 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "set transition settings",
   "details": {
@@ -254,36 +267,36 @@
    the server won't change the minions infrastructure.
  - **Parameters:**
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "infrastructure lock"
 }
 ```
 ------------------------------------------------------------------------------
 ###  - `infrastructure unlock`
- - **Description:** Unlocks the infrastructure (see 'lock infrastructure' for 
+ - **Description:** Unlocks the infrastructure (see 'lock infrastructure' for
    more details).
  - **Parameters:**
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "infrastructure unlock"
 }
@@ -295,20 +308,20 @@
    - `ip` - vmix player's ip address.
    - `name` - vmix player's friendly name.
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "vmix players add"
   "details": {
-    "ip": "ip address", 
+    "ip": "ip address",
     "name": "... Moscow ..."
   }
 }
@@ -319,17 +332,17 @@
  - **Parameters:**
    - `ip` - vmix player's ip address.
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
    - You cannot delete vmix player with ip `*`
  - **Command example (json):**
-```
+```json
 {
   "command": "vmix players remove"
   "details": {
@@ -343,18 +356,18 @@
  - **Parameters:**
    - `ip` - vmix player's ip address.
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
   "serializable_object": null
 }
 ```
- - **Notes:** 
+ - **Notes:**
    - You may specify `*` as an ip address - that will allow all ip
      addresses. By default - active ip is `*`
  - **Command example (json):**
-```
+```json
 {
   "command": "vmix players set active"
   "details": {
@@ -369,7 +382,7 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -378,7 +391,7 @@
 ```
  - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "start streaming",
   "lang": "Rus"
@@ -391,7 +404,7 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -400,7 +413,7 @@
 ```
  - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "stop streaming",
   "lang": "Rus"
@@ -413,7 +426,7 @@
    - `sheet_url` - url of google sheets.
    - `sheet_name` - google sheet name.
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -424,7 +437,7 @@
     - if `sheet_url` or `sheet_name` are not specified (both) skipper
      will use cached ones from last time (it is preferred to specify them only once).
  - **Command example (json):**
-```
+```json
 {
   "command": "pull timing",
   "details": {
@@ -441,7 +454,7 @@
    - `daytime` - runs the timing in the specified daytime.
      Daytime should be in the following format: `%H:%M:%S`.
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -456,7 +469,7 @@
      `2023.01.11 04:12:01`.
    - If not parameters are specified - the timing runs instantly.
  - **Command example (json):**
-```
+```json
 {
   "command": "run timing",
   "details": {
@@ -469,7 +482,7 @@
  - **Description:** Stops (resets) the timing.
  - **Parameters:**
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -479,7 +492,7 @@
  - **Notes:**
    - Also stops the video playing.
  - **Command example (json):**
-```
+```json
 {
   "command": "stop timing"
 }
@@ -489,7 +502,7 @@
  - **Description:** Stops the timing and removes it.
  - **Parameters:**
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -499,7 +512,7 @@
  - **Notes:**
    - Timing also stops the video playing.
  - **Command example (json):**
-```
+```json
 {
   "command": "remove timing"
 }
@@ -518,7 +531,7 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -527,7 +540,7 @@
 ```
  - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "play media",
   "details": {
@@ -545,7 +558,7 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -554,7 +567,7 @@
 ```
  - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "stop media",
   "lang": "Rus"
@@ -567,7 +580,7 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -576,7 +589,7 @@
 ```
  - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "refresh source",
   "lang": "Rus"
@@ -589,7 +602,7 @@
    - `lang` - use this parameter to specify a language. By default,
      all languages are affected (optional parameter).
  - **Returns:**
-```
+```json
 {
   "result": true/false,
   "details": "... message ...",
@@ -608,11 +621,10 @@
 ```
  - **Notes:**
  - **Command example (json):**
-```
+```json
 {
   "command": "list gdrive files",
   "lang": "Rus"
 }
 ```
-
--------------------------------
+------------------------------------------------------------------------------

@@ -1,19 +1,20 @@
 # REFACTORING: build a new class which manages all the functionality listed below
 import json
 import os
-
-from googleapi import OBSGoogleSheets, TimingGoogleSheets
-from deployment import Spawner, IPDict
-from typing import List, Dict
-from models import MinionSettings, VmixPlayer, Registry, State
-from pydantic import BaseModel
-from util import ExecutionStatus, WebsocketResponse, CallbackThread
-import socketio
-from socketio.exceptions import ConnectionError, ConnectionRefusedError
 from datetime import datetime, timedelta
-from obs import OBS
 from threading import RLock
-from flask import Flask, request
+from typing import List, Dict
+
+import socketio
+from flask import Flask
+from pydantic import BaseModel
+from socketio.exceptions import ConnectionError
+
+from deployment import Spawner, IPDict
+from googleapi import OBSGoogleSheets, TimingGoogleSheets
+from models import MinionSettings, VmixPlayer, Registry, State
+from obs import OBS
+from util import ExecutionStatus, WebsocketResponse, CallbackThread
 
 MINION_WS_PORT = 6000
 
@@ -32,8 +33,9 @@ class Skipper:
                 self.skipper.registry.minion_configs[lang].addr_config.minion_server_addr = ip
                 # if Minion instance have not been created yet
                 if lang not in self.skipper.minions:
-                    self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang,
-                                                                ws_port=MINION_WS_PORT)  # create
+                    self.skipper.minions[lang] = Skipper.Minion(
+                        minion_ip=ip, lang=lang, ws_port=MINION_WS_PORT
+                    )  # create
                 # else if lang or ip has changed
                 if self.skipper.minions[lang].minion_ip != ip or self.skipper.minions[lang].lang != lang:
                     del self.skipper.minions[lang]  # delete old version
@@ -64,8 +66,7 @@ class Skipper:
                 except ConnectionError as ex:
                     # with self.skipper.registry_lock:
                     self.skipper.registry.revert_server_state()
-                    return ExecutionStatus(False,
-                                           f"Something happened while creating Minion instances. Details: {ex}")
+                    return ExecutionStatus(False, f"Something happened while creating Minion instances. Details: {ex}")
 
             # with self.skipper.registry_lock:
             self.skipper.registry.server_status = State.running
@@ -161,22 +162,20 @@ class Skipper:
                 self.sio.connect(f"http://{self.minion_ip}:{self.ws_port}")
             except Exception as ex:
                 # TODO: log
-                raise ConnectionError(f"Connection error for ip {self.minion_ip} lang {self.lang}. "
-                                      f"Details:\n{ex}")
+                raise ConnectionError(f"Connection error for ip {self.minion_ip} lang {self.lang}. " f"Details:\n{ex}")
 
         def close(self):
             self.sio.disconnect()
 
         def apply_config(self, minion_config: MinionSettings) -> WebsocketResponse:
-            return self.command(command="set config",
-                                details={"info": minion_config.json()})
+            return self.command(command="set config", details={"info": minion_config.json()})
 
         def command(self, command, details=None) -> WebsocketResponse:
             response = WebsocketResponse()
 
-            self.sio.emit("command",
-                          data=json.dumps({"command": command, "details": details}),
-                          callback=response.callback)
+            self.sio.emit(
+                "command", data=json.dumps({"command": command, "details": details}), callback=response.callback
+            )
 
             return response
 
@@ -229,9 +228,10 @@ class Skipper:
                     if not entry.is_enabled or entry.is_played:  # if disabled or already has been played
                         return ExecutionStatus(True)
 
-                    status: ExecutionStatus = skipper.command.exec(command="play media", details={
-                        "name": "name", "search_by_num": True, "mode": OBS.PLAYBACK_MODE_CHECK_SAME
-                    })
+                    status: ExecutionStatus = skipper.command.exec(
+                        command="play media",
+                        details={"name": "name", "search_by_num": True, "mode": OBS.PLAYBACK_MODE_CHECK_SAME},
+                    )
 
                     entry.is_played = True
                     return status
@@ -243,9 +243,11 @@ class Skipper:
 
                 time_from_start = self.get_current_timedelta()
                 for i, entry in enumerate(self.skipper.registry.timing_list):
-                    self.cb_thread.append_callback(foo=foo_maker(self.skipper, i),
-                                                   delay=(entry.timestamp - time_from_start).total_seconds(),
-                                                   cb_type="timing")
+                    self.cb_thread.append_callback(
+                        foo=foo_maker(self.skipper, i),
+                        delay=(entry.timestamp - time_from_start).total_seconds(),
+                        cb_type="timing",
+                    )
                 return ExecutionStatus()
             except Exception as ex:
                 return ExecutionStatus(False, f"Something happened while synchronizing the timing. Details: {ex}")
@@ -271,9 +273,9 @@ class Skipper:
                 # if timing_delta < 0 -> timing has not been started yet
                 timing_delta = self.get_current_timedelta()  # now() - timing_start_time
                 self.skipper.registry.timing_list = [
-                    Skipper.Timing.Entry(name=name, timestamp=timestamp,
-                                         is_enabled=True,
-                                         is_played=timing_delta > timestamp)
+                    Skipper.Timing.Entry(
+                        name=name, timestamp=timestamp, is_enabled=True, is_played=timing_delta > timestamp
+                    )
                     for timestamp, name in timing_df.values
                 ]
                 return self._sync_callbacks()
@@ -415,7 +417,8 @@ class Skipper:
                 lang = "*"  # langs
             # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
             minion_configs: List[MinionSettings] = [
-                minion_config for lang_, minion_config in self.skipper.registry.minion_configs.items()
+                minion_config
+                for lang_, minion_config in self.skipper.registry.minion_configs.items()
                 if (lang == "*" or lang_ == lang)
             ]
 
@@ -437,14 +440,20 @@ class Skipper:
                     sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
                     sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
                     # check if details is not None and has "langs" and details["lang"] is a list of strings
-                    langs = None if (
-                            (not details) or ("langs" not in details) or (not isinstance(details["langs"], list))
+                    langs = (
+                        None
+                        if (
+                            (not details)
+                            or ("langs" not in details)
+                            or (not isinstance(details["langs"], list))
                             or (not all([isinstance(obj, str) for obj in details["langs"]]))
-                    ) else details["langs"]
+                        )
+                        else details["langs"]
+                    )
                     # pull_obs_config() manages registry lock itself
-                    status: ExecutionStatus = self.pull_obs_config(sheet_url=sheet_url,
-                                                                   sheet_name=sheet_name,
-                                                                   langs=langs)
+                    status: ExecutionStatus = self.pull_obs_config(
+                        sheet_url=sheet_url, sheet_name=sheet_name, langs=langs
+                    )
                     if not status:
                         return status
 
@@ -457,11 +466,15 @@ class Skipper:
                 elif command == "dispose":
                     return self.delete_minions()
                 elif command == "get info":
-                    return ExecutionStatus(True, serializable_object={
-                        "registry": self.skipper.registry.dict()
-                    })
-                elif command in ("set stream settings", "set teamspeak offset", "set teamspeak volume",
-                                 "set source volume", "set sidechain settings", "set transition settings"):
+                    return ExecutionStatus(True, serializable_object={"registry": self.skipper.registry.dict()})
+                elif command in (
+                    "set stream settings",
+                    "set teamspeak offset",
+                    "set teamspeak volume",
+                    "set source volume",
+                    "set sidechain settings",
+                    "set transition settings",
+                ):
                     return self.set_info(command=command, details=details, lang=lang, environ=environ)
                 elif command == "infrastructure lock":
                     # with self.registry_lock:
@@ -509,7 +522,7 @@ class Skipper:
                     # with self.registry_lock:
                     self.skipper.registry.active_vmix_player = details["ip"]
                     for ip in self.skipper.registry.vmix_players:
-                        self.skipper.registry.vmix_players[ip].active = (self.skipper.registry.active_vmix_player == ip)
+                        self.skipper.registry.vmix_players[ip].active = self.skipper.registry.active_vmix_player == ip
                     return ExecutionStatus(True)
                 elif command == "start streaming":
                     for minion_config in minion_configs:
@@ -546,8 +559,14 @@ class Skipper:
                         try:
                             dt = datetime.strptime(details["daytime"], "%H:%M:%S")
                             now = datetime.now()
-                            daytime = datetime(year=now.year, month=now.month, day=now.day,
-                                               hour=dt.hour, minute=dt.minute, second=dt.second)
+                            daytime = datetime(
+                                year=now.year,
+                                month=now.month,
+                                day=now.day,
+                                hour=dt.hour,
+                                minute=dt.minute,
+                                second=dt.second,
+                            )
                             if daytime < now:  # if time specified is less than current time -> add 1 day
                                 daytime = daytime + timedelta(days=1)
                         except Exception as ex:
@@ -561,15 +580,19 @@ class Skipper:
                     with self.skipper.infrastructure_lock:
                         return self._minion_command(command=command, details=details, lang=lang)
             except Exception as ex:
-                return ExecutionStatus(False, f"Something happened while executing the command.\n"
-                                              f"Command '{command}', details '{details}'.\n"
-                                              f"Error details: {ex}")
+                return ExecutionStatus(
+                    False,
+                    f"Something happened while executing the command.\n"
+                    f"Command '{command}', details '{details}'.\n"
+                    f"Error details: {ex}",
+                )
 
         def set_info(self, command, details, lang=None, environ=None) -> ExecutionStatus:
             if lang is None:
                 lang = "*"
             minion_settings: List[MinionSettings] = [
-                settings for lang_, settings in self.skipper.registry.minion_configs.items()
+                settings
+                for lang_, settings in self.skipper.registry.minion_configs.items()
                 if (lang == "*" or lang_ == lang)
             ]
 
@@ -617,8 +640,12 @@ class Skipper:
             elif command == "set sidechain settings":
                 # details: {"ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...}
                 # all parameters are numeric
-                if "ratio" not in details and "release_time" not in details and "threshold" not in details \
-                        and "output_gain" not in details:
+                if (
+                    "ratio" not in details
+                    and "release_time" not in details
+                    and "threshold" not in details
+                    and "output_gain" not in details
+                ):
                     return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
                 try:
                     for settings in minion_settings:
@@ -661,54 +688,59 @@ class Skipper:
             """
             try:
                 if lang == "*":
-                    ws_responses = [[lang, self.skipper.minions[lang].command(command=command, details=details)]
-                                    for lang in self.skipper.minions]  # emit commands
+                    ws_responses = [
+                        [lang, self.skipper.minions[lang].command(command=command, details=details)]
+                        for lang in self.skipper.minions
+                    ]  # emit commands
                     WebsocketResponse.wait_for([ws_response for _, ws_response in ws_responses])  # wait for responses
                     # parse websocket results into ExecutionStatus instances and then into dictionaries
                     # if websocket result was a timeout error, or a minion didn't return anything ->
                     # ExecutionStatus(False)
                     statuses: Dict[str, Dict] = {
                         # parse a status and convert it into a dictionary
-                        lang: (ExecutionStatus.from_json(ws_response.result())
-                               # minion has not returned - means the minion didn't return anything
-                               # or a timeout error has been thrown
-                               if ws_response.result() else ExecutionStatus(False, "Minion has not returned")).dict()
+                        lang: (
+                            ExecutionStatus.from_json(ws_response.result())
+                            # minion has not returned - means the minion didn't return anything
+                            # or a timeout error has been thrown
+                            if ws_response.result()
+                            else ExecutionStatus(False, "Minion has not returned")
+                        ).dict()
                         for lang, ws_response in ws_responses
                     }
                     # one vs all
-                    return ExecutionStatus(all([status["result"] for status in statuses.values()]),
-                                           serializable_object=statuses)
+                    return ExecutionStatus(
+                        all([status["result"] for status in statuses.values()]), serializable_object=statuses
+                    )
                 elif lang not in self.skipper.minions:  # if lang is specified, and it is not present in self.minions
-                    return ExecutionStatus(False, f"Invalid lang '{lang}'",
-                                           serializable_object={
-                                               lang: ExecutionStatus(False, f"Invalid lang '{lang}'").dict()
-                                           })
+                    return ExecutionStatus(
+                        False,
+                        f"Invalid lang '{lang}'",
+                        serializable_object={lang: ExecutionStatus(False, f"Invalid lang '{lang}'").dict()},
+                    )
                 else:  # if lang is specified and is present in self.minions
                     # emit command
-                    ws_response: WebsocketResponse = self.skipper.minions[lang].command(command=command,
-                                                                                        details=details)
+                    ws_response: WebsocketResponse = self.skipper.minions[lang].command(
+                        command=command, details=details
+                    )
                     WebsocketResponse.wait_for([ws_response])  # wait for the response
 
                     if ws_response.result():  # if minion has returned
                         status: ExecutionStatus = ExecutionStatus.from_json(ws_response.result())
-                        return ExecutionStatus(status.status,
-                                               message=status.message,
-                                               serializable_object={
-                                                   lang: status.dict()
-                                               })
+                        return ExecutionStatus(
+                            status.status, message=status.message, serializable_object={lang: status.dict()}
+                        )
                     else:  # if minion has not returned or timeout error has thrown
-                        return ExecutionStatus(False,
-                                               serializable_object={
-                                                   lang: ExecutionStatus(False, "Minion has not returned").dict()
-                                               })
+                        return ExecutionStatus(
+                            False, serializable_object={lang: ExecutionStatus(False, "Minion has not returned").dict()}
+                        )
             except Exception as ex:
-                return ExecutionStatus(False,
-                                       message=f"Something happened while sending a command.\n"
-                                               f"Command: '{command}', details: '{details}'.\n"
-                                               f"Error details: {ex}",
-                                       serializable_object={
-                                           lang: ExecutionStatus(False, "Exception has been thrown").dict()
-                                       })
+                return ExecutionStatus(
+                    False,
+                    message=f"Something happened while sending a command.\n"
+                    f"Command: '{command}', details: '{details}'.\n"
+                    f"Error details: {ex}",
+                    serializable_object={lang: ExecutionStatus(False, "Exception has been thrown").dict()},
+                )
 
         def pull_obs_config(self, sheet_url=None, sheet_name=None, langs=None) -> ExecutionStatus:
             """
@@ -757,7 +789,7 @@ class Skipper:
             pass
 
     def __init__(self, port=None):
-        self.registry: Registry = Registry()
+        self.registry: Registry = Registry(self)
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
         self.minions: Dict[str, Skipper.Minion] = {}
@@ -811,10 +843,12 @@ class Skipper:
                         else:
                             statuses[lang] = ExecutionStatus(False, "Minion didn't return")
 
-                    return ExecutionStatus(all([status.status for status in statuses.values()]),  # one vs all
-                                           serializable_object={  # form status as a dictionary of statuses
-                                               lang: status.dict() for lang, status in statuses.items()
-                                           })
+                    return ExecutionStatus(
+                        all([status.status for status in statuses.values()]),  # one vs all
+                        serializable_object={  # form status as a dictionary of statuses
+                            lang: status.dict() for lang, status in statuses.items()
+                        },
+                    )
             except Exception as ex:
                 return ExecutionStatus(False, f"Something happened while activating skipper's registry. Details: {ex}")
 
