@@ -96,6 +96,7 @@ class Minion:
                     with self.lock:
                         if fname not in self.files:  # if we haven't downloaded it before
                             self.files[fname] = False
+                            self.on_files_changed()
 
                 gdrive_files = [f["name"] for f in gfiles["files"] if f["name"] in self.files]
                 with self.lock:
@@ -134,10 +135,14 @@ class Minion:
                                 print(f"E PYSERVER::run_drive_sync(): Couldn't verify checksum for {fname}")
                         except Exception as ex:
                             print(f"Couldn't download file {fid} via gdown. Details: {ex}")
+                self.on_files_changed()
 
         def list_files(self) -> Dict[str, bool]:
             with self.lock:
                 return self.files.copy()
+
+        def on_files_changed(self):
+            self.minion.sio.emit("on_gdrive_files_changed", json.dumps(self.list_files()))
 
     class Command:
         """

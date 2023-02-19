@@ -459,6 +459,8 @@ class ServerState:
 class WebsocketResponse:
     @classmethod
     def wait_for(cls, responses):
+        if not responses:
+            return responses
         while not all([r.done() for r in responses]):
             time.sleep(0.1)
         return responses
