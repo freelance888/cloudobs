@@ -64,6 +64,12 @@ from util import WebsocketResponse
 sio = socketio.Client()
 sio.connect('http://localhost:5010')
 
+registry_changes = []
+def on_registry_change(data):
+    registry_changes.append(data)
+
+sio.on("on_registry_change", on_registry_change)
+
 ws_response = WebsocketResponse()
 command = {
     "command": "pull config",

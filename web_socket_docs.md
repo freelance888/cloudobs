@@ -4,12 +4,12 @@
 
 # Change Events
 
-###  - `registry change`
+###  - `on_registry_change`
  - **Description:** Triggers on every registry change.
  - **Returns:**
 ```json
 {
-  "<changed_key>": "<new_value>"
+  "registry": models.Registry().dict()
 }
 ```
 ------------------------------------------------------------------------------

@@ -3,7 +3,6 @@ from pydantic import BaseModel
 from flask import Flask
 import socketio
 
-# import eventlet
 import json
 import os
 import time
@@ -63,7 +62,7 @@ class Minion:
                 media_dir = settings.media_dir
 
             with build("drive", "v3", developerKey=settings.api_key) as service:
-                # list the drive files, the response is like the following structure:
+                # list the drive files, the response has the following structure:
                 """
                 {'kind': 'drive#fileList',
                  'incompleteSearch': False,
@@ -89,19 +88,19 @@ class Minion:
                 if "files" not in gfiles:
                     raise RuntimeError(f"Couldn't list files in specified driveId. Error: {gfiles}")
 
-                for fileinfo in gfiles["files"]:  # for each file on google drive
+                for fileinfo in gfiles["files"]:  # for each file in Google Drive
                     fid, fname = fileinfo["id"], fileinfo["name"]
                     if "md5Checksum" not in fileinfo:
-                        continue  # if there is no md5Checksum that means it's not a file, probably a folder
+                        continue  # if there is no md5Checksum that means it's not a file, probably a folder, skip
                     with self.lock:
                         if fname not in self.files:  # if we haven't downloaded it before
-                            self.files[fname] = False
-                            self.on_files_changed()
+                            self.files[fname] = False  # append to registry
+                            # self.on_files_changed()
 
                 gdrive_files = [f["name"] for f in gfiles["files"] if f["name"] in self.files]
                 with self.lock:
                     for fname in self.files:  # for each file we have already downloaded
-                        # if we have downloaded this file, but it doesn't appear on google drive
+                        # if we have downloaded this file, but it doesn't appear in Google Drive
                         if fname not in gdrive_files:
                             os.system(f"rm {os.path.join(media_dir, fname)}")  # remove it
                             self.files.pop(fname)
@@ -114,35 +113,35 @@ class Minion:
                     # if file already exists - check its md5
                     flocal = os.path.join(media_dir, fname)
                     with self.lock:
-                        if not self.files[fname] and os.path.isfile(flocal):
-                            if generate_file_md5(flocal) == fmd5Checksum:
-                                self.files[fname] = True
-                        status = self.files[fname]
+                        if not self.files[fname] and os.path.isfile(flocal):  # if there is already such file
+                            if generate_file_md5(flocal) == fmd5Checksum:  # and hash sums are ok
+                                self.files[fname] = True  # don't download - just mark as downloaded
+                                # self.on_files_changed()
 
-                    if not status:
+                    if not self.files[fname]:  # if not downloaded
                         try:
-                            time.sleep(random.randint(3, 7))
+                            time.sleep(random.randint(3, 7))  # try to avoid google ban
+                            # and run downloading function in a separate process
+                            # if we don't use a separate process - we'll have troubles with
+                            # download speed
                             p = Process(target=gdown.download_via_gdrive_api, args=(fid, flocal, self.service_file))
                             p.start()
                             p.join()
-                            # gdown.download_via_gdrive_api(fid, flocal, self.service_file)
-
+                            # check hash sum of downloaded file
                             if generate_file_md5(flocal) == fmd5Checksum:
                                 with self.lock:
                                     self.files[fname] = True
+                                    # self.on_files_changed()
                                 print(f"I PYSERVER::run_drive_sync(): Downloaded {fname} => {flocal}")
                             else:
                                 print(f"E PYSERVER::run_drive_sync(): Couldn't verify checksum for {fname}")
                         except Exception as ex:
                             print(f"Couldn't download file {fid} via gdown. Details: {ex}")
-                self.on_files_changed()
+                # self.on_files_changed()
 
         def list_files(self) -> Dict[str, bool]:
             with self.lock:
                 return self.files.copy()
-
-        def on_files_changed(self):
-            self.minion.sio.emit("on_gdrive_files_changed", json.dumps(self.list_files()))
 
     class Command:
         """
@@ -233,6 +232,32 @@ class Minion:
             else:
                 return ExecutionStatus(False, f"MINION: Invalid command {command}")
 
+    class BGWorker:
+        def __init__(self, minion):
+            self.minion: Minion = minion
+            self._last_gdrive_files = json.dumps(self.minion.gdrive_worker.files)
+
+        def track_gdrive_files_change(self):
+            """
+            This function has to be started as a background worker. It tracks google drive files changes
+            and broadcasts all changes.
+            """
+            while True:
+                try:
+                    with self.minion.gdrive_worker.lock:
+                        new_gdrive_files_state = json.dumps(self.minion.gdrive_worker.files)
+                        if self._last_gdrive_files != new_gdrive_files_state:
+                            self._last_gdrive_files = new_gdrive_files_state
+
+                            self.minion.sio.emit("on_gdrive_files_changed",
+                                                 data=new_gdrive_files_state,
+                                                 broadcast=True)
+
+                except Exception as ex:
+                    print(f"E Minion::BGWorker::track_gdrive_files_change(): "
+                          f"Couldn't broadcast gdrive files change. Details: {ex}")  # TODO: handle and log
+                self.minion.sio.sleep(0.2)
+
     def __init__(self, port=6006):
         self.port = port
         self.sio = socketio.Server(async_mode="threading", cors_allowed_origins="*")
@@ -243,23 +268,17 @@ class Minion:
         self.registry = Minion.Registry()
         self.gdrive_worker = Minion.GDriveFileWorker(self)
         self.command = Minion.Command(self)
+        self.bg_worker = Minion.BGWorker(self)
 
         self.registry_lock = RLock()
-
-    def _do_background_work(self):
-        self.sio.sleep(0.5)
-
-    def _background_worker(self):
-        while True:
-            try:
-                self._do_background_work()
-            except Exception as ex:
-                pass
 
     def _setup_event_handlers(self):
         self.sio.on("connect", handler=self._on_connect)
         self.sio.on("disconnect", handler=self._on_disconnect)
         self.sio.on("command", handler=self._on_command)
+
+    def _setup_background_tasks(self):
+        self.sio.start_background_task(self.bg_worker.track_gdrive_files_change)
 
     def _on_connect(self, sid, environ):
         """
@@ -292,7 +311,7 @@ class Minion:
 
     def run(self):
         self._setup_event_handlers()
-        self.sio.start_background_task(self._background_worker)
+        self._setup_background_tasks()
         self.gdrive_worker.start()
         self.app.run(host="0.0.0.0", port=self.port)
         # eventlet.wsgi.server(eventlet.listen(('', self.port)), self.app)

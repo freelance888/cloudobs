@@ -172,7 +172,8 @@ class Skipper:
             self.sio.on("on_gdrive_files_changed", handler=self._on_gdrive_files_changed)
 
         def _on_gdrive_files_changed(self, data):
-            self.skipper.registry.gdrive_files[self.lang] = json.loads(data)
+            with self.skipper.registry_lock:
+                self.skipper.registry.gdrive_files[self.lang] = json.loads(data)
 
         def close(self):
             self.sio.disconnect()
@@ -456,10 +457,10 @@ class Skipper:
                     langs = (
                         None  # None - means all langs
                         if (
-                            (not details)
-                            or ("langs" not in details)
-                            or (not isinstance(details["langs"], list))
-                            or (not all([isinstance(obj, str) for obj in details["langs"]]))
+                                (not details)
+                                or ("langs" not in details)
+                                or (not isinstance(details["langs"], list))
+                                or (not all([isinstance(obj, str) for obj in details["langs"]]))
                         )
                         else details["langs"]  # the code above validates details["langs"]
                     )
@@ -481,12 +482,12 @@ class Skipper:
                 elif command == "get info":
                     return ExecutionStatus(True, serializable_object={"registry": self.skipper.registry.dict()})
                 elif command in (
-                    "set stream settings",
-                    "set teamspeak offset",
-                    "set teamspeak volume",
-                    "set source volume",
-                    "set sidechain settings",
-                    "set transition settings",
+                        "set stream settings",
+                        "set teamspeak offset",
+                        "set teamspeak volume",
+                        "set source volume",
+                        "set sidechain settings",
+                        "set transition settings",
                 ):
                     return self.set_info(command=command, details=details, lang=lang, environ=environ)
                 elif command == "infrastructure lock":
@@ -654,10 +655,10 @@ class Skipper:
                 # details: {"ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...}
                 # all parameters are numeric
                 if (
-                    "ratio" not in details
-                    and "release_time" not in details
-                    and "threshold" not in details
-                    and "output_gain" not in details
+                        "ratio" not in details
+                        and "release_time" not in details
+                        and "threshold" not in details
+                        and "output_gain" not in details
                 ):
                     return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
                 try:
@@ -750,8 +751,8 @@ class Skipper:
                 return ExecutionStatus(
                     False,
                     message=f"Something happened while sending a command.\n"
-                    f"Command: '{command}', details: '{details}'.\n"
-                    f"Error details: {ex}",
+                            f"Command: '{command}', details: '{details}'.\n"
+                            f"Error details: {ex}",
                     serializable_object={lang: ExecutionStatus(False, "Exception has been thrown").dict()},
                 )
 
@@ -801,23 +802,29 @@ class Skipper:
         def setup_event_handlers(self):
             pass
 
-    class RegistryChangeTracker:
-        # TODO: if there are some other events like this - make refactoring of this class
+    class BGWorker:
         def __init__(self, skipper):
             self.skipper: Skipper = skipper
-            with self.skipper.registry_lock:
-                self._last_registry_state = self.skipper.registry.json()
+            self._last_registry_state = self.skipper.registry.json()
 
-        def background_worker(self):
+        def track_registry_change(self):
+            """
+            This function has to be started as a background worker. It tracks registry changes and broadcasts
+            registry change to all changes.
+            """
             while True:
                 try:
                     with self.skipper.registry_lock:
                         new_registry_state = self.skipper.registry.json()
                         if self._last_registry_state != new_registry_state:
                             self._last_registry_state = new_registry_state
-                            self.skipper.sio.emit("on_registry_change", data={"registry": new_registry_state})
-                except:
-                    pass
+                            registry: Registry = Registry.parse_raw(new_registry_state)
+                            self.skipper.sio.emit("on_registry_change",
+                                                  data={"registry": registry.dict()},
+                                                  broadcast=True)
+                except Exception as ex:
+                    print(f"E Skipper::BGWorker::track_registry_change(): "
+                          f"Couldn't broadcast registry change. Details: {ex}")  # TODO: handle and log
                 self.skipper.sio.sleep(0.2)
 
     def __init__(self, port=None):
@@ -828,7 +835,7 @@ class Skipper:
         self.timing: Skipper.Timing = Skipper.Timing(self)
         self.command: Skipper.Command = Skipper.Command(self)
         self.http_api: Skipper.HTTPApi = Skipper.HTTPApi(self)
-        self.registry_change_tracker: Skipper.RegistryChangeTracker = Skipper.RegistryChangeTracker(self)
+        self.bg_worker: Skipper.BGWorker = Skipper.BGWorker(self)
 
         self.registry_lock = RLock()
         self.infrastructure_lock = RLock()
@@ -933,7 +940,7 @@ class Skipper:
         self.http_api.setup_event_handlers()
 
     def _setup_background_tasks(self):
-        self.sio.start_background_task(self.registry_change_tracker.background_worker)
+        self.sio.start_background_task(self.bg_worker.track_registry_change)
 
     def _on_connect(self, sid, environ):
         self._sid_envs[sid] = environ
