@@ -1,15 +1,15 @@
 from pydantic import BaseModel, PrivateAttr
 from pydantic.schema import Optional
 from typing import List, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 from threading import Lock, RLock, Thread
 
 
 class OBSCloudModel(BaseModel):
     _objvers: str = PrivateAttr("")
 
-    def __init__(self, *args, **kwargs):
-        super(OBSCloudModel, self).__init__(*args, **kwargs)
+    def __init__(self, **kwargs):
+        super(OBSCloudModel, self).__init__(**kwargs)
 
     def __setattr__(self, key, value):
         if hasattr(self, key) and self.__getattribute__(key) != value:
@@ -57,7 +57,7 @@ class MinionSettings(BaseModel):
         value: Optional[bool] = False
 
     class TSOffset(OBSCloudModel):
-        value: Optional[int] = 6800
+        value: Optional[int] = 9000
 
     class TSVolume(OBSCloudModel):
         value: Optional[float] = 0.0
@@ -74,7 +74,7 @@ class MinionSettings(BaseModel):
     class TransitionSettings(OBSCloudModel):
         transition_name: Optional[str] = "Cut"
         path: Optional[str] = ""
-        transition_point: Optional[int] = 6500
+        transition_point: Optional[int] = 7500
 
     class GDriveSettings(OBSCloudModel):
         folder_id: Optional[str] = ""
@@ -138,6 +138,12 @@ class VmixPlayer(BaseModel):
     active: bool = False
 
 
+class TimingEntry(BaseModel):
+    name: str
+    timestamp: timedelta
+    is_enabled: bool = True
+    is_played: bool = False
+
 class State:
     sleeping = "sleeping"
     initializing = "initializing"
@@ -157,12 +163,15 @@ class Registry(BaseModel):
 
     timing_sheet_url: str = None
     timing_sheet_name: str = None
-    timing_list = []
+    timing_list: List[TimingEntry] = []  # List of TimingEntry
     timing_start_time: datetime = None  # system time when the timing will be/was started
 
     # ip: {"name": "", active: True/False}
     vmix_players: Dict[str, VmixPlayer] = {"*": VmixPlayer(name="All", active=True)}
     active_vmix_player: str = "*"  # "*" or ip
+
+    # {"lang1": {"filename1": True/False (downloaded), "filename2": ...}, "lang2": ...}
+    gdrive_files: Dict[str, Dict] = {}
 
     _lock = PrivateAttr()
 
