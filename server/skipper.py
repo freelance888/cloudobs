@@ -8,11 +8,12 @@ from typing import List, Dict
 import socketio
 from flask import Flask
 from pydantic import BaseModel
-from socketio.exceptions import ConnectionError
+from socketio.exceptions import ConnectionError, ConnectionRefusedError
 
 from deployment import Spawner, IPDict
+
 from googleapi import OBSGoogleSheets, TimingGoogleSheets
-from models import MinionSettings, VmixPlayer, Registry, State
+from models import MinionSettings, VmixPlayer, Registry, State, TimingEntry
 from obs import OBS
 from util import ExecutionStatus, WebsocketResponse, CallbackThread
 
@@ -33,14 +34,18 @@ class Skipper:
                 self.skipper.registry.minion_configs[lang].addr_config.minion_server_addr = ip
                 # if Minion instance have not been created yet
                 if lang not in self.skipper.minions:
+
                     self.skipper.minions[lang] = Skipper.Minion(
-                        minion_ip=ip, lang=lang, ws_port=MINION_WS_PORT
+                        minion_ip=ip, lang=lang, ws_port=MINION_WS_PORT, skipper=self.skipper
                     )  # create
+
                 # else if lang or ip has changed
                 if self.skipper.minions[lang].minion_ip != ip or self.skipper.minions[lang].lang != lang:
                     del self.skipper.minions[lang]  # delete old version
                     # and replace with updated one
-                    self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang)
+                    self.skipper.minions[lang] = Skipper.Minion(minion_ip=ip, lang=lang,
+                                                                ws_port=MINION_WS_PORT,
+                                                                skipper=self.skipper)
 
         def activate_registry(self) -> ExecutionStatus:
             # with self.skipper.registry_lock:
@@ -147,10 +152,11 @@ class Skipper:
                 return ExecutionStatus(False, f"Something happened while pushing obs_config info. Details: {ex}")
 
     class Minion:
-        def __init__(self, minion_ip, lang, ws_port=MINION_WS_PORT):
+        def __init__(self, minion_ip, lang, skipper, ws_port=MINION_WS_PORT):
             self.minion_ip = minion_ip
             self.ws_port = ws_port
             self.lang = lang
+            self.skipper: Skipper = skipper
             self.sio = socketio.Client()
             self.connect()
 
@@ -160,9 +166,16 @@ class Skipper:
         def connect(self):
             try:
                 self.sio.connect(f"http://{self.minion_ip}:{self.ws_port}")
+                self._register_event_handlers()
             except Exception as ex:
                 # TODO: log
                 raise ConnectionError(f"Connection error for ip {self.minion_ip} lang {self.lang}. " f"Details:\n{ex}")
+
+        def _register_event_handlers(self):
+            self.sio.on("on_gdrive_files_changed", handler=self._on_gdrive_files_changed)
+
+        def _on_gdrive_files_changed(self, data):
+            self.skipper.registry.gdrive_files[self.lang] = json.loads(data)
 
         def close(self):
             self.sio.disconnect()
@@ -183,16 +196,17 @@ class Skipper:
             return json.dumps({"minion_ip": self.minion_ip, "ws_port": self.ws_port, "lang": self.lang})
 
         @classmethod
-        def from_json(cls, json_dump):
+        def from_json(cls, json_dump, skipper):
             data = json.loads(json_dump)
-            return Skipper.Minion(minion_ip=data["minion_ip"], ws_port=data["ws_port"], lang=data["lang"])
+            return Skipper.Minion(minion_ip=data["minion_ip"], ws_port=data["ws_port"],
+                                  lang=data["lang"], skipper=skipper)
 
     class Timing:
-        class Entry(BaseModel):
-            name: str
-            timestamp: timedelta
-            is_enabled: bool = True
-            is_played: bool = False
+        # class Entry(BaseModel):
+        #     name: str
+        #     timestamp: timedelta
+        #     is_enabled: bool = True
+        #     is_played: bool = False
 
         def __init__(self, skipper):
             self.sheets = TimingGoogleSheets()
@@ -224,7 +238,7 @@ class Skipper:
 
             def foo_maker(skipper: Skipper, id: int):
                 def foo() -> ExecutionStatus:
-                    entry: Skipper.Timing.Entry = skipper.registry.timing_list[id]
+                    entry: TimingEntry = skipper.registry.timing_list[id]
                     if not entry.is_enabled or entry.is_played:  # if disabled or already has been played
                         return ExecutionStatus(True)
 
@@ -273,9 +287,10 @@ class Skipper:
                 # if timing_delta < 0 -> timing has not been started yet
                 timing_delta = self.get_current_timedelta()  # now() - timing_start_time
                 self.skipper.registry.timing_list = [
-                    Skipper.Timing.Entry(
-                        name=name, timestamp=timestamp, is_enabled=True, is_played=timing_delta > timestamp
-                    )
+                    TimingEntry(name=name, 
+                                timestamp=timestamp,
+                                is_enabled=True,
+                                is_played=timing_delta > timestamp)
                     for timestamp, name in timing_df.values
                 ]
                 return self._sync_callbacks()
@@ -887,7 +902,7 @@ class Skipper:
                 content = fp.read()
                 if content:
                     self.minions = {
-                        lang: Skipper.Minion.from_json(minion_json)
+                        lang: Skipper.Minion.from_json(minion_json, self)
                         for lang, minion_json in json.loads(fp.read()).items()
                     }
 
