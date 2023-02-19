@@ -197,10 +197,7 @@ class Registry(BaseModel):
                 if key == "server_status":
                     self._last_server_status = self.server_status
                 super(Registry, self).__setattr__(key, value)
-            self.broadcast_change_event(key, value)
-
-    def broadcast_change_event(self, key, value):
-        self._skipper.sio.emit("registry change", data=json.dumps({key: value}), broadcast=True)
+            self._skipper.sio.emit("on_registry_change", data=json.dumps(self.dict()), broadcast=True)
 
     def list_langs(self):
         return list(self.minion_configs.keys())
