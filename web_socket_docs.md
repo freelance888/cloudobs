@@ -61,11 +61,6 @@
 ###  - `dispose`
  - **Description:** Deletes minions.
  - **Parameters:**
-   - `sheet_url` - url of google sheets.
-   - `sheet_name` - google sheet name.
-   - `langs` - specifies which langs should be pulled from google sheet.
-   - `ip_langs` - will set up infrastructure. This parameter's is used
-                    for **manual server deployment**.
  - **Returns:**
 ```json
 {
