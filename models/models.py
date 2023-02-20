@@ -2,9 +2,15 @@ import json
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import List, Dict
+import re
 
 from pydantic import BaseModel, PrivateAttr
 from pydantic.schema import Optional
+import orjson
+
+def orjson_dumps(v, *, default):
+    # orjson.dumps returns bytes, to match standard json.dumps we need to decode
+    return orjson.dumps(v, default=default).decode()
 
 
 class OBSCloudModel(BaseModel):
@@ -142,9 +148,13 @@ class VmixPlayer(BaseModel):
 
 class TimingEntry(BaseModel):
     name: str
-    timestamp: timedelta
+    timestamp: timedelta  # format of hh:mm:ss
     is_enabled: bool = True
     is_played: bool = False
+
+    class Config:
+        json_loads = orjson.loads
+        json_dumps = orjson_dumps
 
 class State:
     sleeping = "sleeping"
@@ -177,6 +187,10 @@ class Registry(BaseModel):
 
     _lock = PrivateAttr()
     # _skipper = PrivateAttr()
+
+    class Config:
+        json_loads = orjson.loads
+        json_dumps = orjson_dumps
 
     def __init__(self, **kwargs):
         self._lock = RLock()
