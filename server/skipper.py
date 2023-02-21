@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import List, Dict
+import orjson
 
 import socketio
 from flask import Flask
@@ -173,7 +174,7 @@ class Skipper:
 
         def _on_gdrive_files_changed(self, data):
             with self.skipper.registry_lock:
-                self.skipper.registry.gdrive_files[self.lang] = json.loads(data)
+                self.skipper.registry.gdrive_files[self.lang] = orjson.loads(data)
 
         def close(self):
             self.sio.disconnect()
@@ -480,7 +481,8 @@ class Skipper:
                 elif command == "dispose":
                     return self.delete_minions()
                 elif command == "get info":
-                    return ExecutionStatus(True, serializable_object={"registry": self.skipper.registry.dict()})
+                    return ExecutionStatus(True,
+                                           serializable_object=orjson.dumps({"registry": self.skipper.registry.dict()}))
                 elif command in (
                         "set stream settings",
                         "set teamspeak offset",
@@ -818,9 +820,8 @@ class Skipper:
                         new_registry_state = self.skipper.registry.json()
                         if self._last_registry_state != new_registry_state:
                             self._last_registry_state = new_registry_state
-                            registry: Registry = Registry.parse_raw(new_registry_state)
                             self.skipper.sio.emit("on_registry_change",
-                                                  data={"registry": registry.dict()},
+                                                  data=orjson.dumps({"registry": self.skipper.registry.dict()}),
                                                   broadcast=True)
                 except Exception as ex:
                     print(f"E Skipper::BGWorker::track_registry_change(): "

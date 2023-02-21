@@ -8,6 +8,7 @@ from pydantic import BaseModel, PrivateAttr
 from pydantic.schema import Optional
 import orjson
 
+
 def orjson_dumps(v, *, default):
     # orjson.dumps returns bytes, to match standard json.dumps we need to decode
     return orjson.dumps(v, default=default).decode()

@@ -104,4 +104,17 @@ command = {
 sio.emit(event="command", data=json.dumps(command), callback=ws_response.callback)
 time.sleep(2)
 ws_response.result()
+
+# ----- pull timing
+ws_response = WebsocketResponse()
+command = {
+    "command": "pull timing",
+    "details": {
+        "sheet_url": "https://docs.google.com/spreadsheets/d/10J2FG-6nKodpXcTVPmNwKGOwGXSxPUWf1MppT7yUgME/edit#gid=2006470615",
+        "sheet_name": "demo_timing"
+    }
+}
+sio.emit(event="command", data=json.dumps(command), callback=ws_response.callback)
+time.sleep(2)
+ws_response.result()
 """
