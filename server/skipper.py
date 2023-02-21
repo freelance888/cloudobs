@@ -173,7 +173,7 @@ class Skipper:
 
         def _on_gdrive_files_changed(self, data):
             with self.skipper.registry_lock:
-                self.skipper.registry.gdrive_files[self.lang] = orjson.loads(data)
+                self.skipper.registry.gdrive_files[self.lang] = json.loads(data)
 
         def close(self):
             self.sio.disconnect()
@@ -311,7 +311,7 @@ class Skipper:
 
         def stop(self) -> ExecutionStatus:
             try:
-                self.skipper.command("stop media")
+                self.skipper.command.exec("stop media")
                 # with self.skipper.registry_lock:
                 self.skipper.registry.timing_start_time = None
                 self.cb_thread.delete_cb_type("timing")
