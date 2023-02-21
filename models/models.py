@@ -9,8 +9,10 @@ from pydantic.schema import Optional
 import orjson
 
 
-def orjson_dumps(v, *, default):
+def orjson_dumps(v, *, default=None):
     # orjson.dumps returns bytes, to match standard json.dumps we need to decode
+    if default is None:
+        default = Registry.__json_encoder__
     return orjson.dumps(v, default=default).decode()
 
 

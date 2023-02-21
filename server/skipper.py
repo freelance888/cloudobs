@@ -4,7 +4,6 @@ import os
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import List, Dict
-import orjson
 
 import socketio
 from flask import Flask
@@ -13,7 +12,7 @@ from socketio.exceptions import ConnectionError
 
 from deployment import Spawner, IPDict
 from googleapi import OBSGoogleSheets, TimingGoogleSheets
-from models import MinionSettings, VmixPlayer, Registry, State, TimingEntry
+from models import MinionSettings, VmixPlayer, Registry, State, TimingEntry, orjson_dumps
 from obs import OBS
 from util import ExecutionStatus, WebsocketResponse, CallbackThread
 
@@ -482,7 +481,7 @@ class Skipper:
                     return self.delete_minions()
                 elif command == "get info":
                     return ExecutionStatus(True,
-                                           serializable_object=orjson.dumps({"registry": self.skipper.registry.dict()}))
+                                           serializable_object=orjson_dumps({"registry": self.skipper.registry.dict()}))
                 elif command in (
                         "set stream settings",
                         "set teamspeak offset",
@@ -821,7 +820,7 @@ class Skipper:
                         if self._last_registry_state != new_registry_state:
                             self._last_registry_state = new_registry_state
                             self.skipper.sio.emit("on_registry_change",
-                                                  data=orjson.dumps({"registry": self.skipper.registry.dict()}),
+                                                  data=orjson_dumps({"registry": self.skipper.registry.dict()}),
                                                   broadcast=True)
                 except Exception as ex:
                     print(f"E Skipper::BGWorker::track_registry_change(): "
