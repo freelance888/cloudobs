@@ -8,7 +8,8 @@ RUN pip3 install -r requirements.txt
 RUN pip3 install pip --upgrade
 RUN pip3 install pyopenssl --upgrade
 RUN git clone https://github.com/amukhsimov/gdown.git && cd gdown && pip3 install .
-
+RUN apt update && apt install tzdata -y
+ENV TZ="Europe/Kiev"
 
 EXPOSE 5000
 
