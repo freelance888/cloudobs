@@ -314,6 +314,8 @@ class Skipper:
                 self.skipper.command.exec("stop media")
                 # with self.skipper.registry_lock:
                 self.skipper.registry.timing_start_time = None
+                for entry in self.skipper.registry.timing_list:
+                    entry.is_played = False
                 self.cb_thread.delete_cb_type("timing")
                 return ExecutionStatus(True)
             except Exception as ex:
