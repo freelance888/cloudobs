@@ -89,7 +89,7 @@ command = {
 }
 sio.emit(event="command", data=json.dumps(command), callback=ws_response.callback)
 time.sleep(2)
-json.loads(ws_response.result())
+json.loads(json.loads(ws_response.result())["serializable_object"])
 
 # ----- play media
 ws_response = WebsocketResponse()
