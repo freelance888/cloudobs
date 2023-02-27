@@ -236,7 +236,7 @@ class Skipper:
 
                     status: ExecutionStatus = skipper.command.exec(
                         command="play media",
-                        details={"name": "name", "search_by_num": True, "mode": OBS.PLAYBACK_MODE_CHECK_SAME},
+                        details={"name": entry.name, "search_by_num": True, "mode": OBS.PLAYBACK_MODE_CHECK_SAME},
                     )
 
                     entry.is_played = True
