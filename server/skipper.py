@@ -359,7 +359,7 @@ class Skipper:
         def send_log(self, type: LogType, message: str, error: Exception = None, extra: dict = None):
             try:
                 data = {
-                    "level": type.value[0],
+                    "level": type.value[0].name,
                     "type": type.value[1],
                     "message": message,
                     "error": str(error) if error else None,
@@ -367,9 +367,8 @@ class Skipper:
                     "extra": extra,
                 }
                 self.skipper.sio.emit("on_log", data=json.dumps(data), broadcast=True)
-            except:
-                # TODO: log unhandled exceptions anywhere
-                pass
+            except Exception as ex:
+                print(f"Sending log error: {ex}")
 
     class Command:
         """
@@ -465,7 +464,7 @@ class Skipper:
             command, details, lang = command["command"], command["details"], command["lang"]
 
             result = self.exec(command, details=details, lang=lang, environ=environ)
-
+            print(f"AFTER EXECUTION::: {command}")
             self.event_sender.send_log(
                 type=LogType.command_completed,
                 message=f"Command '{command}' execution successfully completed",

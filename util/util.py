@@ -481,9 +481,9 @@ class WebsocketResponse:
 
 
 class LogLevel(Enum):
-    info = 'info'
-    warn = 'warn'
-    error = 'error'
+    info = 1
+    warn = 2
+    error = 3
 
 
 class LogType(Enum):

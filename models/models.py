@@ -189,15 +189,15 @@ class Registry(BaseModel):
     gdrive_files: Dict[str, Dict] = {}
 
     _lock = PrivateAttr()
-    _event_sender = PrivateAttr()
+    _skipper = PrivateAttr()
 
     class Config:
         json_loads = orjson.loads
         json_dumps = orjson_dumps
 
-    def __init__(self, event_sender, **kwargs):
+    def __init__(self, skipper, **kwargs):
         self._lock = RLock()
-        self._event_sender = event_sender
+        self._skipper = skipper
         super(Registry, self).__init__(**kwargs)
 
     def __getattr__(self, item):
@@ -207,14 +207,14 @@ class Registry(BaseModel):
             return super(Registry, self).__getattr__(item)
 
     def __setattr__(self, key, value):
-        if key in ("_lock", "_event_sender"):
+        if key in ("_lock", "_skipper", "infrastructure_lock"):
             super(Registry, self).__setattr__(key, value)
         else:
             with self._lock:
                 if key == "server_status":
                     self._last_server_status = self.server_status
                 super(Registry, self).__setattr__(key, value)
-            self._event_sender.send_registry_change(self.dict())
+            self._skipper.event_sender.send_registry_change(self.dict())
 
     def list_langs(self):
         return list(self.minion_configs.keys())
