@@ -464,7 +464,6 @@ class Skipper:
             command, details, lang = command["command"], command["details"], command["lang"]
 
             result = self.exec(command, details=details, lang=lang, environ=environ)
-            print(f"AFTER EXECUTION::: {command}")
             self.event_sender.send_log(
                 type=LogType.command_completed,
                 message=f"Command '{command}' execution successfully completed",
@@ -516,10 +515,10 @@ class Skipper:
                     langs = (
                         None  # None - means all langs
                         if (
-                                (not details)
-                                or ("langs" not in details)
-                                or (not isinstance(details["langs"], list))
-                                or (not all([isinstance(obj, str) for obj in details["langs"]]))
+                            (not details)
+                            or ("langs" not in details)
+                            or (not isinstance(details["langs"], list))
+                            or (not all([isinstance(obj, str) for obj in details["langs"]]))
                         )
                         else details["langs"]  # the code above validates details["langs"]
                     )
@@ -542,12 +541,12 @@ class Skipper:
                     return ExecutionStatus(True,
                                            serializable_object=orjson_dumps({"registry": self.skipper.registry.dict()}))
                 elif command in (
-                        "set stream settings",
-                        "set teamspeak offset",
-                        "set teamspeak volume",
-                        "set source volume",
-                        "set sidechain settings",
-                        "set transition settings",
+                    "set stream settings",
+                    "set teamspeak offset",
+                    "set teamspeak volume",
+                    "set source volume",
+                    "set sidechain settings",
+                    "set transition settings",
                 ):
                     return self.set_info(command=command, details=details, lang=lang, environ=environ)
                 elif command == "infrastructure lock":
@@ -728,10 +727,10 @@ class Skipper:
                 # details: {"ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...}
                 # all parameters are numeric
                 if (
-                        "ratio" not in details
-                        and "release_time" not in details
-                        and "threshold" not in details
-                        and "output_gain" not in details
+                    "ratio" not in details
+                    and "release_time" not in details
+                    and "threshold" not in details
+                    and "output_gain" not in details
                 ):
                     return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
                 try:
