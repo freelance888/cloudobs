@@ -487,7 +487,8 @@ class LogLevel(Enum):
 
 
 class LogType(Enum):
-    command_started = (LogLevel.info, 'Command Started')
-    command_completed = (LogLevel.info, 'Command Completed')
-    skipper_error = (LogLevel.error, 'Skipper Error')
-    minion_error = (LogLevel.error, 'Minion Error')
+    command_started = (LogLevel.info, 'command_started')
+    command_completed = (LogLevel.info, 'command_completed')
+    skipper_error = (LogLevel.error, 'skipper_error')
+    minion_error = (LogLevel.error, 'minion_error')
+    minions_setup_error = (LogLevel.error, 'minion_setup_error')

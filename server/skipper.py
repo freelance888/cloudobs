@@ -59,7 +59,7 @@ class Skipper:
                 except Exception as ex:
                     message = "Something happened while deploying minions"
                     self.skipper.event_sender.send_log(
-                        type=LogType.minion_error,
+                        type=LogType.minions_setup_error,
                         message=message,
                         error=ex
                     )
@@ -74,9 +74,9 @@ class Skipper:
                 except ConnectionError as ex:
                     message = "Something happened while creating Minion instances"
                     self.skipper.event_sender.send_log(
-                        type=LogType.minion_error,
+                        type=LogType.minions_setup_error,
                         message=message,
-                        error=ex
+                        error=ex,
                     )
                     # with self.skipper.registry_lock:
                     self.skipper.registry.revert_server_state()
