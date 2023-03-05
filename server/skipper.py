@@ -14,7 +14,7 @@ from deployment import Spawner, IPDict
 from googleapi import OBSGoogleSheets, TimingGoogleSheets
 from models import MinionSettings, VmixPlayer, Registry, State, TimingEntry, orjson_dumps
 from obs import OBS
-from util import ExecutionStatus, WebsocketResponse, CallbackThread
+from util import ExecutionStatus, WebsocketResponse, CallbackThread, LogType
 
 MINION_WS_PORT = 6000
 
@@ -57,18 +57,30 @@ class Skipper:
                     langs = self.skipper.registry.list_langs()
                     self.spawner.ensure_langs(langs=langs, wait_for_provision=True)  # [... [lang, ip], ...]
                 except Exception as ex:
+                    message = "Something happened while deploying minions"
+                    self.skipper.event_sender.send_log(
+                        type=LogType.minion_error,
+                        message=message,
+                        error=ex
+                    )
                     # TODO: log
                     # with self.skipper.registry_lock:
                     self.skipper.registry.revert_server_state()
-                    return ExecutionStatus(False, message=f"Something happened while deploying minions: {ex}")
+                    return ExecutionStatus(False, message=f"{message}: {ex}")
 
                 # lang_ips = self.spawner.ip_dict.ip_list()
                 try:
                     self._ensure_minions()
                 except ConnectionError as ex:
+                    message = "Something happened while creating Minion instances"
+                    self.skipper.event_sender.send_log(
+                        type=LogType.minion_error,
+                        message=message,
+                        error=ex
+                    )
                     # with self.skipper.registry_lock:
                     self.skipper.registry.revert_server_state()
-                    return ExecutionStatus(False, f"Something happened while creating Minion instances. Details: {ex}")
+                    return ExecutionStatus(False, f"{message}. Details: {ex}")
 
             # with self.skipper.registry_lock:
             self.skipper.registry.server_status = State.running
@@ -165,8 +177,19 @@ class Skipper:
                 self.sio.connect(f"http://{self.minion_ip}:{self.ws_port}")
                 self._register_event_handlers()
             except Exception as ex:
+                message = f"Connection error for ip {self.minion_ip} lang {self.lang}"
+                self.skipper.event_sender.send_log(
+                    type=LogType.minion_error,
+                    message=message,
+                    error=ex,
+                    extra={
+                        "minion_ip": self.minion_ip,
+                        "minion_lang": self.lang,
+                    }
+                )
                 # TODO: log
                 raise ConnectionError(f"Connection error for ip {self.minion_ip} lang {self.lang}. Details:\n{ex}")
+                raise ConnectionError(f"{message}. Details:\n{ex}")
 
         def _register_event_handlers(self):
             self.sio.on("on_gdrive_files_changed", handler=self._on_gdrive_files_changed)
@@ -326,6 +349,28 @@ class Skipper:
             self.skipper.registry.timing_list = []
             return status
 
+    class EventSender:
+        def __init__(self, skipper):
+            self.skipper: Skipper = skipper
+
+        def send_registry_change(self, registry: dict):
+            self.skipper.sio.emit("on_registry_change", data=json.dumps(registry), broadcast=True)
+
+        def send_log(self, type: LogType, message: str, error: Exception = None, extra: dict = None):
+            try:
+                data = {
+                    "level": type.value[0],
+                    "type": type.value[1],
+                    "message": message,
+                    "error": str(error) if error else None,
+                    "timestamp": datetime.now().isoformat(),
+                    "extra": extra,
+                }
+                self.skipper.sio.emit("on_log", data=json.dumps(data), broadcast=True)
+            except:
+                # TODO: log unhandled exceptions anywhere
+                pass
+
     class Command:
         """
         Command structure for a Skipper:
@@ -350,6 +395,7 @@ class Skipper:
 
         def __init__(self, skipper):
             self.skipper: Skipper = skipper
+            self.event_sender: Skipper.EventSender = skipper.event_sender
 
         @classmethod
         def valid(cls, command: str):
@@ -418,7 +464,19 @@ class Skipper:
                 command["lang"] = "*"
             command, details, lang = command["command"], command["details"], command["lang"]
 
-            return self.exec(command, details=details, lang=lang, environ=environ)
+            result = self.exec(command, details=details, lang=lang, environ=environ)
+
+            self.event_sender.send_log(
+                type=LogType.command_completed,
+                message=f"Command '{command}' execution successfully completed",
+                extra={
+                    "command": command,
+                    "details": details,
+                    "lang": lang,
+                    "ip": environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
+                }
+            )
+            return result
 
         def exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
             """
@@ -596,7 +654,20 @@ class Skipper:
                 else:
                     with self.skipper.infrastructure_lock:
                         return self._minion_command(command=command, details=details, lang=lang)
+
             except Exception as ex:
+                self.event_sender.send_log(
+                    type=LogType.skipper_error,
+                    message="Something happened while executing the command",
+                    error=ex,
+                    extra={
+                        "command": command,
+                        "details": details,
+                        "lang": lang,
+                        "ip": remote_addr
+                    }
+                )
+
                 return ExecutionStatus(
                     False,
                     f"Something happened while executing the command.\n"
@@ -830,7 +901,8 @@ class Skipper:
                 self.skipper.sio.sleep(0.2)
 
     def __init__(self, port=None):
-        self.registry: Registry = Registry()
+        self.event_sender: Skipper.EventSender = Skipper.EventSender(self)
+        self.registry: Registry = Registry(self)
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
         self.minions: Dict[str, Skipper.Minion] = {}
