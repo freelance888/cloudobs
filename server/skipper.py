@@ -279,6 +279,9 @@ class Skipper:
                     )
 
                     entry.is_played = True
+                    skipper.event_sender.send_registry_change({
+                        "timing_list": skipper.registry.timing_list
+                    })
                     return status
 
                 return foo
