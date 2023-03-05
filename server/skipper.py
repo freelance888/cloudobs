@@ -198,7 +198,6 @@ class Skipper:
                     }
                 )
                 # TODO: log
-                raise ConnectionError(f"Connection error for ip {self.minion_ip} lang {self.lang}. Details:\n{ex}")
                 raise ConnectionError(f"{message}. Details:\n{ex}")
 
         def _register_event_handlers(self):
@@ -384,7 +383,7 @@ class Skipper:
             self.skipper: Skipper = skipper
 
         def send_registry_change(self, registry: dict):
-            self.skipper.sio.emit("on_registry_change", data=json.dumps(registry), broadcast=True)
+            self.skipper.sio.emit("on_registry_change", data=orjson_dumps(registry), broadcast=True)
 
         def send_log(self, type: LogType, message: str, error: Exception = None, extra: dict = None):
             try:
@@ -933,9 +932,7 @@ class Skipper:
                         new_registry_state = self.skipper.registry.json()
                         if self._last_registry_state != new_registry_state:
                             self._last_registry_state = new_registry_state
-                            self.skipper.sio.emit("on_registry_change",
-                                                  data=orjson_dumps({"registry": self.skipper.registry.dict()}),
-                                                  broadcast=True)
+                            self.skipper.event_sender.send_registry_change(self.skipper.registry.dict())
                 except Exception as ex:
                     print(f"E Skipper::BGWorker::track_registry_change(): "
                           f"Couldn't broadcast registry change. Details: {ex}")  # TODO: handle and log
