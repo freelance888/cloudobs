@@ -5,7 +5,6 @@ import re
 import sys
 import threading
 import time
-from enum import Enum
 from threading import Lock
 
 import aiohttp
@@ -478,17 +477,3 @@ class WebsocketResponse:
 
     def result(self):
         return self.response
-
-
-class LogLevel(Enum):
-    info = 1
-    warn = 2
-    error = 3
-
-
-class LogType(Enum):
-    command_started = (LogLevel.info, 'command_started')
-    command_completed = (LogLevel.info, 'command_completed')
-    skipper_error = (LogLevel.error, 'skipper_error')
-    minion_error = (LogLevel.error, 'minion_error')
-    minions_setup_error = (LogLevel.error, 'minion_setup_error')

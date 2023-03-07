@@ -7,14 +7,14 @@ from typing import List, Dict
 
 import socketio
 from flask import Flask
-from pydantic import BaseModel
 from socketio.exceptions import ConnectionError
 
 from deployment import Spawner, IPDict
 from googleapi import OBSGoogleSheets, TimingGoogleSheets
 from models import MinionSettings, VmixPlayer, Registry, State, TimingEntry, orjson_dumps
+from models.logging import LogsStorage, Log, LogLevel
 from obs import OBS
-from util import ExecutionStatus, WebsocketResponse, CallbackThread, LogType
+from util import ExecutionStatus, WebsocketResponse, CallbackThread
 
 MINION_WS_PORT = 6000
 
@@ -43,9 +43,6 @@ class Skipper:
                     self.skipper.minions[lang] = Skipper.Minion(
                         minion_ip=ip, lang=lang, ws_port=MINION_WS_PORT, skipper=self.skipper
                     )
-            self.skipper.event_sender.send_registry_change({
-                "minion_configs": self.skipper.registry.minion_configs,
-            })
 
         def activate_registry(self) -> ExecutionStatus:
             # with self.skipper.registry_lock:
@@ -61,11 +58,7 @@ class Skipper:
                     self.spawner.ensure_langs(langs=langs, wait_for_provision=True)  # [... [lang, ip], ...]
                 except Exception as ex:
                     message = "Something happened while deploying minions"
-                    self.skipper.event_sender.send_log(
-                        type=LogType.minions_setup_error,
-                        message=message,
-                        error=ex
-                    )
+                    self.skipper.logger.log_minion_setup_error(message, ex)
                     # TODO: log
                     # with self.skipper.registry_lock:
                     self.skipper.registry.revert_server_state()
@@ -76,11 +69,7 @@ class Skipper:
                     self._ensure_minions()
                 except ConnectionError as ex:
                     message = "Something happened while creating Minion instances"
-                    self.skipper.event_sender.send_log(
-                        type=LogType.minions_setup_error,
-                        message=message,
-                        error=ex,
-                    )
+                    self.skipper.logger.log_minion_setup_error(message, ex)
                     # with self.skipper.registry_lock:
                     self.skipper.registry.revert_server_state()
                     return ExecutionStatus(False, f"{message}. Details: {ex}")
@@ -128,10 +117,6 @@ class Skipper:
                 self.obs_sheets.set_sheet(sheet_url, sheet_name)
                 self.skipper.registry.obs_sheet_url = sheet_url
                 self.skipper.registry.obs_sheet_name = sheet_name
-                self.skipper.event_sender.send_registry_change({
-                    "obs_sheet_url": sheet_url,
-                    "obs_sheet_name": sheet_name
-                })
                 return ExecutionStatus(True)
             except Exception as ex:
                 return ExecutionStatus(False, f"Couldn't set up obs sheet config.\nDetails: {ex}")
@@ -153,9 +138,6 @@ class Skipper:
 
                 for lang in minion_configs:
                     self.skipper.registry.update_minion(lang, minion_configs[lang])
-                self.skipper.event_sender.send_registry_change({
-                    "minion_configs": self.skipper.registry.minion_configs,
-                })
                 return ExecutionStatus(True)
             except Exception as ex:
                 return ExecutionStatus(False, str(ex))
@@ -188,8 +170,7 @@ class Skipper:
                 self._register_event_handlers()
             except Exception as ex:
                 message = f"Connection error for ip {self.minion_ip} lang {self.lang}"
-                self.skipper.event_sender.send_log(
-                    type=LogType.minion_error,
+                self.skipper.logger.log_minion_error(
                     message=message,
                     error=ex,
                     extra={
@@ -206,9 +187,6 @@ class Skipper:
         def _on_gdrive_files_changed(self, data):
             with self.skipper.registry_lock:
                 self.skipper.registry.gdrive_files[self.lang] = json.loads(data)
-                self.skipper.event_sender.send_registry_change({
-                    "gdrive_files": self.skipper.registry.gdrive_files,
-                })
 
         def close(self):
             self.sio.disconnect()
@@ -252,10 +230,6 @@ class Skipper:
                 self.sheets.set_sheet(sheet_url, sheet_name)
                 self.skipper.registry.timing_sheet_url = sheet_url
                 self.skipper.registry.timing_sheet_name = sheet_name
-                self.skipper.event_sender.send_registry_change({
-                    "timing_sheet_url": sheet_url,
-                    "timing_sheet_name": sheet_name,
-                })
                 return ExecutionStatus(True)
             except Exception as ex:
                 return ExecutionStatus(False, f"Couldn't set up timing sheet config.\nDetails: {ex}")
@@ -279,9 +253,6 @@ class Skipper:
                     )
 
                     entry.is_played = True
-                    skipper.event_sender.send_registry_change({
-                        "timing_list": skipper.registry.timing_list
-                    })
                     return status
 
                 return foo
@@ -326,9 +297,6 @@ class Skipper:
                     )
                     for timestamp, name in timing_df.values
                 ]
-                self.skipper.event_sender.send_registry_change({
-                    "timing_list": self.skipper.registry.timing_list,
-                })
                 return self._sync_callbacks()
             except Exception as ex:
                 return ExecutionStatus(False, str(ex))
@@ -352,9 +320,6 @@ class Skipper:
                     self.skipper.registry.timing_start_time = datetime.now()
             except Exception as ex:
                 return ExecutionStatus(False, f"Something happened while running the timing. Details: {ex}")
-            self.skipper.event_sender.send_registry_change({
-                "timing_start_time": self.skipper.registry.timing_start_time,
-            })
             return self._sync_callbacks()
 
         def stop(self) -> ExecutionStatus:
@@ -364,10 +329,6 @@ class Skipper:
                 self.skipper.registry.timing_start_time = None
                 for entry in self.skipper.registry.timing_list:
                     entry.is_played = False
-                self.skipper.event_sender.send_registry_change({
-                    "timing_start_time": self.skipper.registry.timing_start_time,
-                    "timing_list": self.skipper.registry.timing_list,
-                })
                 self.cb_thread.delete_cb_type("timing")
                 return ExecutionStatus(True)
             except Exception as ex:
@@ -376,9 +337,6 @@ class Skipper:
         def remove(self) -> ExecutionStatus:
             status = self.stop()
             self.skipper.registry.timing_list = []
-            self.skipper.event_sender.send_registry_change({
-                "timing_list": [],
-            })
             return status
 
     class EventSender:
@@ -386,21 +344,67 @@ class Skipper:
             self.skipper: Skipper = skipper
 
         def send_registry_change(self, registry: dict):
-            self.skipper.sio.emit("on_registry_change", data=orjson_dumps(registry), broadcast=True)
+            self._send_event("on_registry_change", registry)
 
-        def send_log(self, type: LogType, message: str, error: Exception = None, extra: dict = None):
+        def send_log(self, log: Log):
+            self._send_event("on_log", log.dict())
+
+        def _send_event(self, event: str, data: dict, broadcast=True):
             try:
-                data = {
-                    "level": type.value[0].name,
-                    "type": type.value[1],
-                    "message": message,
-                    "error": str(error) if error else None,
-                    "timestamp": datetime.now().isoformat(),
-                    "extra": extra,
-                }
-                self.skipper.sio.emit("on_log", data=json.dumps(data), broadcast=True)
+                self.skipper.sio.emit(event, data=orjson_dumps(data), broadcast=broadcast)
             except Exception as ex:
-                print(f"Sending log error: {ex}")
+                print(f"Error occurred while sending ws event: {ex}")
+
+    class Logger:
+        def __init__(self, skipper):
+            self.skipper: Skipper = skipper
+            self.logs: LogsStorage = LogsStorage()
+
+        def log_command_started(self, extra: dict):
+            self._add_log(Log(
+                level=LogLevel.info,
+                type="command_started",
+                message=f"Command '{extra['command']}' started",
+                extra=extra,
+            ))
+
+        def log_command_completed(self, extra: dict):
+            self._add_log(Log(
+                level=LogLevel.info,
+                type="command_completed",
+                message=f"Command '{extra['command']}' completed",
+                extra=extra,
+            ))
+
+        def log_server_error(self, message: str, error: Exception, extra: dict):
+            self._add_log(Log(
+                level=LogLevel.error,
+                type="skipper_error",
+                message=message,
+                error=error,
+                extra=extra,
+            ))
+
+        def log_minion_setup_error(self, message: str, error: Exception):
+            self._add_log(Log(
+                level=LogLevel.error,
+                type="minion_setup_error",
+                message=message,
+                error=error
+            ))
+
+        def log_minion_error(self, message: str, error: Exception, extra: dict):
+            self._add_log(Log(
+                level=LogLevel.error,
+                type="minion_error",
+                message=message,
+                error=error,
+                extra=extra
+            ))
+
+        def _add_log(self, log: Log):
+            self.logs.append(log)
+            self.skipper.event_sender.send_log(log)
 
     class Command:
         """
@@ -426,7 +430,6 @@ class Skipper:
 
         def __init__(self, skipper):
             self.skipper: Skipper = skipper
-            self.event_sender: Skipper.EventSender = skipper.event_sender
 
         @classmethod
         def valid(cls, command: str):
@@ -496,16 +499,12 @@ class Skipper:
             command, details, lang = command["command"], command["details"], command["lang"]
 
             result = self.exec(command, details=details, lang=lang, environ=environ)
-            self.event_sender.send_log(
-                type=LogType.command_completed,
-                message=f"Command '{command}' execution successfully completed",
-                extra={
-                    "command": command,
-                    "details": details,
-                    "lang": lang,
-                    "ip": environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
-                }
-            )
+            self.skipper.logger.log_command_completed(extra={
+                "command": command,
+                "details": details,
+                "lang": lang,
+                "ip": environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
+            })
             return result
 
         def exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
@@ -598,9 +597,6 @@ class Skipper:
                     # with self.registry_lock:
                     # add vmix player into registry
                     self.skipper.registry.vmix_players[details["ip"]] = VmixPlayer(name=details["name"], active=False)
-                    self.skipper.event_sender.send_registry_change({
-                        "vmix_players": self.skipper.registry.vmix_players,
-                    })
                     return ExecutionStatus(True)
                 elif command == "vmix players remove":
                     # details: {"ip": "ip address"}
@@ -614,9 +610,6 @@ class Skipper:
 
                     # with self.registry_lock:
                     self.skipper.registry.vmix_players.pop(details["ip"])
-                    self.skipper.event_sender.send_registry_change({
-                        "vmix_players": self.skipper.registry.vmix_players,
-                    })
                     return ExecutionStatus(True)
                 # elif command == "vmix players list":
                 #     # no details needed
@@ -634,10 +627,6 @@ class Skipper:
                     self.skipper.registry.active_vmix_player = details["ip"]
                     for ip in self.skipper.registry.vmix_players:
                         self.skipper.registry.vmix_players[ip].active = self.skipper.registry.active_vmix_player == ip
-                    self.skipper.event_sender.send_registry_change({
-                        "active_vmix_player": self.skipper.registry.active_vmix_player,
-                        "vmix_players": self.skipper.registry.vmix_players,
-                    })
                     return ExecutionStatus(True)
                 elif command == "start streaming":
                     for minion_config in minion_configs:
@@ -696,17 +685,15 @@ class Skipper:
                         return self._minion_command(command=command, details=details, lang=lang)
 
             except Exception as ex:
-                self.event_sender.send_log(
-                    type=LogType.skipper_error,
-                    message="Something happened while executing the command",
+                self.skipper.logger.log_server_error(
+                    message=f"Something happened while executing the command '{command}'",
                     error=ex,
                     extra={
                         "command": command,
                         "details": details,
                         "lang": lang,
                         "ip": remote_addr
-                    }
-                )
+                    })
 
                 return ExecutionStatus(
                     False,
@@ -903,9 +890,6 @@ class Skipper:
                     # with self.registry_lock:
                     self.skipper.registry.minion_configs = {}
                     self.skipper.registry.server_status = State.sleeping  # server_status is logging in other place
-                    self.skipper.event_sender.send_registry_change({
-                        "minion_configs": {},
-                    })
                     return ExecutionStatus(self.skipper.infrastructure.delete_servers())
             except Exception as ex:
                 # with self.registry_lock:
@@ -923,6 +907,7 @@ class Skipper:
         def __init__(self, skipper):
             self.skipper: Skipper = skipper
             self._last_registry_state = self.skipper.registry.json()
+            self._last_registry_dict = self.skipper.registry.dict()
 
         def track_registry_change(self):
             """
@@ -933,16 +918,38 @@ class Skipper:
                 try:
                     with self.skipper.registry_lock:
                         new_registry_state = self.skipper.registry.json()
+                        # Compare prev state json and current state json
                         if self._last_registry_state != new_registry_state:
+                            # Get changed values
+                            new_registry_dict = self.skipper.registry.dict()
+                            changes = self._get_registry_changes(new_registry_dict)
+                            # Save current state
                             self._last_registry_state = new_registry_state
-                            self.skipper.event_sender.send_registry_change(self.skipper.registry.dict())
+                            self._last_registry_dict = new_registry_dict
+                            # Send registry changed event
+                            self.skipper.event_sender.send_registry_change(changes)
                 except Exception as ex:
                     print(f"E Skipper::BGWorker::track_registry_change(): "
                           f"Couldn't broadcast registry change. Details: {ex}")  # TODO: handle and log
+                    self.skipper.logger.log_server_error(
+                        message="Couldn't broadcast registry change",
+                        error=ex
+                    )
                 self.skipper.sio.sleep(0.2)
+
+        def _get_registry_changes(self, current: dict) -> dict:
+            primitive_types = (int, float, str, bool, datetime)
+            prev = self._last_registry_dict
+            diff = {}
+            for root_key, current_val in current.items():
+                a, b = current_val, prev[root_key]
+                if (a in primitive_types and a == b) or (orjson_dumps(a) == orjson_dumps(b)):
+                    diff[root_key] = current_val
+            return diff
 
     def __init__(self, port=None):
         self.event_sender: Skipper.EventSender = Skipper.EventSender(self)
+        self.logger: Skipper.Logger = Skipper.Logger(self)
         self.registry: Registry = Registry(self)
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
@@ -998,9 +1005,6 @@ class Skipper:
                         else:
                             statuses[lang] = ExecutionStatus(False, "Minion didn't return")
 
-                    self.event_sender.send_registry_change({
-                        "minion_configs": self.registry.minion_configs,
-                    })
                     return ExecutionStatus(
                         all([status.status for status in statuses.values()]),  # one vs all
                         serializable_object={  # form status as a dictionary of statuses

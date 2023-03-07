@@ -6,7 +6,6 @@ from util.util import (
     ServiceAddrStorage,
     DefaultDict,
     CallbackThread,
-    LogType,
 )
 from util.util import (
     async_aiohttp_get_all,
