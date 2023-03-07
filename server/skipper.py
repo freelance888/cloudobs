@@ -7,12 +7,12 @@ from typing import List, Dict
 
 import socketio
 from flask import Flask
-from pydantic import BaseModel
 from socketio.exceptions import ConnectionError
 
 from deployment import Spawner, IPDict
 from googleapi import OBSGoogleSheets, TimingGoogleSheets
 from models import MinionSettings, VmixPlayer, Registry, State, TimingEntry, orjson_dumps
+from models.logging import LogsStorage, Log, LogLevel
 from obs import OBS
 from util import ExecutionStatus, WebsocketResponse, CallbackThread
 
@@ -57,18 +57,22 @@ class Skipper:
                     langs = self.skipper.registry.list_langs()
                     self.spawner.ensure_langs(langs=langs, wait_for_provision=True)  # [... [lang, ip], ...]
                 except Exception as ex:
+                    message = "Something happened while deploying minions"
+                    self.skipper.logger.log_minion_setup_error(message, ex)
                     # TODO: log
                     # with self.skipper.registry_lock:
                     self.skipper.registry.revert_server_state()
-                    return ExecutionStatus(False, message=f"Something happened while deploying minions: {ex}")
+                    return ExecutionStatus(False, message=f"{message}: {ex}")
 
                 # lang_ips = self.spawner.ip_dict.ip_list()
                 try:
                     self._ensure_minions()
                 except ConnectionError as ex:
+                    message = "Something happened while creating Minion instances"
+                    self.skipper.logger.log_minion_setup_error(message, ex)
                     # with self.skipper.registry_lock:
                     self.skipper.registry.revert_server_state()
-                    return ExecutionStatus(False, f"Something happened while creating Minion instances. Details: {ex}")
+                    return ExecutionStatus(False, f"{message}. Details: {ex}")
 
             # with self.skipper.registry_lock:
             self.skipper.registry.server_status = State.running
@@ -165,8 +169,17 @@ class Skipper:
                 self.sio.connect(f"http://{self.minion_ip}:{self.ws_port}")
                 self._register_event_handlers()
             except Exception as ex:
+                message = f"Connection error for ip {self.minion_ip} lang {self.lang}"
+                self.skipper.logger.log_minion_error(
+                    message=message,
+                    error=ex,
+                    extra={
+                        "minion_ip": self.minion_ip,
+                        "minion_lang": self.lang,
+                    }
+                )
                 # TODO: log
-                raise ConnectionError(f"Connection error for ip {self.minion_ip} lang {self.lang}. Details:\n{ex}")
+                raise ConnectionError(f"{message}. Details:\n{ex}")
 
         def _register_event_handlers(self):
             self.sio.on("on_gdrive_files_changed", handler=self._on_gdrive_files_changed)
@@ -326,6 +339,74 @@ class Skipper:
             self.skipper.registry.timing_list = []
             return status
 
+    class EventSender:
+        def __init__(self, skipper):
+            self.skipper: Skipper = skipper
+
+        def send_registry_change(self, registry: dict):
+            self._send_event("on_registry_change", {"registry": registry})
+
+        def send_log(self, log: Log):
+            self._send_event("on_log", {"log": log.dict()})
+
+        def _send_event(self, event: str, data: dict, broadcast=True):
+            try:
+                self.skipper.sio.emit(event, data=orjson_dumps(data), broadcast=broadcast)
+            except Exception as ex:
+                print(f"Error occurred while sending ws event: {ex}")
+
+    class Logger:
+        def __init__(self, skipper):
+            self.skipper: Skipper = skipper
+            self.logs: LogsStorage = LogsStorage()
+
+        def log_command_started(self, extra: dict):
+            self._add_log(Log(
+                level=LogLevel.info,
+                type="command_started",
+                message=f"Command '{extra['command']}' started",
+                extra=extra,
+            ))
+
+        def log_command_completed(self, status: bool, extra: dict):
+            m = "completed" if status else "failed"
+            self._add_log(Log(
+                level=LogLevel.info,
+                type="command_completed",
+                message=f"Command '{extra['command']}' {m}",
+                extra=extra,
+            ))
+
+        def log_server_error(self, message: str, error: Exception, extra: dict):
+            self._add_log(Log(
+                level=LogLevel.error,
+                type="skipper_error",
+                message=message,
+                error=error,
+                extra=extra,
+            ))
+
+        def log_minion_setup_error(self, message: str, error: Exception):
+            self._add_log(Log(
+                level=LogLevel.error,
+                type="minion_setup_error",
+                message=message,
+                error=error
+            ))
+
+        def log_minion_error(self, message: str, error: Exception, extra: dict):
+            self._add_log(Log(
+                level=LogLevel.error,
+                type="minion_error",
+                message=message,
+                error=error,
+                extra=extra
+            ))
+
+        def _add_log(self, log: Log):
+            self.logs.append(log)
+            self.skipper.event_sender.send_log(log)
+
     class Command:
         """
         Command structure for a Skipper:
@@ -373,7 +454,7 @@ class Skipper:
             """
             # if the server is sleeping - only allow the following commands
             if self.skipper.registry.server_status == State.sleeping:
-                if command in ("pull config", "get info", "infrastructure unlock"):
+                if command in ("pull config", "get info", "infrastructure unlock", "get logs"):
                     return ExecutionStatus(True)
                 else:
                     return ExecutionStatus(False)
@@ -418,7 +499,16 @@ class Skipper:
                 command["lang"] = "*"
             command, details, lang = command["command"], command["details"], command["lang"]
 
-            return self.exec(command, details=details, lang=lang, environ=environ)
+            result = self.exec(command, details=details, lang=lang, environ=environ)
+            self.skipper.logger.log_command_completed(
+                status=result.status,
+                extra={
+                    "command": command,
+                    "details": details,
+                    "lang": lang,
+                    "ip": environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
+                })
+            return result
 
         def exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
             """
@@ -459,10 +549,10 @@ class Skipper:
                     langs = (
                         None  # None - means all langs
                         if (
-                                (not details)
-                                or ("langs" not in details)
-                                or (not isinstance(details["langs"], list))
-                                or (not all([isinstance(obj, str) for obj in details["langs"]]))
+                            (not details)
+                            or ("langs" not in details)
+                            or (not isinstance(details["langs"], list))
+                            or (not all([isinstance(obj, str) for obj in details["langs"]]))
                         )
                         else details["langs"]  # the code above validates details["langs"]
                     )
@@ -485,14 +575,23 @@ class Skipper:
                     return ExecutionStatus(True,
                                            serializable_object=orjson_dumps({"registry": self.skipper.registry.dict()}))
                 elif command in (
-                        "set stream settings",
-                        "set teamspeak offset",
-                        "set teamspeak volume",
-                        "set source volume",
-                        "set sidechain settings",
-                        "set transition settings",
+                    "set stream settings",
+                    "set teamspeak offset",
+                    "set teamspeak volume",
+                    "set source volume",
+                    "set sidechain settings",
+                    "set transition settings",
                 ):
                     return self.set_info(command=command, details=details, lang=lang, environ=environ)
+                elif command == "get logs":
+                    count = None
+                    try:
+                        count = 100 if details is None or "count" not in details else int(details["count"])
+                    except:
+                        return ExecutionStatus(False, message=f"details.count is not valid: '{count}'")
+                    return ExecutionStatus(True, serializable_object={
+                        "logs": self.skipper.logger.logs.get(count)
+                    })
                 elif command == "infrastructure lock":
                     # with self.registry_lock:
                     self.skipper.registry.infrastructure_lock = True
@@ -596,7 +695,18 @@ class Skipper:
                 else:
                     with self.skipper.infrastructure_lock:
                         return self._minion_command(command=command, details=details, lang=lang)
+
             except Exception as ex:
+                self.skipper.logger.log_server_error(
+                    message=f"Something happened while executing the command '{command}'",
+                    error=ex,
+                    extra={
+                        "command": command,
+                        "details": details,
+                        "lang": lang,
+                        "ip": remote_addr
+                    })
+
                 return ExecutionStatus(
                     False,
                     f"Something happened while executing the command.\n"
@@ -658,10 +768,10 @@ class Skipper:
                 # details: {"ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...}
                 # all parameters are numeric
                 if (
-                        "ratio" not in details
-                        and "release_time" not in details
-                        and "threshold" not in details
-                        and "output_gain" not in details
+                    "ratio" not in details
+                    and "release_time" not in details
+                    and "threshold" not in details
+                    and "output_gain" not in details
                 ):
                     return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
                 try:
@@ -791,7 +901,7 @@ class Skipper:
                     self.skipper.minions = {}
                     # with self.registry_lock:
                     self.skipper.registry.minion_configs = {}
-                    self.skipper.registry.server_status = State.sleeping
+                    self.skipper.registry.server_status = State.sleeping  # server_status is logging in other place
                     return ExecutionStatus(self.skipper.infrastructure.delete_servers())
             except Exception as ex:
                 # with self.registry_lock:
@@ -809,6 +919,7 @@ class Skipper:
         def __init__(self, skipper):
             self.skipper: Skipper = skipper
             self._last_registry_state = self.skipper.registry.json()
+            self._last_registry_dict = self.skipper.registry.dict()
 
         def track_registry_change(self):
             """
@@ -819,17 +930,36 @@ class Skipper:
                 try:
                     with self.skipper.registry_lock:
                         new_registry_state = self.skipper.registry.json()
+                        # Compare prev state json and current state json
                         if self._last_registry_state != new_registry_state:
+                            # Get changed values
+                            new_registry_dict = self.skipper.registry.dict()
+                            changes = self._get_registry_changes(new_registry_dict)
+                            # Save current state
                             self._last_registry_state = new_registry_state
-                            self.skipper.sio.emit("on_registry_change",
-                                                  data=orjson_dumps({"registry": self.skipper.registry.dict()}),
-                                                  broadcast=True)
+                            self._last_registry_dict = new_registry_dict
+                            # Send registry changed event
+                            self.skipper.event_sender.send_registry_change(changes)
                 except Exception as ex:
                     print(f"E Skipper::BGWorker::track_registry_change(): "
                           f"Couldn't broadcast registry change. Details: {ex}")  # TODO: handle and log
+                    self.skipper.logger.log_server_error(
+                        message="Couldn't broadcast registry change",
+                        error=ex
+                    )
                 self.skipper.sio.sleep(0.2)
 
+        def _get_registry_changes(self, current: dict) -> dict:
+            prev = self._last_registry_dict
+            diff = {}
+            for root_key, current_val in current.items():
+                if orjson_dumps(current_val) != orjson_dumps(prev[root_key]):
+                    diff[root_key] = current_val
+            return diff
+
     def __init__(self, port=None):
+        self.event_sender: Skipper.EventSender = Skipper.EventSender(self)
+        self.logger: Skipper.Logger = Skipper.Logger(self)
         self.registry: Registry = Registry()
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)

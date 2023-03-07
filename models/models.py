@@ -1,8 +1,6 @@
-import json
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import List, Dict
-import re
 
 from pydantic import BaseModel, PrivateAttr
 from pydantic.schema import Optional
@@ -159,6 +157,7 @@ class TimingEntry(BaseModel):
         json_loads = orjson.loads
         json_dumps = orjson_dumps
 
+
 class State:
     sleeping = "sleeping"
     initializing = "initializing"
@@ -189,7 +188,6 @@ class Registry(BaseModel):
     gdrive_files: Dict[str, Dict] = {}
 
     _lock = PrivateAttr()
-    # _skipper = PrivateAttr()
 
     class Config:
         json_loads = orjson.loads
@@ -197,7 +195,6 @@ class Registry(BaseModel):
 
     def __init__(self, **kwargs):
         self._lock = RLock()
-        # self._skipper = skipper
         super(Registry, self).__init__(**kwargs)
 
     def __getattr__(self, item):
@@ -207,17 +204,13 @@ class Registry(BaseModel):
             return super(Registry, self).__getattr__(item)
 
     def __setattr__(self, key, value):
-        if key in ("_lock"):
+        if key in ("_lock",):
             super(Registry, self).__setattr__(key, value)
         else:
             with self._lock:
                 if key == "server_status":
                     self._last_server_status = self.server_status
                 super(Registry, self).__setattr__(key, value)
-            # self.broadcast_change_event(key, value)
-
-    # def broadcast_change_event(self, key, value):
-    #     self._skipper.sio.emit("registry change", data=json.dumps({key: value}), broadcast=True)
 
     def list_langs(self):
         return list(self.minion_configs.keys())
