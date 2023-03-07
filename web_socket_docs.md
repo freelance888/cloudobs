@@ -18,18 +18,20 @@
  - **Returns:**
 ```json
 {
-  "level": "info" | "warn" | "error",
-  "type": "short_log_type_name",
-  "message": "... message ...",
-  "error": "... error message ..." | null,
-  "timestamp": "2017-08-02T12:15:00.000000",
-  "extra": {
-    "minion_ip": "if type == minion_error",
-    "minion_lang": "if type == minion_error", 
-    "command": "if type == command_completed or skipper_error",
-    "details": "if type == command_completed or skipper_error",
-    "lang": "if type == command_completed or skipper_error",
-    "ip": "if type == command_completed or skipper_error"
+  "log": {
+    "level": "info" | "warn" | "error",
+    "type": "short_log_type_name",
+    "message": "... message ...",
+    "error": "... error message ..." | null,
+    "timestamp": "2017-08-02T12:15:00.000000",
+    "extra": {
+      "minion_ip": "if type == minion_error",
+      "minion_lang": "if type == minion_error", 
+      "command": "if type == command_completed or skipper_error",
+      "details": "if type == command_completed or skipper_error",
+      "lang": "if type == command_completed or skipper_error",
+      "ip": "if type == command_completed or skipper_error"
+    }
   }
 }
 ```

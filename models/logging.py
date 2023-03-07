@@ -34,14 +34,13 @@ class Log:
 
 class LogsStorage:
     logs: deque[dict] = []
-    _lock = PrivateAttr()
+    _lock = None
 
     def __init__(self):
         self._lock = RLock()
         self.logs = deque()
 
     def append(self, log: Log):
-        print('Append log:', log)
         with self._lock:
             self.logs.append(log.dict())
             if len(self.logs) > 1000:  # TODO: Extract logs limit to config
@@ -49,5 +48,4 @@ class LogsStorage:
 
     def get(self, count: int) -> list[dict]:
         with self._lock:
-            print('self.logs', self.logs)
             return list(self.logs)[-count:]

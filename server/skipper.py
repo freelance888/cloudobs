@@ -344,10 +344,10 @@ class Skipper:
             self.skipper: Skipper = skipper
 
         def send_registry_change(self, registry: dict):
-            self._send_event("on_registry_change", registry)
+            self._send_event("on_registry_change", {"registry": registry})
 
         def send_log(self, log: Log):
-            self._send_event("on_log", log.dict())
+            self._send_event("on_log", {"log": log.dict()})
 
         def _send_event(self, event: str, data: dict, broadcast=True):
             try:
@@ -586,7 +586,7 @@ class Skipper:
                 elif command == "get logs":
                     count = None
                     try:
-                        count = 100 if details is None or details["count"] is None else int(details["count"])
+                        count = 100 if details is None or "count" not in details else int(details["count"])
                     except:
                         return ExecutionStatus(False, message=f"details.count is not valid: '{count}'")
                     return ExecutionStatus(True, serializable_object={
@@ -950,19 +950,17 @@ class Skipper:
                 self.skipper.sio.sleep(0.2)
 
         def _get_registry_changes(self, current: dict) -> dict:
-            primitive_types = (int, float, str, bool, datetime)
             prev = self._last_registry_dict
             diff = {}
             for root_key, current_val in current.items():
-                a, b = current_val, prev[root_key]
-                if (a in primitive_types and a == b) or (orjson_dumps(a) == orjson_dumps(b)):
+                if orjson_dumps(current_val) != orjson_dumps(prev[root_key]):
                     diff[root_key] = current_val
             return diff
 
     def __init__(self, port=None):
         self.event_sender: Skipper.EventSender = Skipper.EventSender(self)
         self.logger: Skipper.Logger = Skipper.Logger(self)
-        self.registry: Registry = Registry(self)
+        self.registry: Registry = Registry()
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
         self.minions: Dict[str, Skipper.Minion] = {}
@@ -1040,7 +1038,7 @@ class Skipper:
 
     def load_from_disk(self):
         # Load registry
-        self.registry = Registry(self)
+        self.registry = Registry()
         if os.path.isfile("./dump_registry.json"):
             with open("./dump_registry.json", "rt") as fp:
                 content = fp.read()
