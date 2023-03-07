@@ -1,12 +1,11 @@
 import asyncio
 import hashlib
+import json
 import re
 import sys
 import threading
-from threading import Lock
 import time
-import json
-from typing import List
+from threading import Lock
 
 import aiohttp
 from asgiref import sync
@@ -19,7 +18,6 @@ def async_aiohttp_get_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.get(url) as response:
                     return Response(await response.text(), response.status)
@@ -37,7 +35,6 @@ def async_aiohttp_post_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.post(url) as response:
                     return Response(await response.text(), response.status)
@@ -55,7 +52,6 @@ def async_aiohttp_delete_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.delete(url) as response:
                     return Response(await response.text(), response.status)
@@ -73,7 +69,6 @@ def async_aiohttp_put_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.put(url) as response:
                     return Response(await response.text(), response.status)
@@ -110,7 +105,7 @@ def validate_media_play_params(name, use_file_num):
     return ExecutionStatus(status=True)
 
 
-def generate_file_md5(filename, blocksize=2**25):
+def generate_file_md5(filename, blocksize=2 ** 25):
     m = hashlib.md5()
     with open(filename, "rb") as f:
         while True:

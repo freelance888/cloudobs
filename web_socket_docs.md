@@ -12,6 +12,30 @@
   "registry": models.Registry().dict()
 }
 ```
+
+###  - `on_log`
+ - **Description:** Point to receive all backend (skipper and any minions) logs.
+ - **Returns:**
+```json
+{
+  "log": {
+    "level": "info" | "warn" | "error",
+    "type": "short_log_type_name",
+    "message": "... message ...",
+    "error": "... error message ..." | null,
+    "timestamp": "2017-08-02T12:15:00.000000",
+    "extra": {
+      "minion_ip": "if type == minion_error",
+      "minion_lang": "if type == minion_error", 
+      "command": "if type == command_completed or skipper_error",
+      "details": "if type == command_completed or skipper_error",
+      "lang": "if type == command_completed or skipper_error",
+      "ip": "if type == command_completed or skipper_error"
+    }
+  }
+}
+```
+
 ------------------------------------------------------------------------------
 
 # Commands
@@ -620,6 +644,47 @@
 {
   "command": "list gdrive files",
   "lang": "Rus"
+}
+```
+------------------------------------------------------------------------------
+###  - `get logs`
+ - **Description:** Returns a list of N last logs.
+ - **Parameters:**
+   - `count` - count of logs to get, 100 by default (optional parameter).
+ - **Returns:**
+```json
+{
+  "result": true/false,
+  "details": "... message ...",
+  "serializable_object": {
+    "logs": [
+      {
+        "level": "info" | "warn" | "error",
+        "type": "short_log_type_name",
+        "message": "... message ...",
+        "error": "... error message ..." | null,
+        "timestamp": "2017-08-02T12:15:00.000000",
+        "extra": {
+          "minion_ip": "if type == minion_error",
+          "minion_lang": "if type == minion_error", 
+          "command": "if type == command_completed or skipper_error",
+          "details": "if type == command_completed or skipper_error",
+          "lang": "if type == command_completed or skipper_error",
+          "ip": "if type == command_completed or skipper_error"
+        }
+      }
+    ]
+  }
+}
+```
+ - **Notes:**
+ - **Command example (json):**
+```json
+{
+  "command": "get logs",
+  "details": {
+    "count": 100
+  }
 }
 ```
 ------------------------------------------------------------------------------
