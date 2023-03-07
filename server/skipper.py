@@ -371,7 +371,7 @@ class Skipper:
         def log_command_completed(self, status: bool, extra: dict):
             m = "completed" if status else "failed"
             self._add_log(Log(
-                level=LogLevel.info,
+                level=LogLevel.info if status else LogLevel.warn,
                 type="command_completed",
                 message=f"Command '{extra['command']}' {m}",
                 extra=extra,
