@@ -368,11 +368,12 @@ class Skipper:
                 extra=extra,
             ))
 
-        def log_command_completed(self, extra: dict):
+        def log_command_completed(self, status: bool, extra: dict):
+            m = "completed" if status else "failed"
             self._add_log(Log(
                 level=LogLevel.info,
                 type="command_completed",
-                message=f"Command '{extra['command']}' completed",
+                message=f"Command '{extra['command']}' {m}",
                 extra=extra,
             ))
 
@@ -453,7 +454,7 @@ class Skipper:
             """
             # if the server is sleeping - only allow the following commands
             if self.skipper.registry.server_status == State.sleeping:
-                if command in ("pull config", "get info", "infrastructure unlock"):
+                if command in ("pull config", "get info", "infrastructure unlock", "get logs"):
                     return ExecutionStatus(True)
                 else:
                     return ExecutionStatus(False)
@@ -499,12 +500,14 @@ class Skipper:
             command, details, lang = command["command"], command["details"], command["lang"]
 
             result = self.exec(command, details=details, lang=lang, environ=environ)
-            self.skipper.logger.log_command_completed(extra={
-                "command": command,
-                "details": details,
-                "lang": lang,
-                "ip": environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
-            })
+            self.skipper.logger.log_command_completed(
+                status=result.status,
+                extra={
+                    "command": command,
+                    "details": details,
+                    "lang": lang,
+                    "ip": environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
+                })
             return result
 
         def exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
@@ -580,6 +583,15 @@ class Skipper:
                     "set transition settings",
                 ):
                     return self.set_info(command=command, details=details, lang=lang, environ=environ)
+                elif command == "get logs":
+                    count = None
+                    try:
+                        count = 100 if details is None or details["count"] is None else int(details["count"])
+                    except:
+                        return ExecutionStatus(False, message=f"details.count is not valid: '{count}'")
+                    return ExecutionStatus(True, serializable_object={
+                        "logs": self.skipper.logger.logs.get(count)
+                    })
                 elif command == "infrastructure lock":
                     # with self.registry_lock:
                     self.skipper.registry.infrastructure_lock = True
