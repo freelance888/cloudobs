@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 
 CMD_HCLOUD_LIST = "hcloud context list"
 CMD_HCLOUD_USE = "hcloud context use {name}"
-CMD_CREATE_VM = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh --create-vm {num_vms}"
-CMD_GET_IP = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh --getip"
-CMD_DELETE_VMS = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh -d"
+CMD_CREATE_VM = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " \
+                "./init.sh --cloud hetzner --create-vm {num_vms}"
+CMD_GET_IP = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh --cloud hetzner --getip"
+CMD_DELETE_VMS = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh --cloud hetzner -d"
 CMD_UPLOAD_FILES = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh --upload-files"
 CMD_PROVISION = "cd /home/user/cloudobs-infrastructure-main/shared/scripts && " "./init.sh --provision"
 CMD_UPLOAD_IP_LIST = "cp {ip_list} /home/user/cloudobs-infrastructure-main/shared/scripts/ip.list"
@@ -122,8 +123,8 @@ class CMDContext:
                 continue
 
         # ./init.sh --upload-files
-        cmd = CMD_UPLOAD_FILES
-        self.popen(cmd)
+        #cmd = CMD_UPLOAD_FILES
+        #self.popen(cmd)
         # ./init.sh --provision
         cmd = CMD_PROVISION
         self.popen(cmd)
