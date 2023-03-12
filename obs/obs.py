@@ -188,7 +188,7 @@ class OBS:
                 # self.set_source_mute(True)
                 # self.set_ts_mute(True)
                 duration = self.client.call(obs.requests.GetMediaDuration(sourceName=source_name)).getMediaDuration()
-                self.media_cb_thread.append_callback(media_end_foo, duration / 1000, cb_type=source_name)
+                self.media_cb_thread.append_callback(media_end_foo, (duration / 1000) + 1, cb_type=source_name)
 
                 on_start()
             except Exception as ex:
