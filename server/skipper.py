@@ -675,12 +675,14 @@ class Skipper:
                         try:
                             daytime = details["daytime"]
                             # ljust - 6 digits after the dot
-                            if '.' in daytime:
+                            if '.' in daytime:  # if milliseconds are specified
                                 _ = daytime.index(".")
+                                # make sure daytime - is a string with microseconds
                                 daytime = daytime[:_ + 1] + daytime[_ + 1:].ljust(6, "0")
                             else:
+                                # make sure daytime - is a string with microseconds
                                 daytime = daytime + ".000000"
-
+                            # parse daytime (microseconds are included)
                             dt = datetime.strptime(daytime, "%H:%M:%S.%f")
                             now = datetime.now()
                             daytime = datetime(
