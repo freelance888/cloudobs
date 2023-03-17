@@ -6,7 +6,7 @@ from threading import RLock
 from typing import List, Dict
 
 import socketio
-from flask import Flask
+from flask import Flask, request
 from socketio.exceptions import ConnectionError
 
 from deployment import Spawner, IPDict
@@ -377,7 +377,7 @@ class Skipper:
                 extra=extra,
             ))
 
-        def log_server_error(self, message: str, error: Exception, extra: dict):
+        def log_server_error(self, message: str, error: Exception, extra: dict = None):
             self._add_log(Log(
                 level=LogLevel.error,
                 type="skipper_error",
@@ -549,10 +549,10 @@ class Skipper:
                     langs = (
                         None  # None - means all langs
                         if (
-                            (not details)
-                            or ("langs" not in details)
-                            or (not isinstance(details["langs"], list))
-                            or (not all([isinstance(obj, str) for obj in details["langs"]]))
+                                (not details)
+                                or ("langs" not in details)
+                                or (not isinstance(details["langs"], list))
+                                or (not all([isinstance(obj, str) for obj in details["langs"]]))
                         )
                         else details["langs"]  # the code above validates details["langs"]
                     )
@@ -575,12 +575,12 @@ class Skipper:
                     return ExecutionStatus(True,
                                            serializable_object=orjson_dumps({"registry": self.skipper.registry.dict()}))
                 elif command in (
-                    "set stream settings",
-                    "set teamspeak offset",
-                    "set teamspeak volume",
-                    "set source volume",
-                    "set sidechain settings",
-                    "set transition settings",
+                        "set stream settings",
+                        "set teamspeak offset",
+                        "set teamspeak volume",
+                        "set source volume",
+                        "set sidechain settings",
+                        "set transition settings",
                 ):
                     return self.set_info(command=command, details=details, lang=lang, environ=environ)
                 elif command == "get logs":
@@ -673,7 +673,15 @@ class Skipper:
                             return ExecutionStatus(False, f"Invalid 'countdown'. Details: {ex}")
                     if details and "daytime" in details and details["daytime"]:
                         try:
-                            dt = datetime.strptime(details["daytime"], "%H:%M:%S")
+                            daytime = details["daytime"]
+                            # ljust - 6 digits after the dot
+                            if '.' in daytime:
+                                _ = daytime.index(".")
+                                daytime = daytime[:_ + 1] + daytime[_ + 1:].ljust(6, "0")
+                            else:
+                                daytime = daytime + ".000000"
+
+                            dt = datetime.strptime(daytime, "%H:%M:%S.%f")
                             now = datetime.now()
                             daytime = datetime(
                                 year=now.year,
@@ -768,10 +776,10 @@ class Skipper:
                 # details: {"ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...}
                 # all parameters are numeric
                 if (
-                    "ratio" not in details
-                    and "release_time" not in details
-                    and "threshold" not in details
-                    and "output_gain" not in details
+                        "ratio" not in details
+                        and "release_time" not in details
+                        and "threshold" not in details
+                        and "output_gain" not in details
                 ):
                     return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
                 try:
@@ -912,8 +920,25 @@ class Skipper:
         def __init__(self, skipper):
             self.skipper: Skipper = skipper
 
+            self.skipper.app.add_url_rule("/media/play", view_func=self._http_api_play_media, methods=["POST"])
+
         def setup_event_handlers(self):
             pass
+
+        def _http_api_play_media(self):
+            params = request.args.get("params", None)
+            params = json.loads(params)
+
+            name = params["name"]
+            search_by_num = True if "search_by_num" not in params else params["search_by_num"]
+            mode = "mode" if "mode" not in params else params["mode"]
+
+            status = self.skipper.command.exec(
+                command="",
+                details={"name": name, "search_by_num": search_by_num, "mode": mode}
+            )
+
+            return status.to_http_status()
 
     class BGWorker:
         def __init__(self, skipper):
@@ -966,7 +991,6 @@ class Skipper:
         self.minions: Dict[str, Skipper.Minion] = {}
         self.timing: Skipper.Timing = Skipper.Timing(self)
         self.command: Skipper.Command = Skipper.Command(self)
-        self.http_api: Skipper.HTTPApi = Skipper.HTTPApi(self)
         self.bg_worker: Skipper.BGWorker = Skipper.BGWorker(self)
 
         self.registry_lock = RLock()
@@ -976,6 +1000,8 @@ class Skipper:
         self.sio = socketio.Server(async_mode="threading", cors_allowed_origins="*")
         self.app = Flask(__name__)
         self.app.wsgi_app = socketio.WSGIApp(self.sio, self.app.wsgi_app)
+
+        self.http_api: Skipper.HTTPApi = Skipper.HTTPApi(self)
 
         self._sid_envs = {}
 
