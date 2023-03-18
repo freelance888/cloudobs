@@ -24,14 +24,14 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Download artifact
-    id: download-artifact
-    uses: dawidd6/action-download-artifact@v2
-    with:
-      workflow: workflow_name.yml
-      branch: master
-      name: ${{ github.event.repository.name }}-base-image
-      path: extract_here
-      if_no_artifact_found: fail
+      id: download-artifact
+      uses: dawidd6/action-download-artifact@v2
+      with:
+        workflow: workflow_name.yml
+        branch: master
+        name: base-docker-image
+        path: extract_here
+        if_no_artifact_found: fail
 
     - name: Build the Docker image
       run: |
