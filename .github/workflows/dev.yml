@@ -28,7 +28,6 @@ jobs:
       uses: dawidd6/action-download-artifact@v2
       with:
         workflow: base-image.yml
-        branch: master
         name: base-docker-image
         path: extract_here
         if_no_artifact_found: fail
