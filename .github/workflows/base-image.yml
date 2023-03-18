@@ -18,12 +18,12 @@ jobs:
     - name: Build the Docker image
       run: |
         docker build -t base-image -f ./base-image.dockerfile .
-        docker save base-image > ${{ github.event.repository.name }}-base-image.tar
+        docker save base-image > base-image.tar
 
     - name: Saving base docker image to artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: base-docker-image
+        name: base-image
         path: |
-          ${{ github.event.repository.name }}-base-image.tar
+          base-image.tar
         retention-days: 90
