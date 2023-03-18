@@ -2,6 +2,9 @@ name: Update Base docker image
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/base-image
 
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}
@@ -26,7 +29,6 @@ jobs:
         echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
         docker build -t base-image -f ./base-image.dockerfile .
         docker save base-image > ${{ github.event.repository.name }}-base-image.tar
-        rsync -a -v --progress --delete --quiet ${{ github.event.repository.name }}-base-image.tar ${HOST}:~/
 
     - name: Saving base docker image to artifacts
       uses: actions/upload-artifact@v3
