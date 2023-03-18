@@ -32,8 +32,16 @@ jobs:
         path: extract_here
         if_no_artifact_found: fail
 
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Build the Docker image
       run: |
+        docker login
         docker build -t ${{ github.event.repository.name }}-$ENVIRONMENT . --no-cache
         docker save ${{ github.event.repository.name }}-$ENVIRONMENT > ${{ github.event.repository.name }}.tar
         ls -1
