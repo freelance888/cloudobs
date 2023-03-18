@@ -27,7 +27,7 @@ jobs:
       id: download-artifact
       uses: dawidd6/action-download-artifact@v2
       with:
-        workflow: workflow_name.yml
+        workflow: base-image.yml
         branch: master
         name: base-docker-image
         path: extract_here
