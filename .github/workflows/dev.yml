@@ -23,10 +23,15 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Restoring base docker image from artifacts
-      uses: actions/download-artifact@v3
-      with:
-        name: base-docker-image
+    - name: Download artifact
+    id: download-artifact
+    uses: dawidd6/action-download-artifact@v2
+    with:
+      workflow: workflow_name.yml
+      branch: master
+      name: ${{ github.event.repository.name }}-base-image
+      path: extract_here
+      if_no_artifact_found: fail
 
     - name: Build the Docker image
       run: |
@@ -42,34 +47,34 @@ jobs:
           ${{ github.event.repository.name }}.tar
         retention-days: 2
 
-  # deploy:
-  #   if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
-  #   runs-on: ubuntu-latest
-  #   needs: build
-  #   steps:
+  deploy:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
 
-  #   - name: Restoring docker image from artifacts
-  #     uses: actions/download-artifact@v3
-  #     with:
-  #       name: docker-image
+    - name: Restoring docker image from artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-image
 
-  #   - name: Uploading artifact to the server
-  #     run: |
-  #       which rsync || ( apt-get update -y && apt-get install rsync -y )
-  #       which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
-  #       eval $(ssh-agent -s)
-  #       echo "${PRIVATE_SSH_KEY}" | tr -d '\r' | ssh-add - > /dev/null
-  #       mkdir -p ~/.ssh
-  #       chmod 700 ~/.ssh
-  #       echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-  #       echo "FAILING ${{ github.event.repository.name }}-${ENVIRONMENT}:*"
-  #       ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}:*" -q) || true
-  #       echo "${ENV_FILE}" > .env
-  #       echo "${SA_FILE}" > sa.json
-  #       git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
-  #       cp cloudobs-infrastructure/shared/files/docker-compose.yml .
-  #       printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
-  #       ls -1a
-  #       rsync -a -v --progress --delete --quiet .env sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
-  #       ssh ${HOST} "docker load --input ~/${ENVIRONMENT}/${{ github.event.repository.name }}.tar && mkdir -p ~/${ENVIRONMENT}"
-  #       ssh ${HOST} "cd ~/${ENVIRONMENT} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps"
+    - name: Uploading artifact to the server
+      run: |
+        which rsync || ( apt-get update -y && apt-get install rsync -y )
+        which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
+        eval $(ssh-agent -s)
+        echo "${PRIVATE_SSH_KEY}" | tr -d '\r' | ssh-add - > /dev/null
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+        echo "FAILING ${{ github.event.repository.name }}-${ENVIRONMENT}:*"
+        ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}:*" -q) || true
+        echo "${ENV_FILE}" > .env
+        echo "${SA_FILE}" > sa.json
+        git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
+        cp cloudobs-infrastructure/shared/files/docker-compose.yml .
+        printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
+        ls -1a
+        rsync -a -v --progress --delete --quiet .env sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
+        ssh ${HOST} "docker load --input ~/${ENVIRONMENT}/${{ github.event.repository.name }}.tar && mkdir -p ~/${ENVIRONMENT}"
+        ssh ${HOST} "cd ~/${ENVIRONMENT} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps"
