@@ -1,0 +1,22 @@
+name: Update Base docker image
+
+on:
+  workflow_dispatch:
+
+env:
+    HOST: app@${{ secrets.DEV_HOST_IP }}
+    PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
+
+jobs:
+
+  build:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build the Docker image
+      run: |
+        docker build -t base-image -f ./base-image.dockerfile .
+        docker save base-image > base-image.tar
+        rsync -a -v --progress --delete --quiet base-image.tar ${HOST}:~/
