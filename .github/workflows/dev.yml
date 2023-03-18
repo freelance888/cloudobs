@@ -41,6 +41,7 @@ jobs:
 
     - name: Build the Docker image
       run: |
+        docker load --input ${{ github.event.repository.name }}-base-image.tar
         docker images
         docker build -t ${{ github.event.repository.name }}-$ENVIRONMENT . --no-cache
         docker save ${{ github.event.repository.name }}-$ENVIRONMENT > ${{ github.event.repository.name }}.tar
