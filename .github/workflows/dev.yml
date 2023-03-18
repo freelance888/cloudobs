@@ -1,10 +1,10 @@
 name: DEV | Build and Deploy
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - dev
-      - feature/base-image
 
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}

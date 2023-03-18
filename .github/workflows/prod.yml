@@ -1,8 +1,10 @@
 name: PROD | Build and Deploy
 
 on:
+  workflow_dispatch:
   push:
-    branches: ["main"]
+    branches:
+      - main
 
 env:
     HOST: app@${{ secrets.PROD_HOST_IP }}
