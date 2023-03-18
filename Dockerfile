@@ -1,4 +1,4 @@
-FROM cloudobs-base-image
+FROM base-image
 # USER obs
 
 WORKDIR /app
