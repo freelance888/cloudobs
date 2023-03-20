@@ -50,6 +50,7 @@ jobs:
       uses: actions/checkout@master
       with:
         repository: ALLATRA-IT/cloudobs-infrastructure
+        token: ${{ secrets.GH_PERSONAL_TOKEN }}
 
     - name: Uploading artifact to the server
       run: |
