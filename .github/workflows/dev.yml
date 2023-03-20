@@ -43,7 +43,7 @@ jobs:
       run: |
         docker load --input base-image.tar
         docker images
-        docker build -t ${{ github.event.repository.name }}-$ENVIRONMENT . --no-cache
+        docker build -t ${{ github.event.repository.name }}-${ENVIRONMENT} . --no-cache
         docker save ${{ github.event.repository.name }}-$ENVIRONMENT > ${{ github.event.repository.name }}.tar
 
     - name: Uploading artifact to the server
@@ -55,8 +55,8 @@ jobs:
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
         echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-        echo "FAILING ${{ github.event.repository.name }}-${ENVIRONMENT}:*"
-        ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}:*" -q) || true
+        docker images | grep cloudobs
+        ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}" -q) || true
         echo "${ENV_FILE}" > .env
         echo "${SA_FILE}" > sa.json
         git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
