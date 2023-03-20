@@ -175,11 +175,11 @@ class OBSController:
 
             def on_start():
                 self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=True)
-                self.obs_instance.set_mute(source_name=OBS.MAIN_MEDIA_NAME, mute=True)
+                self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=True)
 
             def on_finish():
                 self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=False)
-                self.obs_instance.set_mute(source_name=OBS.MAIN_MEDIA_NAME, mute=False)
+                self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=False)
 
             self.obs_instance.run_media(
                 path, mode=mode, source_name=source_name, on_start=on_start, on_error=on_finish, on_finish=on_finish
