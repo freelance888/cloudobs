@@ -57,20 +57,19 @@ jobs:
     - name: Uploading artifact to the server
       run: |
         ls -1
+        cp cloudobs-infrastructure/shared/files/docker-compose.yml .
+        docker images | grep cloudobs
+        echo "${ENV_FILE}" > .env
+        echo "${SA_FILE}" > sa.json
+        printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
         which rsync || ( apt-get update -y && apt-get install rsync -y )
         which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
+        echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
         eval $(ssh-agent -s)
         echo "${PRIVATE_SSH_KEY}" | tr -d '\r' | ssh-add - > /dev/null
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
-        echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-        docker images | grep cloudobs
-        ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}" -q) || true
-        echo "${ENV_FILE}" > .env
-        echo "${SA_FILE}" > sa.json
-        cp cloudobs-infrastructure/shared/files/docker-compose.yml .
-        printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
-        ls -1a
         rsync -a -v --progress --delete --quiet .env sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
+        ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}" -q) || true
         ssh ${HOST} "docker load --input ~/${ENVIRONMENT}/${{ github.event.repository.name }}.tar && mkdir -p ~/${ENVIRONMENT}"
         ssh ${HOST} "cd ~/${ENVIRONMENT} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps"
