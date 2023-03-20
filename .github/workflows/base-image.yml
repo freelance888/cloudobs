@@ -1,0 +1,28 @@
+name: Update Base docker image
+
+on:
+  workflow_dispatch:
+
+env:
+    HOST: app@${{ secrets.DEV_HOST_IP }}
+    PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build the Docker image
+      run: |
+        docker build -t base-image -f ./base-image.dockerfile .
+        docker save base-image > base-image.tar
+
+    - name: Saving base docker image to artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: base-image
+        path: |
+          base-image.tar
+        retention-days: 90
