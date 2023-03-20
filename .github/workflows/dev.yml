@@ -46,6 +46,11 @@ jobs:
         docker build -t ${{ github.event.repository.name }}-${ENVIRONMENT} . --no-cache
         docker save ${{ github.event.repository.name }}-$ENVIRONMENT > ${{ github.event.repository.name }}.tar
 
+    - name: Check out my other private repo
+      uses: actions/checkout@master
+      with:
+        repository: ALLATRA-IT/cloudobs-infrastructure
+
     - name: Uploading artifact to the server
       run: |
         which rsync || ( apt-get update -y && apt-get install rsync -y )
@@ -59,7 +64,6 @@ jobs:
         ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}" -q) || true
         echo "${ENV_FILE}" > .env
         echo "${SA_FILE}" > sa.json
-        git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
         cp cloudobs-infrastructure/shared/files/docker-compose.yml .
         printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
         ls -1a
