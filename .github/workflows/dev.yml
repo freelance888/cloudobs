@@ -60,6 +60,7 @@ jobs:
     - name: Checking repo after infra checkout
       run: |
         ls -1
+        dir --recursive
         pwd
 
     - uses: actions/checkout@v3
