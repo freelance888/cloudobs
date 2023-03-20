@@ -57,8 +57,8 @@ jobs:
     - name: Uploading artifact to the server
       run: |
         ls -1
-        # cp cloudobs-infrastructure/shared/files/docker-compose.yml .
-        docker images | grep cloudobs
+        cp cloudobs-infrastructure/shared/files/docker-compose.yml .
+        # docker images | grep cloudobs
         echo "${ENV_FILE}" > .env
         echo "${SA_FILE}" > sa.json
         printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
