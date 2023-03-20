@@ -39,12 +39,12 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Build the Docker image
-      run: |
-        docker load --input base-image.tar
-        docker images
-        docker build -t ${{ github.event.repository.name }}-${ENVIRONMENT} . --no-cache
-        docker save ${{ github.event.repository.name }}-$ENVIRONMENT > ${{ github.event.repository.name }}.tar
+    # - name: Build the Docker image
+    #   run: |
+    #     docker load --input base-image.tar
+    #     docker images
+    #     docker build -t ${{ github.event.repository.name }}-${ENVIRONMENT} . --no-cache
+    #     docker save ${{ github.event.repository.name }}-$ENVIRONMENT > ${{ github.event.repository.name }}.tar
 
     - name: Check out my other private repo
       uses: actions/checkout@master
