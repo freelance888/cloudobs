@@ -56,20 +56,34 @@ jobs:
 
     - name: Uploading artifact to the server
       run: |
+        echo "STEP [01]"
         ls -1
+        echo "STEP [02]"
         cp cloudobs-infrastructure/shared/files/docker-compose.yml .
+        echo "STEP [03]"
         docker images | grep cloudobs
+        echo "STEP [04]"
         which rsync || ( apt-get update -y && apt-get install rsync -y )
+        echo "STEP [05]"
         which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
+        echo "STEP [06]"
         eval $(ssh-agent -s)
+        echo "STEP [07]"
         echo "${PRIVATE_SSH_KEY}" | tr -d '\r' | ssh-add - > /dev/null
+        echo "STEP [08]"
         mkdir -p ~/.ssh
+        echo "STEP [09]"
         chmod 700 ~/.ssh
+        echo "STEP [10]"
         echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+        echo "STEP [11]"
         echo "${ENV_FILE}" > .env
+        echo "STEP [12]"
         echo "${SA_FILE}" > sa.json
+        echo "STEP [13]"
         printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
         rsync -a -v --progress --delete --quiet .env sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
+        echo "STEP [01]"
         ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}" -q) || true
         ssh ${HOST} "docker load --input ~/${ENVIRONMENT}/${{ github.event.repository.name }}.tar && mkdir -p ~/${ENVIRONMENT}"
         ssh ${HOST} "cd ~/${ENVIRONMENT} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps"
