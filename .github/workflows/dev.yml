@@ -68,7 +68,6 @@ jobs:
         ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}" -q) || true
         echo "${ENV_FILE}" > .env
         echo "${SA_FILE}" > sa.json
-        git clone https://${{ secrets.GH_PERSONAL_TOKEN }}@github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
         cp cloudobs-infrastructure/shared/files/docker-compose.yml .
         printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
         ls -1a
