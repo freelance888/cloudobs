@@ -104,16 +104,21 @@ class TimingGoogleSheets:
     @classmethod
     def to_timedelta(cls, timestamp_str):
         """
-        :param timestamp_str: string representation of time. Format of 00:00:00
+        :param timestamp_str: string representation of time. Format of 00:00:00[.000]
         :return:
         """
-        if not re.fullmatch(r"\d{1,2}\:\d{2}\:\d{2}", timestamp_str):
+        if re.fullmatch("\d{1,2}\:\d{2}\:\d{2}\.\d{1,6}", timestamp_str):  # format of 00:00:00.000000
+            r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})\.(?P<microsecond>)\d{1,6}",
+                          timestamp_str)
+            hour, minute, second = int(r.group("hour")), int(r.group("minute")), int(r.group("second"))
+            microseconds = int(r.group("microsecond").ljust(6, "0"))
+            return timedelta(hours=hour, minutes=minute, seconds=second, microseconds=microseconds)
+        elif re.fullmatch("\d{1,2}\:\d{2}\:\d{2}", timestamp_str):  # format of 00:00:00
+            r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})", timestamp_str)
+            hour, minute, second = int(r.group("hour")), int(r.group("minute")), int(r.group("second"))
+            return timedelta(hours=hour, minutes=minute, seconds=second)
+        else:
             raise f"Timestamp has invalid format: {timestamp_str}"
-        r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})", timestamp_str)
-        hour, minute, second = r.group("hour"), r.group("minute"), r.group("second")
-        hour, minute, second = int(hour), int(minute), int(second)
-
-        return timedelta(hours=hour, minutes=minute, seconds=second)
 
     def set_sheet(self, sheet_url, worksheet_name):
         self.sheet = self.gc.open_by_url(sheet_url)
