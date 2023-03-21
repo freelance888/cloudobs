@@ -6,6 +6,7 @@ on:
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
+    CURRENT_BRANCH: ${{ github.ref }}
 
 jobs:
 
@@ -24,5 +25,5 @@ jobs:
       with:
         name: base-image
         path: |
-          base-image-$(git branch --show-current).tar
+          base-image-${{ env.CURRENT_BRANCH }}.tar
         retention-days: 90
