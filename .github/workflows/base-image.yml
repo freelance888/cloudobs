@@ -2,11 +2,13 @@ name: Update Base docker image
 
 on:
   workflow_dispatch:
+  branches:
+    - dev
 
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
-    CURRENT_BRANCH: ${{ github.ref.replace('refs/heads/', '') }}
+    CURRENT_BRANCH: ${{ github.ref.split('/').last }}
 
 jobs:
 
