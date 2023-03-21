@@ -2,13 +2,10 @@ name: Update Base docker image
 
 on:
   workflow_dispatch:
-  branches:
-    - dev
 
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
-    CURRENT_BRANCH: ${{github.base_ref}}
 
 jobs:
 
@@ -20,7 +17,7 @@ jobs:
     - name: Build the Docker image
       run: |
         docker build -t base-image -f ./base-image.dockerfile .
-        docker save base-image > base-image-${{ env.CURRENT_BRANCH }}.tar
+        docker save base-image > base-image-${{ github.head_ref }}.tar
         ls -1
 
     - name: Saving base docker image to artifacts
@@ -28,5 +25,5 @@ jobs:
       with:
         name: base-image
         path: |
-          base-image-${{ env.CURRENT_BRANCH }}.tar
+          base-image-${{ github.head_ref }}.tar
         retention-days: 90
