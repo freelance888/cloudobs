@@ -8,7 +8,7 @@ on:
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
-    CURRENT_BRANCH: ${{ github.ref.split('/').last }}
+    CURRENT_BRANCH: ${{github.base_ref}}
 
 jobs:
 
