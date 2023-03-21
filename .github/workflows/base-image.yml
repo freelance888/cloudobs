@@ -2,6 +2,7 @@ name: Update Base docker image
 
 on:
   workflow_dispatch:
+  branches: dev
 
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}
@@ -11,6 +12,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    environment: ${{ vars.GITHUB_BASE_REF }}
     steps:
     - uses: actions/checkout@v3
 
