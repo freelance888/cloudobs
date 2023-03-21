@@ -18,7 +18,8 @@ jobs:
     - name: Build the Docker image
       run: |
         docker build -t base-image -f ./base-image.dockerfile .
-        docker save base-image > base-image-$(git branch --show-current).tar
+        docker save base-image > base-image-${{ env.CURRENT_BRANCH }}.tar
+        ls -1
 
     - name: Saving base docker image to artifacts
       uses: actions/upload-artifact@v3
