@@ -2,8 +2,6 @@ name: Update Base docker image
 
 on:
   workflow_dispatch:
-  push:
-    branches: dev
 
 env:
     HOST: app@${{ secrets.DEV_HOST_IP }}
