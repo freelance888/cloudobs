@@ -20,7 +20,7 @@ jobs:
     - name: Build the Docker image
       run: |
         docker build -t base-image -f ./base-image.dockerfile .
-        docker save base-image > base-image-${{ vars.GITHUB_BASE_REF	 }}.tar
+        docker save base-image > base-image.tar
         ls -1
 
     - name: Saving base docker image to artifacts
@@ -28,5 +28,5 @@ jobs:
       with:
         name: base-image
         path: |
-          base-image-${{ vars.GITHUB_BASE_REF }}.tar
+          base-image.tar
         retention-days: 1
