@@ -17,12 +17,12 @@ jobs:
     - name: Build the Docker image
       run: |
         docker build -t base-image -f ./base-image.dockerfile .
-        docker save base-image > base-image-${GITHUB_REF#refs/heads/}).tar
+        docker save base-image > base-image-$(git branch --show-current).tar
 
     - name: Saving base docker image to artifacts
       uses: actions/upload-artifact@v3
       with:
         name: base-image
         path: |
-          base-image-${GITHUB_REF#refs/heads/}).tar
+          base-image-$(git branch --show-current).tar
         retention-days: 90
