@@ -17,34 +17,11 @@ env:
 
 jobs:
 
-  build:
+  deploy:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-
-    - name: Download artifact
-      id: download-artifact
-      uses: dawidd6/action-download-artifact@v2
-      with:
-        workflow: base-image.yml
-        branch: dev
-        name: base-image
-        if_no_artifact_found: fail
-
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v2
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Build the Docker image
-      run: |
-        docker load --input base-image.tar
-        docker images
-        docker build -t ${{ github.event.repository.name }}-${ENVIRONMENT} . --no-cache
-        docker save ${{ github.event.repository.name }}-$ENVIRONMENT > ${{ github.event.repository.name }}.tar
 
     - name: Cloning Infrastructure Repository
       uses: actions/checkout@master
@@ -54,21 +31,33 @@ jobs:
         path: 'cloudobs-infrastructure'
         fetch-depth: '1'
 
+    - name: Set up SSH key
+      uses: webfactory/ssh-agent@v0.5.0
+      with:
+        ssh-private-key: ${{ secrets.PRIVATE_SSH_KEY }}
+
     - name: Uploading artifact to the server
       run: |
-        ls -1
-        cp cloudobs-infrastructure/shared/files/docker-compose.yml .
-        which rsync || ( apt-get update -y && apt-get install rsync -y )
-        which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )
-        eval $(ssh-agent -s)
-        echo "${PRIVATE_SSH_KEY}" | tr -d '\r' | ssh-add - > /dev/null
-        mkdir -p ~/.ssh
-        chmod 700 ~/.ssh
-        echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-        echo "${ENV_FILE}" > .env
-        echo "${SA_FILE}" > sa.json
-        printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
         rsync -a -v --progress --delete --quiet .env sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
-        ssh ${HOST} docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}" -q) || true
-        ssh ${HOST} "docker load --input ~/${ENVIRONMENT}/${{ github.event.repository.name }}.tar && mkdir -p ~/${ENVIRONMENT}"
-        ssh ${HOST} "cd ~/${ENVIRONMENT} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps"
+
+    - name: SSH into remote server
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ env.DEV_HOST_IP }}
+        username: app
+        port: 22
+        script: |
+          git clone git@github.com:ALLATRA-IT/cloudobs.git --depth 1
+          # git clone ${{ secrets.GH_PERSONAL_TOKEN }}@github.com:ALLATRA-IT/cloudobs-infrastructure.git --depth 1
+          cd cloudobs
+          git checkout ${{ env.ENVIRONMENT }}
+          docker build -t base-image -f ./base-image.dockerfile .
+          docker build -t ${{ github.event.repository.name }}-${ENVIRONMENT} . --no-cache
+          docker images
+          cd ../dev
+          echo "${ENV_FILE}" > .env
+          echo "${SA_FILE}" > sa.json
+          printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
+          docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}" -q) || true
+          docker load --input ~/${ENVIRONMENT}/${{ github.event.repository.name }}.tar && mkdir -p ~/${ENVIRONMENT}
+          cd ~/${ENVIRONMENT} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps
