@@ -39,7 +39,7 @@ jobs:
     - name: Retrieve SSH host key
       run: |
         ssh-keyscan ${{ secrets.DEV_HOST_IP }} >> ~/.ssh/known_hosts
-        rsync -a -v --progress --delete --quiet  base-image.tar ${HOST}:~
+        rsync -a -v --progress --delete --quiet  base-image.tar app@${{ secrets.DEV_HOST_IP }}:~
 
     - name: Execute commands on server
       uses: appleboy/ssh-action@master
