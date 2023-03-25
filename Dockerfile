@@ -5,15 +5,15 @@ FROM base-image
 WORKDIR /app
 ADD . .
 
-# RUN apk add git curl gcc build-base libffi-dev openssh
-# RUN pip3 install -r requirements.txt
-# RUN git clone https://github.com/amukhsimov/gdown.git && cd gdown && pip3 install .
+RUN apk add git curl gcc build-base libffi-dev openssh
+RUN pip3 install -r requirements.txt
+RUN git clone https://github.com/amukhsimov/gdown.git && cd gdown && pip3 install .
 ENV TZ="Europe/Kiev"
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-# RUN pip3 install pip --upgrade
-# RUN pip3 install pyopenssl --upgrade
+RUN pip3 install pip --upgrade
+RUN pip3 install pyopenssl --upgrade
 
-#RUN apk add git curl gcc build-base libffi-dev openssh
+RUN apk add git curl gcc build-base libffi-dev openssh
 EXPOSE 5000
 
 HEALTHCHECK --interval=20s --timeout=30s --start-period=10s --retries=3 CMD curl -f http://localhost:5000/healthcheck
