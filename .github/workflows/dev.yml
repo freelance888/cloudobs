@@ -41,7 +41,7 @@ jobs:
         username: app
         port: 22
         script: |
-          echo "ENVVRRMMNNTT = ${ENVIRONMENT}"
+          echo "ENVVRRMMNNTT = ${{ env.ENVIRONMENT }}"
           git clone git@github.com:ALLATRA-IT/cloudobs.git --depth 1
           git clone ${{ secrets.GH_PERSONAL_TOKEN }}@github.com:ALLATRA-IT/cloudobs-infrastructure.git --depth 1
           echo "${ENV_FILE}" > .env
