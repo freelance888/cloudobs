@@ -23,14 +23,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Cloning Infrastructure Repository
-      uses: actions/checkout@master
-      with:
-        repository: ALLATRA-IT/cloudobs-infrastructure
-        token: ${{ secrets.GH_PERSONAL_TOKEN }}
-        path: 'cloudobs-infrastructure'
-        fetch-depth: '1'
-
     - name: Set up SSH key
       uses: webfactory/ssh-agent@v0.5.0
       with:
@@ -41,12 +33,6 @@ jobs:
         ssh-keyscan ${{ secrets.DEV_HOST_IP }} >> ~/.ssh/known_hosts
         ssh-add -L
 
-    - name: Uploading artifact to the server
-      run: |
-        ssh-agent
-        ssh-add -L
-        rsync -a -v --progress --delete --quiet .env sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
-
     - name: SSH into remote server
       uses: appleboy/ssh-action@master
       with:
@@ -54,17 +40,20 @@ jobs:
         username: app
         port: 22
         script: |
+          echo "ENVVRRMMNNTT = ${ENVIRONMENT}"
           git clone git@github.com:ALLATRA-IT/cloudobs.git --depth 1
-          # git clone ${{ secrets.GH_PERSONAL_TOKEN }}@github.com:ALLATRA-IT/cloudobs-infrastructure.git --depth 1
+          git clone ${{ secrets.GH_PERSONAL_TOKEN }}@github.com:ALLATRA-IT/cloudobs-infrastructure.git --depth 1
+          echo "${ENV_FILE}" > .env
+          echo "${SA_FILE}" > sa.json
+          printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
+          cp .env sa.json .compose.env ~/dev/
+          cp cloudobs-infrastructure/docker-compose.yml ~/dev/
           cd cloudobs
           git checkout ${{ env.ENVIRONMENT }}
           docker build -t base-image -f ./base-image.dockerfile .
           docker build -t ${{ github.event.repository.name }}-${ENVIRONMENT} . --no-cache
           docker images
-          cd ../dev
-          echo "${ENV_FILE}" > .env
-          echo "${SA_FILE}" > sa.json
-          printf "ENVIRONMENT=${ENVIRONMENT}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
+          cd ~/${ENVIRONMENT}
           docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${ENVIRONMENT}" -q) || true
           docker load --input ~/${ENVIRONMENT}/${{ github.event.repository.name }}.tar && mkdir -p ~/${ENVIRONMENT}
           cd ~/${ENVIRONMENT} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps
