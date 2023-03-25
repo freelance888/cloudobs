@@ -43,8 +43,8 @@ jobs:
           echo "ENVVRRMMNNTT = ${{ env.ENVIRONMENT }}"
           echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
           rm -rf cloudobs-infrastructure cloudobs
-          git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
-          git clone https://github.com/ALLATRA-IT/cloudobs.git --depth 1
+          git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git
+          git clone https://github.com/ALLATRA-IT/cloudobs.git
           ls -1
           exit
           echo "${ENV_FILE}" > .env
