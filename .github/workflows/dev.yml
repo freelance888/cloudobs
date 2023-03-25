@@ -44,7 +44,6 @@ jobs:
           rm -rf cloudobs-infrastructure cloudobs
           git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
           git clone https://github.com/ALLATRA-IT/cloudobs.git --depth 1
-          ls -1
           echo "${{ env.ENV_FILE }}" > .env
           echo "${{ env.SA_FILE }}" > sa.json
           printf "ENVIRONMENT=${{ env.ENVIRONMENT }}\nBACKEND_PORT=${{ env.BACKEND_PORT }}\nFRONTEND_PORT=${{ env.FRONTEND_PORT }}" > .compose.env
@@ -55,7 +54,6 @@ jobs:
           docker build -t ${{ github.event.repository.name }}-${{ env.ENVIRONMENT }} . --no-cache
           docker images
           cd ~/${{ env.ENVIRONMENT }}
-          exit
           docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${{ env.ENVIRONMENT }}" -q) || true
           docker load --input ~/${{ env.ENVIRONMENT }}/${{ github.event.repository.name }}.tar && mkdir -p ~/${{ env.ENVIRONMENT }}
           cd ~/${{ env.ENVIRONMENT }} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps
