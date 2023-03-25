@@ -40,8 +40,8 @@ jobs:
         username: app
         port: 22
         script: |
-          if [ -d "cloudobs-infrastructure" ]; then cd "cloudobs-infrastructure"; git pull; else git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1; fi
-          if [ -d "cloudobs" ]; then cd "cloudobs"; git pull; else git clone git clone https://github.com/ALLATRA-IT/cloudobs.git --depth 1
+          if [ -d \"cloudobs-infrastructure\" ]; then cd \"cloudobs-infrastructure\"; git pull; else git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1; fi
+          if [ -d \"cloudobs\" ]; then cd \"cloudobs\"; git pull; else git clone git clone https://github.com/ALLATRA-IT/cloudobs.git --depth 1
           ls -1
           exit
           echo "${ENV_FILE}" > .env
