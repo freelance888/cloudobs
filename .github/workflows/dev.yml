@@ -40,14 +40,13 @@ jobs:
         username: app
         port: 22
         script: |
-          echo "ENVVRRMMNNTT = ${{ env.ENVIRONMENT }}"
-          echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-          git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
-          git clone https://github.com/ALLATRA-IT/cloudobs.git --depth 1
+          if [ -d "cloudobs-infrastructure" ]; then cd "cloudobs-infrastructure"; git pull; else git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1; fi
+          if [ -d "cloudobs" ]; then cd "cloudobs"; git pull; else git clone git clone https://github.com/ALLATRA-IT/cloudobs.git --depth 1
           ls -1
+          exit
           echo "${ENV_FILE}" > .env
           echo "${SA_FILE}" > sa.json
-          printf "ENVIRONMENT=${{ env.ENVIRONMENT }}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
+          printf "ENVIRONMENT=${{ env.ENVIRONMENT }}\nBACKEND_PORT=${{ env.BACKEND_PORT }}\nFRONTEND_PORT=${{ env.FRONTEND_PORT }}" > .compose.env
           cp .env sa.json .compose.env ~/dev/
           cp cloudobs-infrastructure/docker-compose.yml ~/dev/
           cd cloudobs
@@ -56,7 +55,6 @@ jobs:
           docker build -t ${{ github.event.repository.name }}-${{ env.ENVIRONMENT }} . --no-cache
           docker images
           cd ~/${{ env.ENVIRONMENT }}
-          exit
           docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${{ env.ENVIRONMENT }}" -q) || true
           docker load --input ~/${{ env.ENVIRONMENT }}/${{ github.event.repository.name }}.tar && mkdir -p ~/${{ env.ENVIRONMENT }}
           cd ~/${{ env.ENVIRONMENT }} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps
