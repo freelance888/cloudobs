@@ -27,19 +27,19 @@ jobs:
       with:
         ssh-private-key: ${{ secrets.PRIVATE_SSH_KEY }}
 
-    - name: Download artifact
-      id: download-artifact
-      uses: dawidd6/action-download-artifact@v2
-      with:
-        workflow: base-image.yml
-        branch: dev
-        name: base-image
-        if_no_artifact_found: fail
+    # - name: Download artifact
+    #   id: download-artifact
+    #   uses: dawidd6/action-download-artifact@v2
+    #   with:
+    #     workflow: base-image.yml
+    #     branch: dev
+    #     name: base-image
+    #     if_no_artifact_found: fail
 
     - name: Retrieve SSH host key
       run: |
         ssh-keyscan ${{ secrets.DEV_HOST_IP }} >> ~/.ssh/known_hosts
-        rsync -a -v --progress --delete --quiet  base-image.tar app@${{ secrets.DEV_HOST_IP }}:~
+        # rsync -a -v --progress --delete --quiet  base-image.tar app@${{ secrets.DEV_HOST_IP }}:~
 
     - name: Execute commands on server
       uses: appleboy/ssh-action@master
@@ -67,4 +67,4 @@ jobs:
           docker load --input base-image.tar
           docker images
           docker load --input ~/${{ env.ENVIRONMENT }}/${{ github.event.repository.name }}.tar && mkdir -p ~/${{ env.ENVIRONMENT }}
-          cd ~/${{ env.ENVIRONMENT }} && docker compose down && docker compose --env-file .compose.env up backend -d && sleep 10 && docker compose ps backend
+          cd ~/${{ env.ENVIRONMENT }} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps backend
