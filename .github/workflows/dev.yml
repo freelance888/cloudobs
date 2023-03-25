@@ -29,7 +29,7 @@ jobs:
 
     - name: Retrieve SSH host key
       run: |
-        ssh-keyscan ${{ env.DEV_HOST_IP }} >> ~/.ssh/known_hosts
+        ssh-keyscan -vvv ${{ env.DEV_HOST_IP }} >> ~/.ssh/known_hosts
         ssh-add -L
 
     - name: SSH into remote server
