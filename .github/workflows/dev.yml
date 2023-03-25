@@ -29,14 +29,13 @@ jobs:
 
     - name: Retrieve SSH host key
       run: |
-        echo "HOSTIP=${{ env.DEV_HOST_IP }}"
-        ssh-keyscan -vvv ${{ env.DEV_HOST_IP }} >> ~/.ssh/known_hosts
+        ssh-keyscan ${{ secrets.DEV_HOST_IP }} >> ~/.ssh/known_hosts
         ssh-add -L
 
     - name: SSH into remote server
       uses: appleboy/ssh-action@master
       with:
-        host: ${{ env.DEV_HOST_IP }}
+        host: ${{ secrets.DEV_HOST_IP }}
         key: ${{ secrets.PRIVATE_SSH_KEY }}
         username: app
         port: 22
