@@ -41,19 +41,17 @@ jobs:
         port: 22
         script: |
           echo "ENVVRRMMNNTT = ${{ env.ENVIRONMENT }}"
-          echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
           rm -rf cloudobs-infrastructure cloudobs
           git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
           git clone https://github.com/ALLATRA-IT/cloudobs.git --depth 1
           ls -1
-          echo "${ENV_FILE}" > .env
-          echo "${SA_FILE}" > sa.json
-          printf "ENVIRONMENT=${{ env.ENVIRONMENT }}\nBACKEND_PORT=${BACKEND_PORT}\nFRONTEND_PORT=${FRONTEND_PORT}" > .compose.env
+          echo "${{ env.ENV_FILE }}" > .env
+          echo "${{ env.SA_FILE }}" > sa.json
+          printf "ENVIRONMENT=${{ env.ENVIRONMENT }}\nBACKEND_PORT=${{ env.BACKEND_PORT }}\nFRONTEND_PORT=${{ env.FRONTEND_PORT }}" > .compose.env
           cp .env sa.json .compose.env ~/dev/
           cp cloudobs-infrastructure/docker-compose.yml ~/dev/
           cd cloudobs
           git checkout ${{ env.ENVIRONMENT }}
-          docker build -t base-image -f ./base-image.dockerfile .
           docker build -t ${{ github.event.repository.name }}-${{ env.ENVIRONMENT }} . --no-cache
           docker images
           cd ~/${{ env.ENVIRONMENT }}
