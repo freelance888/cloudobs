@@ -7,7 +7,6 @@ on:
       - dev
 
 env:
-    HOST: app@${{ env.DEV_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
     ENV_FILE: ${{ secrets.DEV_ENV_FILE }}
     SA_FILE: ${{ secrets.SA_FILE }}
