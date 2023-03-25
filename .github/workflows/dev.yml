@@ -38,6 +38,8 @@ jobs:
 
     - name: Uploading artifact to the server
       run: |
+        ssh-agent
+        ssh-add -L
         rsync -a -v --progress --delete --quiet .env sa.json .compose.env docker-compose.yml ${{ github.event.repository.name }}.tar ${HOST}:~/${ENVIRONMENT}/
 
     - name: SSH into remote server
