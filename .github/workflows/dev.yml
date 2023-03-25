@@ -37,6 +37,7 @@ jobs:
       uses: appleboy/ssh-action@master
       with:
         host: ${{ env.DEV_HOST_IP }}
+        key: ${{ secrets.PRIVATE_SSH_KEY }}
         username: app
         port: 22
         script: |
