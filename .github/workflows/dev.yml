@@ -29,6 +29,7 @@ jobs:
 
     - name: Retrieve SSH host key
       run: |
+        echo "HOSTIP=${{ env.DEV_HOST_IP }}"
         ssh-keyscan -vvv ${{ env.DEV_HOST_IP }} >> ~/.ssh/known_hosts
         ssh-add -L
 
