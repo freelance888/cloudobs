@@ -30,7 +30,6 @@ jobs:
     - name: Retrieve SSH host key
       run: |
         ssh-keyscan ${{ secrets.DEV_HOST_IP }} >> ~/.ssh/known_hosts
-        ssh-add -L
 
     - name: Execute commands on server
       uses: appleboy/ssh-action@master
