@@ -42,8 +42,8 @@ jobs:
         script: |
           echo "ENVVRRMMNNTT = ${{ env.ENVIRONMENT }}"
           echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
-          git clone git@github.com:ALLATRA-IT/cloudobs.git --depth 1
-          git clone git@github.com:ALLATRA-IT/cloudobs-infrastructure.git --depth 1
+          git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git --depth 1
+          git clone https://github.com/ALLATRA-IT/cloudobs.git --depth 1
           ls -1
           echo "${ENV_FILE}" > .env
           echo "${SA_FILE}" > sa.json
