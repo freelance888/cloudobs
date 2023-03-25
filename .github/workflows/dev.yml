@@ -7,7 +7,7 @@ on:
       - dev
 
 env:
-    HOST: app@${{ secrets.DEV_HOST_IP }}
+    HOST: app@${{ env.DEV_HOST_IP }}
     PRIVATE_SSH_KEY: ${{ secrets.PRIVATE_SSH_KEY }}
     ENV_FILE: ${{ secrets.DEV_ENV_FILE }}
     SA_FILE: ${{ secrets.SA_FILE }}
@@ -30,13 +30,13 @@ jobs:
 
     - name: Retrieve SSH host key
       run: |
-        ssh-keyscan ${{ secrets.DEV_HOST_IP }} >> ~/.ssh/known_hosts
+        ssh-keyscan ${{ env.DEV_HOST_IP }} >> ~/.ssh/known_hosts
         ssh-add -L
 
     - name: SSH into remote server
       uses: appleboy/ssh-action@master
       with:
-        host: ${{ secrets.DEV_HOST_IP }}
+        host: ${{ env.DEV_HOST_IP }}
         key: ${{ secrets.PRIVATE_SSH_KEY }}
         username: app
         port: 22
