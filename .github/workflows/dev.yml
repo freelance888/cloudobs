@@ -32,7 +32,7 @@ jobs:
         ssh-keyscan ${{ secrets.DEV_HOST_IP }} >> ~/.ssh/known_hosts
         ssh-add -L
 
-    - name: SSH into remote server
+    - name: Execute commands on server
       uses: appleboy/ssh-action@master
       with:
         host: ${{ secrets.DEV_HOST_IP }}
@@ -48,8 +48,8 @@ jobs:
           echo "${{ env.ENV_FILE }}" > .env
           echo "${{ env.SA_FILE }}" > sa.json
           printf "ENVIRONMENT=${{ env.ENVIRONMENT }}\nBACKEND_PORT=${{ env.BACKEND_PORT }}\nFRONTEND_PORT=${{ env.FRONTEND_PORT }}" > .compose.env
-          cp .env sa.json .compose.env ~/dev/
-          cp cloudobs-infrastructure/docker-compose.yml ~/dev/
+          cp .env sa.json .compose.env dev/
+          cp cloudobs-infrastructure/shared/files/docker-compose.yml dev/
           cd cloudobs
           git checkout ${{ env.ENVIRONMENT }}
           docker build -t ${{ github.event.repository.name }}-${{ env.ENVIRONMENT }} . --no-cache
