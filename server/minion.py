@@ -37,6 +37,7 @@ class Minion:
                 try:
                     self.check_files()
                     time.sleep(60)
+                    self.minion.command.send_gdrive_files()
                 except Exception as ex:
                     print(f"E Minion::GDriveFileWorker::run(): {ex}")
 
@@ -232,6 +233,16 @@ class Minion:
             else:
                 return ExecutionStatus(False, f"MINION: Invalid command {command}")
 
+        def send_gdrive_files(self) -> ExecutionStatus:
+            try:
+                new_gdrive_files_state = json.dumps(self.minion.gdrive_worker.files)
+                self.minion.sio.emit("on_gdrive_files_changed",
+                                     data=new_gdrive_files_state,
+                                     broadcast=True)
+                return ExecutionStatus(True)
+            except Exception as ex:
+                return ExecutionStatus(False, f"{ex}")
+
     class BGWorker:
         def __init__(self, minion):
             self.minion: Minion = minion
@@ -249,9 +260,10 @@ class Minion:
                         if self._last_gdrive_files != new_gdrive_files_state:
                             self._last_gdrive_files = new_gdrive_files_state
 
-                            self.minion.sio.emit("on_gdrive_files_changed",
-                                                 data=new_gdrive_files_state,
-                                                 broadcast=True)
+                            self.minion.command.send_gdrive_files()
+                            # self.minion.sio.emit("on_gdrive_files_changed",
+                            #                      data=new_gdrive_files_state,
+                            #                      broadcast=True)
 
                 except Exception as ex:
                     print(f"E Minion::BGWorker::track_gdrive_files_change(): "
