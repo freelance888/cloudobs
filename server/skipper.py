@@ -936,7 +936,7 @@ class Skipper:
             mode = "mode" if "mode" not in params else params["mode"]
 
             status = self.skipper.command.exec(
-                command="",
+                command="play media",
                 details={"name": name, "search_by_num": search_by_num, "mode": mode}
             )
 
