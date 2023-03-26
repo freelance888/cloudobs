@@ -38,7 +38,7 @@ jobs:
 
     - name: Retrieve SSH host key
       run: |
-        echo -e "Host *\n\tStrictHostKeyChecking no\n\tServerAliveCountMax 360\n\tServerAliveInterval 40\n\n" > ~/.ssh/config
+        echo -e "Host *\n\tStrictHostKeyChecking no\n\tServerAliveCountMax 900\n\tServerAliveInterval 40\n\n" > ~/.ssh/config
         ssh-keyscan ${{ secrets.DEV_HOST_IP }} >> ~/.ssh/known_hosts
         rsync -a -v --progress --delete --quiet  base-image.tar app@${{ secrets.DEV_HOST_IP }}:~
 
