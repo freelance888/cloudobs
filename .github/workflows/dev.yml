@@ -49,6 +49,7 @@ jobs:
         key: ${{ secrets.PRIVATE_SSH_KEY }}
         username: app
         port: 22
+        command_timeout: 60m
         script: |
           echo "ENVVRRMMNNTT = ${{ env.ENVIRONMENT }}"
           rm -rf cloudobs-infrastructure cloudobs
