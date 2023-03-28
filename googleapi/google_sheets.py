@@ -108,7 +108,7 @@ class TimingGoogleSheets:
         :return:
         """
         if re.fullmatch("\d{1,2}\:\d{2}\:\d{2}\.\d{1,6}", timestamp_str):  # format of 00:00:00.000000
-            r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})\.(?P<microsecond>)\d{1,6}",
+            r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})\.(?P<microsecond>\d{1,6})",
                           timestamp_str)
             hour, minute, second = int(r.group("hour")), int(r.group("minute")), int(r.group("second"))
             microseconds = int(r.group("microsecond").ljust(6, "0"))
