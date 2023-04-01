@@ -27,4 +27,4 @@ jobs:
         name: base-image
         path: |
           base-image.tar
-        retention-days: 1
+        retention-days: 90
