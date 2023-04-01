@@ -335,6 +335,8 @@
 }
 ```
  - **Notes:**
+   - `name` should be unique (can't add two vmix players with same name)
+   - `name` should only use characters `[a-zA-Zа-яА-Я0-9\s\.]`
  - **Command example (json):**
 ```json
 {

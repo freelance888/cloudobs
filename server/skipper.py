@@ -1,6 +1,7 @@
 # REFACTORING: build a new class which manages all the functionality listed below
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import List, Dict
@@ -506,7 +507,9 @@ class Skipper:
                     "command": command,
                     "details": details,
                     "lang": lang,
-                    "ip": environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
+                    "ip": self.skipper.registry.get_ip_name(
+                        environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
+                    )
                 })
             return result
 
@@ -573,7 +576,9 @@ class Skipper:
                     return self.delete_minions()
                 elif command == "get info":
                     return ExecutionStatus(True,
-                                           serializable_object=orjson_dumps({"registry": self.skipper.registry.dict()}))
+                                           serializable_object=orjson_dumps({
+                                               "registry": self.skipper.registry.masked_dict()
+                                           }))
                 elif command in (
                         "set stream settings",
                         "set teamspeak offset",
@@ -608,6 +613,15 @@ class Skipper:
                         return ExecutionStatus(False, f"Adding '*' is not allowed")
                     # with self.registry_lock:
                     # add vmix player into registry
+
+                    # check if name doesn't already added to vmix_players
+                    # vmix_players names should be unique
+                    if details["name"] in [v.name for v in self.skipper.registry.vmix_players.values()]:
+                        return ExecutionStatus(False, f"Can't add vmix player. "
+                                                      f"Reason: name '{details['name']}' already exists")
+                    if not re.fullmatch(r"[a-zA-Zа-яА-Я0-9\s\.]+", details["name"]):
+                        return ExecutionStatus(False, f"Can't add vmix player. "
+                                                      f"Reason: invalid characters are provided. Refer to the docs")
                     self.skipper.registry.vmix_players[details["ip"]] = VmixPlayer(name=details["name"], active=False)
                     return ExecutionStatus(True)
                 elif command == "vmix players remove":
@@ -714,7 +728,7 @@ class Skipper:
                         "command": command,
                         "details": details,
                         "lang": lang,
-                        "ip": remote_addr
+                        "ip": self.skipper.registry.get_ip_name(remote_addr)
                     })
 
                 return ExecutionStatus(
@@ -945,7 +959,7 @@ class Skipper:
     class BGWorker:
         def __init__(self, skipper):
             self.skipper: Skipper = skipper
-            self._last_registry_state = self.skipper.registry.json()
+            self._last_registry_state = self.skipper.registry.masked_json()
             self._last_registry_dict = self.skipper.registry.dict()
 
         def track_registry_change(self):
@@ -956,11 +970,11 @@ class Skipper:
             while True:
                 try:
                     with self.skipper.registry_lock:
-                        new_registry_state = self.skipper.registry.json()
+                        new_registry_state = self.skipper.registry.masked_json()
                         # Compare prev state json and current state json
                         if self._last_registry_state != new_registry_state:
                             # Get changed values
-                            new_registry_dict = self.skipper.registry.dict()
+                            new_registry_dict = self.skipper.registry.masked_dict()
                             changes = self._get_registry_changes(new_registry_dict)
                             # Save current state
                             self._last_registry_state = new_registry_state

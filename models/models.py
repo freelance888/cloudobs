@@ -227,3 +227,18 @@ class Registry(BaseModel):
     def revert_server_state(self):
         with self._lock:
             super().__setattr__("server_status", self._last_server_status)
+
+    def masked_json(self):
+        r = self.copy()
+        r.vmix_players = {f"hidden ip {i}": vmix_player for i, vmix_player in enumerate(r.vmix_players.values())}
+        return r.json()
+
+    def masked_dict(self):
+        r = self.copy()
+        r.vmix_players = {f"hidden ip {i}": vmix_player for i, vmix_player in enumerate(r.vmix_players.values())}
+        return r.dict()
+
+    def get_ip_name(self, ip):
+        if ip in self.vmix_players:
+            return self.vmix_players[ip].name
+        return ip
