@@ -64,9 +64,9 @@ jobs:
           git checkout ${{ env.ENVIRONMENT }}
           docker build -t ${{ github.event.repository.name }}-${{ env.ENVIRONMENT }} .
           cd ~/${{ env.ENVIRONMENT }}
-          docker image rm base-image
-          docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${{ env.ENVIRONMENT }}" -q) || true
-          docker load --input base-image.tar
-          docker images
-          docker load --input ~/${{ env.ENVIRONMENT }}/${{ github.event.repository.name }}.tar && mkdir -p ~/${{ env.ENVIRONMENT }}
+          # docker image rm base-image
+          # docker image rm -f $(docker images --filter=reference="${{ github.event.repository.name }}-${{ env.ENVIRONMENT }}" -q) || true
+          # docker load --input base-image.tar
+          # docker images
+          # docker load --input ~/${{ env.ENVIRONMENT }}/${{ github.event.repository.name }}.tar && mkdir -p ~/${{ env.ENVIRONMENT }}
           cd ~/${{ env.ENVIRONMENT }} && docker compose down && docker compose --env-file .compose.env up -d && sleep 10 && docker compose ps backend
