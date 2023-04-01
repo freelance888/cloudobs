@@ -949,10 +949,20 @@ class Skipper:
             search_by_num = True if "search_by_num" not in params else params["search_by_num"]
             mode = "mode" if "mode" not in params else params["mode"]
 
+            command, details = "play media", {"name": name, "search_by_num": search_by_num, "mode": mode}
             status = self.skipper.command.exec(
-                command="play media",
-                details={"name": name, "search_by_num": search_by_num, "mode": mode}
+                command=command,
+                details=details
             )
+
+            self.skipper.logger.log_command_completed(
+                status=status.status,
+                extra={
+                    "command": command,
+                    "details": details,
+                    "lang": "*",
+                    "ip": self.skipper.registry.get_ip_name(request.remote_addr)
+                })
 
             return status.to_http_status()
 
