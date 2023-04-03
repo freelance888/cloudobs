@@ -56,7 +56,7 @@ jobs:
           git clone https://github.com/ALLATRA-IT/cloudobs-infrastructure.git
           git clone https://github.com/ALLATRA-IT/cloudobs.git
           echo "${{ env.ENV_FILE }}" > .env
-          echo "${{ env.SA_FILE }}" > sa.json
+          echo -e "${{ env.SA_FILE }}" | base64 -d > sa.json
           printf "ENVIRONMENT=${{ env.ENVIRONMENT }}\nBACKEND_PORT=${{ env.BACKEND_PORT }}\nFRONTEND_PORT=${{ env.FRONTEND_PORT }}" > .compose.env
           cp .env sa.json .compose.env dev/
           cp cloudobs-infrastructure/shared/files/docker-compose.yml dev/
