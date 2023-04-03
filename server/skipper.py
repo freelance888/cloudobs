@@ -646,7 +646,7 @@ class Skipper:
                     return ExecutionStatus(True)
                 elif command == "vmix players remove":
                     # details: {"ip": "ip address"}
-                    if not details or "ip" not in details:
+                    if not details or "ip" not in details or "name" not in details:  # validate
                         return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
 
                     try:
