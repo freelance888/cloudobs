@@ -181,7 +181,7 @@ class Registry(BaseModel):
     timing_start_time: datetime = None  # system time when the timing will be/was started
 
     # ip: {"name": "", active: True/False}
-    vmix_players: Dict[str, VmixPlayer] = {"*": VmixPlayer(name="All", active=True)}
+    vmix_players: Dict[str, VmixPlayer] = {"*": VmixPlayer(name="ALL", active=True)}
     active_vmix_player: str = "*"  # "*" or ip
 
     # {"lang1": {"filename1": True/False (downloaded), "filename2": ...}, "lang2": ...}
