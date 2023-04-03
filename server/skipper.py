@@ -579,10 +579,23 @@ class Skipper:
                 elif command == "dispose":
                     return self.delete_minions()
                 elif command == "get info":
-                    return ExecutionStatus(True,
-                                           serializable_object=orjson_dumps({
-                                               "registry": self.skipper.registry.masked_dict()
-                                           }))
+                    if not details:  # validate
+                        masked = True
+                    elif "masked_info" in details:
+                        masked = bool(details["masked_info"])
+                    else:
+                        return ExecutionStatus(False, "Invalid details provided for command 'get info'")
+
+                    if masked:
+                        return ExecutionStatus(True,
+                                               serializable_object=orjson_dumps({
+                                                   "registry": self.skipper.registry.masked_dict()
+                                               }))
+                    else:
+                        return ExecutionStatus(True,
+                                               serializable_object=orjson_dumps({
+                                                   "registry": self.skipper.registry.dict()
+                                               }))
                 elif command in (
                         "set stream settings",
                         "set teamspeak offset",

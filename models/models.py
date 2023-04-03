@@ -228,15 +228,23 @@ class Registry(BaseModel):
         with self._lock:
             super().__setattr__("server_status", self._last_server_status)
 
-    def masked_json(self):
+    def masked_copy(self):
         r = self.copy()
-        r.vmix_players = {f"hidden ip {i}": vmix_player for i, vmix_player in enumerate(r.vmix_players.values())}
-        return r.json()
+        r.vmix_players = {(f"hidden ip {i}" if ip != "*" else ip): vmix_player
+                          for i, (ip, vmix_player) in enumerate(r.vmix_players.items())}
+
+        active_vmix_players = [[ip, vmix_player] for ip, vmix_player in r.vmix_players.items() if vmix_player.active]
+        if not active_vmix_players:
+            r.active_vmix_player = "*"
+        else:
+            r.active_vmix_player = active_vmix_players[0][0]
+        return r
+
+    def masked_json(self):
+        return self.masked_copy().json()
 
     def masked_dict(self):
-        r = self.copy()
-        r.vmix_players = {f"hidden ip {i}": vmix_player for i, vmix_player in enumerate(r.vmix_players.values())}
-        return r.dict()
+        return self.masked_copy().dict()
 
     def get_ip_name(self, ip):
         if ip == "*":
