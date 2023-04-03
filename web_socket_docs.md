@@ -336,6 +336,7 @@
 ```
  - **Notes:**
    - `name` should be unique (can't add two vmix players with same name)
+   - note that `name` is case insensitive
    - `name` should only use characters `[a-zA-Zа-яА-Я0-9\s\.]`
  - **Command example (json):**
 ```json
@@ -352,6 +353,7 @@
  - **Description:** Removes vmix player from the registry.
  - **Parameters:**
    - `ip` - vmix player's ip address.
+   - `name` - vmix player's name.
  - **Returns:**
 ```json
 {
@@ -362,12 +364,13 @@
 ```
  - **Notes:**
    - You cannot delete vmix player with ip `*`
+   - You may also pass name instead of ip address (name is also unique, and case insensitive)
  - **Command example (json):**
 ```json
 {
   "command": "vmix players remove"
   "details": {
-    "ip": "ip address"
+    "ip": "ip address" | "name": "vmix player's name"
   }
 }
 ```
@@ -376,6 +379,7 @@
  - **Description:** Sets active vmix player.
  - **Parameters:**
    - `ip` - vmix player's ip address.
+   - `name` - vmux player's name.
  - **Returns:**
 ```json
 {
@@ -387,12 +391,13 @@
  - **Notes:**
    - You may specify `*` as an ip address - that will allow all ip
      addresses. By default - active ip is `*`
+   - You may also pass name instead of ip address (name is also unique, and case insensitive)
  - **Command example (json):**
 ```json
 {
   "command": "vmix players set active"
   "details": {
-    "ip": "ip address"
+    "ip": "ip address" | "name": "name of the address"
   }
 }
 ```

@@ -239,6 +239,8 @@ class Registry(BaseModel):
         return r.dict()
 
     def get_ip_name(self, ip):
+        if ip == "*":
+            return ip
         if ip in self.vmix_players:
             return self.vmix_players[ip].name
         return ip

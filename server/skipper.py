@@ -500,18 +500,7 @@ class Skipper:
                 command["lang"] = "*"
             command, details, lang = command["command"], command["details"], command["lang"]
 
-            result = self.exec(command, details=details, lang=lang, environ=environ)
-            self.skipper.logger.log_command_completed(
-                status=result.status,
-                extra={
-                    "command": command,
-                    "details": details,
-                    "lang": lang,
-                    "ip": self.skipper.registry.get_ip_name(
-                        environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
-                    )
-                })
-            return result
+            return self.exec(command, details=details, lang=lang, environ=environ)
 
         def exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
             """
@@ -522,6 +511,21 @@ class Skipper:
             }
             :return: ExecutionStatus
             """
+            result = self._exec(command, details, lang, environ)
+            self.skipper.logger.log_command_completed(
+                status=result.status,
+                extra={
+                    "command": command,
+                    "details": details,
+                    "message": result.message,
+                    "lang": lang,
+                    "ip": self.skipper.registry.get_ip_name(
+                        environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
+                    )
+                })
+            return result
+
+        def _exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
             if lang is None:
                 lang = "*"  # langs
             # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
@@ -587,7 +591,7 @@ class Skipper:
                         "set sidechain settings",
                         "set transition settings",
                 ):
-                    return self.set_info(command=command, details=details, lang=lang, environ=environ)
+                    return self.set_info(command=command, details=details, lang=lang)
                 elif command == "get logs":
                     count = None
                     try:
@@ -622,16 +626,25 @@ class Skipper:
                     if not re.fullmatch(r"[a-zA-Zа-яА-Я0-9\s\.]+", details["name"]):
                         return ExecutionStatus(False, f"Can't add vmix player. "
                                                       f"Reason: invalid characters are provided. Refer to the docs")
-                    self.skipper.registry.vmix_players[details["ip"]] = VmixPlayer(name=details["name"], active=False)
+                    self.skipper.registry.vmix_players[details["ip"]] = VmixPlayer(
+                        name=details["name"].upper(),
+                        active=False
+                    )
                     return ExecutionStatus(True)
                 elif command == "vmix players remove":
                     # details: {"ip": "ip address"}
                     if not details or "ip" not in details:
                         return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
+
+                    try:
+                        ip = self._fetch_ip_for_vmix_player(details)
+                    except Exception as ex:
+                        return ExecutionStatus(False, str(ex))
+
                     # with self.registry_lock:
-                    if details["ip"] not in self.skipper.registry.vmix_players:
+                    if ip not in self.skipper.registry.vmix_players:
                         return ExecutionStatus(True)
-                    if details["ip"] == "*":
+                    if ip == "*":
                         return ExecutionStatus(False, "Removing '*' is not allowed")
 
                     # with self.registry_lock:
@@ -646,13 +659,17 @@ class Skipper:
                 #     })
                 elif command == "vmix players set active":
                     # details: {"ip": "ip address"}. ip address may be '*' - all active
-                    if not details or "ip" not in details:
+                    if not details or not ("ip" in details or "name" in details):
                         return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
 
-                    # with self.registry_lock:
-                    self.skipper.registry.active_vmix_player = details["ip"]
-                    for ip in self.skipper.registry.vmix_players:
-                        self.skipper.registry.vmix_players[ip].active = self.skipper.registry.active_vmix_player == ip
+                    try:
+                        ip = self._fetch_ip_for_vmix_player(details)
+                    except Exception as ex:
+                        return ExecutionStatus(False, str(ex))
+
+                    self.skipper.registry.active_vmix_player = ip
+                    for ip_ in self.skipper.registry.vmix_players:
+                        self.skipper.registry.vmix_players[ip_].active = (ip == ip_)
                     return ExecutionStatus(True)
                 elif command == "start streaming":
                     for minion_config in minion_configs:
@@ -738,7 +755,7 @@ class Skipper:
                     f"Error details: {ex}",
                 )
 
-        def set_info(self, command, details, lang=None, environ=None) -> ExecutionStatus:
+        def set_info(self, command, details, lang=None) -> ExecutionStatus:
             if lang is None:
                 lang = "*"
             minion_settings: List[MinionSettings] = [
@@ -932,6 +949,20 @@ class Skipper:
                 self.skipper.registry.server_status = State.sleeping
                 return ExecutionStatus(False, f"Something happened while disposing. Details: {ex}")
 
+        def _fetch_ip_for_vmix_player(self, details) -> str:
+            if "ip" in details:
+                if details["ip"] not in self.skipper.registry.vmix_players:
+                    raise KeyError("Couldn't set active vmix player. No such ip found")
+                return details["ip"]
+            elif "name" in details:
+                name = details["name"].upper()
+                if name not in [x.name for x in self.skipper.registry.vmix_players.values()]:
+                    raise KeyError("Couldn't set active vmix player. No such name found")
+                return [ip for ip, vmix_player in self.skipper.registry.vmix_players.items()
+                        if vmix_player.name == name][0]
+            else:
+                raise RuntimeError("This block of code should not be executed")
+
     class HTTPApi:
         def __init__(self, skipper):
             self.skipper: Skipper = skipper
@@ -950,21 +981,11 @@ class Skipper:
             mode = "mode" if "mode" not in params else params["mode"]
 
             command, details = "play media", {"name": name, "search_by_num": search_by_num, "mode": mode}
-            status = self.skipper.command.exec(
+            return self.skipper.command.exec(
                 command=command,
-                details=details
-            )
-
-            self.skipper.logger.log_command_completed(
-                status=status.status,
-                extra={
-                    "command": command,
-                    "details": details,
-                    "lang": "*",
-                    "ip": self.skipper.registry.get_ip_name(request.remote_addr)
-                })
-
-            return status.to_http_status()
+                details=details,
+                environ={"REMOTE_ADDR": request.remote_addr}
+            ).to_http_status()
 
     class BGWorker:
         def __init__(self, skipper):
