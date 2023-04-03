@@ -633,20 +633,21 @@ class Skipper:
 
                     # check if name doesn't already added to vmix_players
                     # vmix_players names should be unique
-                    if details["name"] in [v.name for v in self.skipper.registry.vmix_players.values()]:
+                    name = details["name"].upper()
+                    if name in [v.name for v in self.skipper.registry.vmix_players.values()]:
                         return ExecutionStatus(False, f"Can't add vmix player. "
-                                                      f"Reason: name '{details['name']}' already exists")
-                    if not re.fullmatch(r"[a-zA-Zа-яА-Я0-9\s\.]+", details["name"]):
+                                                      f"Reason: name '{name}' already exists")
+                    if not re.fullmatch(r"[a-zA-Zа-яА-Я0-9\s\.]+", name):
                         return ExecutionStatus(False, f"Can't add vmix player. "
                                                       f"Reason: invalid characters are provided. Refer to the docs")
                     self.skipper.registry.vmix_players[details["ip"]] = VmixPlayer(
-                        name=details["name"].upper(),
+                        name=name,
                         active=False
                     )
                     return ExecutionStatus(True)
                 elif command == "vmix players remove":
-                    # details: {"ip": "ip address"}
-                    if not details or "ip" not in details or "name" not in details:  # validate
+                    # details: {"ip": "ip address" | "name": "ip name"}
+                    if not details or not ("ip" in details or "name" in details):
                         return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
 
                     try:
@@ -661,7 +662,7 @@ class Skipper:
                         return ExecutionStatus(False, "Removing '*' is not allowed")
 
                     # with self.registry_lock:
-                    self.skipper.registry.vmix_players.pop(details["ip"])
+                    self.skipper.registry.vmix_players.pop(ip)
                     return ExecutionStatus(True)
                 # elif command == "vmix players list":
                 #     # no details needed
@@ -671,7 +672,7 @@ class Skipper:
                 #         ip: vmix_player.dict() for ip, vmix_player in self.skipper.registry.vmix_players.items()
                 #     })
                 elif command == "vmix players set active":
-                    # details: {"ip": "ip address"}. ip address may be '*' - all active
+                    # details: {"ip": "ip address" | "name": "ip name"}. ip address may be '*' - all active
                     if not details or not ("ip" in details or "name" in details):
                         return ExecutionStatus(False, f"Invalid details for command '{command}':\n '{details}'")
 
