@@ -29,6 +29,7 @@
       "minion_lang": "if type == minion_error", 
       "command": "if type == command_completed or skipper_error",
       "details": "if type == command_completed or skipper_error",
+      "message": "error message",
       "lang": "if type == command_completed or skipper_error",
       "ip": "if type == command_completed or skipper_error"
     }

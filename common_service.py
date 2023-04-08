@@ -68,7 +68,12 @@ registry_changes = []
 def on_registry_change(data):
     registry_changes.append(data)
 
+logs = []
+def on_log(data):
+    logs.append(data)
+
 sio.on("on_registry_change", on_registry_change)
+sio.on("on_log", on_log)
 
 ws_response = WebsocketResponse()
 command = {
@@ -111,7 +116,7 @@ command = {
     "command": "pull timing",
     "details": {
         "sheet_url": "https://docs.google.com/spreadsheets/d/10J2FG-6nKodpXcTVPmNwKGOwGXSxPUWf1MppT7yUgME/edit#gid=2006470615",
-        "sheet_name": "demo_timing"
+        "sheet_name": "demo_timing1"
     }
 }
 sio.emit(event="command", data=json.dumps(command), callback=ws_response.callback)

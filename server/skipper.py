@@ -130,6 +130,12 @@ class Skipper:
 
                 minion_configs: Dict[str, MinionSettings] = self.obs_sheets.pull()
 
+                if self.skipper.registry.infrastructure_lock:  # if infrastructure is locked
+                    registry_langs = list(self.skipper.registry.minion_configs.keys())
+                    for lang in list(minion_configs.keys()):  # drop new langs
+                        if lang not in registry_langs:
+                            minion_configs.pop(lang)
+
                 if langs is not None:  # if need to pull only specified langs
                     minion_configs = {lang: minion_configs[lang] for lang in minion_configs if lang in langs}
                 else:
@@ -520,7 +526,9 @@ class Skipper:
                     "message": result.message,
                     "lang": lang,
                     "ip": self.skipper.registry.get_ip_name(
-                        environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "0.0.0.0"
+                        environ["REMOTE_ADDR"]
+                        if environ is not None and isinstance(environ, dict)
+                           and "REMOTE_ADDR" in environ else "0.0.0.0"
                     )
                 })
             return result
