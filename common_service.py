@@ -1,9 +1,15 @@
 import os
 from dotenv import load_dotenv
 from server import Skipper
+from util import ExecutionStatus
+import requests
+import json
 
 load_dotenv()
 COMMON_SERVICE_PORT = int(os.getenv("COMMON_SERVICE_PORT", 5000))
+TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID", None)
+TELEGRAM_CHANNEL_ID = int(TELEGRAM_CHANNEL_ID) if TELEGRAM_CHANNEL_ID is not None else None
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", None)
 
 # Setup Sentry
 # ------------
@@ -19,9 +25,32 @@ if SENTRY_DSN:
         traces_sample_rate=1.0,
     )
 
-if __name__ == "__main__":
-    skipper = Skipper(port=COMMON_SERVICE_PORT)
-    skipper.run()
+
+def telegram_media_play_callback(command, details, lang, result: ExecutionStatus, ip):
+    base_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+    video = details["name"] if "name" in details else ""
+
+    tg_msg = {
+        "chat_id": TELEGRAM_CHANNEL_ID,
+        "text": json.dumps({
+            "command": command,
+            "video": video,
+            "result": result.status,
+            "error": result.message,
+            "ip": ip,
+        }),
+        "parse_mode": "JSON",
+    }
+    requests.post(f"{base_url}/sendMessage", json=tg_msg, timeout=5)
+
+
+#if __name__ == "__main__":
+skipper = Skipper(port=COMMON_SERVICE_PORT)
+skipper.event_handler.add_or_replace_on_command_completed_event(
+    foo=telegram_media_play_callback, id="telegram media play",
+    command="play media", run_in_new_thread=True
+)
+skipper.run()
 
 """
 # Run the following code to run the server:

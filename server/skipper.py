@@ -3,7 +3,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta
-from threading import RLock
+from threading import RLock, Thread
 from typing import List, Dict
 
 import socketio
@@ -346,6 +346,49 @@ class Skipper:
             self.skipper.registry.timing_list = []
             return status
 
+    class EventHandler:
+        def __init__(self, skipper):
+            self.skipper: Skipper = skipper
+            self.event_handlers = []
+
+        def add_or_replace_on_command_completed_event(self, foo, id, command=None, run_in_new_thread=True):
+            """
+            Args structure:
+            (command, details, lang, result: ExecutionStatus, ip)
+            """
+            self.event_handlers = [
+                [command, new_thread_sign, foo, id_]
+                for command, new_thread_sign, foo, id_ in self.event_handlers
+                if id_ != id
+            ]
+            self.event_handlers.append([command, run_in_new_thread, foo, id])
+
+        def on_command_completed(self, command, details, lang, result: ExecutionStatus, environ):
+            ip = self.skipper.registry.get_ip_name(
+                environ["REMOTE_ADDR"]
+                if environ is not None and isinstance(environ, dict)
+                   and "REMOTE_ADDR" in environ else "0.0.0.0"
+            )
+            self.skipper.logger.log_command_completed(
+                status=result.status,
+                extra={
+                    "command": command,
+                    "details": details,
+                    "message": result.message,
+                    "lang": lang,
+                    "ip": ip
+                })
+
+            for foo_command, run_in_new_thread, foo, _ in self.event_handlers:
+                if foo_command is None or foo_command == command:
+                    try:
+                        if run_in_new_thread:
+                            Thread(target=foo, args=(command, details, lang, result, ip)).start()
+                        else:
+                            foo(command, details, lang, result, ip)
+                    except Exception as ex:
+                        pass
+
     class EventSender:
         def __init__(self, skipper):
             self.skipper: Skipper = skipper
@@ -518,19 +561,7 @@ class Skipper:
             :return: ExecutionStatus
             """
             result = self._exec(command, details, lang, environ)
-            self.skipper.logger.log_command_completed(
-                status=result.status,
-                extra={
-                    "command": command,
-                    "details": details,
-                    "message": result.message,
-                    "lang": lang,
-                    "ip": self.skipper.registry.get_ip_name(
-                        environ["REMOTE_ADDR"]
-                        if environ is not None and isinstance(environ, dict)
-                           and "REMOTE_ADDR" in environ else "0.0.0.0"
-                    )
-                })
+            self.skipper.event_handler.on_command_completed(command, details, lang, result, environ)
             return result
 
         def _exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
@@ -1053,6 +1084,7 @@ class Skipper:
 
     def __init__(self, port=None):
         self.event_sender: Skipper.EventSender = Skipper.EventSender(self)
+        self.event_handler: Skipper.EventHandler = Skipper.EventHandler(self)
         self.logger: Skipper.Logger = Skipper.Logger(self)
         self.registry: Registry = Registry()
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
