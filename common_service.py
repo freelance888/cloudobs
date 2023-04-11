@@ -32,19 +32,13 @@ def telegram_media_play_callback(command, details, lang, result: ExecutionStatus
 
     tg_msg = {
         "chat_id": TELEGRAM_CHANNEL_ID,
-        "text": json.dumps({
-            "command": command,
-            "video": video,
-            "result": result.status,
-            "error": result.message,
-            "ip": ip,
-        }),
-        "parse_mode": "JSON",
+        "text": f"🎦 <b>Start video</b>:  {video} 🎦",
+        "parse_mode": "HTML",
     }
     requests.post(f"{base_url}/sendMessage", json=tg_msg, timeout=5)
 
 
-#if __name__ == "__main__":
+# if __name__ == "__main__":
 skipper = Skipper(port=COMMON_SERVICE_PORT)
 skipper.event_handler.add_or_replace_on_command_completed_event(
     foo=telegram_media_play_callback, id="telegram media play",
