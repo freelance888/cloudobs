@@ -274,6 +274,7 @@ class OBS:
                 sourceName=OBS.TEAMSPEAK_SOURCE_NAME,
                 sourceKind="pulse_output_capture",
                 sceneName=current_scene,
+                sourceSettings={"device_id": "obs_sink.monitor"},
             )
         )
 
