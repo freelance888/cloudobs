@@ -317,7 +317,9 @@ class OBSController:
         ts_offset = self.minion_settings.ts_offset.value
 
         try:
-            self.obs_instance.set_sound_sync_offset(source_name=OBS.TEAMSPEAK_SOURCE_NAME, offset=ts_offset)
+            os.system(f"pactl unload-module module-loopback")
+            os.system(f"pactl load-module module-loopback sink=obs_sink latency_msec={ts_offset * 1000}")
+            # self.obs_instance.set_sound_sync_offset(source_name=OBS.TEAMSPEAK_SOURCE_NAME, offset=ts_offset)
             self.minion_settings.ts_offset.activate()
 
             return ExecutionStatus(True)
