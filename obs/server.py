@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from obs import OBS
 from util import ExecutionStatus
 from models import MinionSettings
+from util import CallbackThread
 
 load_dotenv()
 BASE_MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -27,6 +28,9 @@ class OBSController:
         self.is_initialized = False
 
         self.media_dir = MEDIA_DIR
+
+        self.media_cb_thread = CallbackThread()
+        self.media_cb_thread.start()
 
     def apply_info(self, minion_settings: MinionSettings):
         self.minion_settings.modify_from(other=minion_settings)
@@ -317,8 +321,8 @@ class OBSController:
         ts_offset = self.minion_settings.ts_offset.value
 
         try:
-            os.system(f"pactl unload-module module-loopback")
-            os.system(f"pactl load-module module-loopback sink=obs_sink latency_msec={ts_offset * 1000}")
+            os.system(f'bash --login -c "/usr/bin/pactl unload-module module-loopback"')
+            os.system(f'bash --login -c "/usr/bin/pactl load-module module-loopback sink=obs_sink latency_msec={ts_offset}"')
             # self.obs_instance.set_sound_sync_offset(source_name=OBS.TEAMSPEAK_SOURCE_NAME, offset=ts_offset)
             self.minion_settings.ts_offset.activate()
 

@@ -1,5 +1,5 @@
-# FROM base-image
-FROM python:3.9.13-alpine3.16 AS builder
+FROM base-image
+# FROM python:3.9.13-alpine3.16 AS builder
 # USER obs
 
 WORKDIR /app
