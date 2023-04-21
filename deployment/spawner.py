@@ -154,11 +154,11 @@ class Spawner:
     def from_json(cls, json_dump):
         spawner = Spawner()
         spawner.ip_dict = IPDict.parse_raw(json_dump)
-        ips = spawner.ssh_context.get_ip()
+        # ips = spawner.ssh_context.get_ip()
 
-        for ip in spawner.ip_dict.list_ips():
-            if ip not in ips:
-                spawner.ip_dict.remove_ip(ip)
+        # for ip in spawner.ip_dict.list_ips():
+        #     if ip not in ips:
+        #         spawner.ip_dict.remove_ip(ip)
 
         return spawner
 

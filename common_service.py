@@ -83,9 +83,10 @@ import socketio
 import json
 import time
 from util import WebsocketResponse
+import clipboard as clip
 
 sio = socketio.Client()
-sio.connect('http://localhost:5010')
+sio.connect('http://sa_main:5010')
 
 registry_changes = []
 def on_registry_change(data):
@@ -104,6 +105,7 @@ command = {
     "details": {
         "sheet_url": "https://docs.google.com/spreadsheets/d/10J2FG-6nKodpXcTVPmNwKGOwGXSxPUWf1MppT7yUgME",
         "sheet_name": "table_4",
+        #"ip_langs": dict([x.split()[::-1] for x in clip.paste().split("\n")])
     }
 }
 sio.emit(event="command", data=json.dumps(command), callback=ws_response.callback)
