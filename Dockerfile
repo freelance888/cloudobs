@@ -7,7 +7,7 @@ WORKDIR /app
 ADD . .
 
 #RUN apk add git curl gcc build-base libffi-dev openssh
-RUN apt install git curl gcc libffi-dev openssh
+RUN apt install git curl gcc libffi-dev openssh-server
 RUN wget https://files.pythonhosted.org/packages/5e/ed/5c9cdaa5d48c7194bef4335eab3cdc2f8afa868a5546027e018ea9deb4c3/pandas-1.5.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 RUN pip3 install ./pandas-1.5.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 RUN pip3 install -r requirements.txt
