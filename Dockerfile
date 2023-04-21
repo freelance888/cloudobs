@@ -6,6 +6,8 @@ WORKDIR /app
 ADD . .
 
 RUN apk add git curl gcc build-base libffi-dev openssh
+RUN wget https://files.pythonhosted.org/packages/49/e2/79e46612dc25ebc7603dc11c560baa7266c90f9e48537ecf1a02a0dd6bff/pandas-1.5.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+RUN pip3 install ./pandas-1.5.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 RUN pip3 install -r requirements.txt
 RUN git clone https://github.com/amukhsimov/gdown.git && cd gdown && pip3 install .
 ENV TZ="Europe/Kiev"
