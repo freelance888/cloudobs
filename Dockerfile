@@ -8,8 +8,8 @@ ADD . .
 
 #RUN apk add git curl gcc build-base libffi-dev openssh
 RUN apt install git curl gcc libffi-dev
-RUN wget https://files.pythonhosted.org/packages/5e/ed/5c9cdaa5d48c7194bef4335eab3cdc2f8afa868a5546027e018ea9deb4c3/pandas-1.5.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-RUN pip3 install ./pandas-1.5.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+RUN wget https://files.pythonhosted.org/packages/e1/4d/3eb96e53a9208350ee21615f850c4be9a246d32bf1d34cd36682cb58c3b7/pandas-1.5.3-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+RUN pip3 install ./pandas-1.5.3-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 RUN pip3 install -r requirements.txt
 RUN git clone https://github.com/amukhsimov/gdown.git && cd gdown && pip3 install .
 ENV TZ="Europe/Kiev"

@@ -63,4 +63,8 @@ sudo usermod -aG docker $USER
 newgrp docker
 sudo systemctl enable docker.service
 sudo systemctl enable containerd.service
+
+git clone -b dev https://github.com/ALLATRA-IT/cloudobs.git
+cd cloudobs && docker build -t $(basename $(pwd))-dev . --no-cache
+docker save $(basename $(pwd))-dev > cloudobs-dev.tar
 """
