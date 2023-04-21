@@ -7,7 +7,7 @@ ADD . .
 
 RUN apk add git curl gcc build-base libffi-dev openssh
 RUN pip3 install -r requirements.txt
-RUN git clone https://github.com/amukhsimov/gdown.git && cd gdown && pip3 install .
+#RUN git clone https://github.com/amukhsimov/gdown.git && cd gdown && pip3 install .
 ENV TZ="Europe/Kiev"
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN pip3 install pip --upgrade
