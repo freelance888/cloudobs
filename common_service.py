@@ -105,7 +105,7 @@ command = {
     "details": {
         "sheet_url": "https://docs.google.com/spreadsheets/d/10J2FG-6nKodpXcTVPmNwKGOwGXSxPUWf1MppT7yUgME",
         "sheet_name": "table_4",
-        #"ip_langs": dict([x.split()[::-1] for x in clip.paste().split("\n")])
+        #"ip_langs": dict([x.split()[::] for x in clip.paste().split("\n")])
     }
 }
 sio.emit(event="command", data=json.dumps(command), callback=ws_response.callback)
