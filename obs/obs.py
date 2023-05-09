@@ -27,8 +27,9 @@ class OBS:
     PLAYBACK_MODE_CHECK_ANY = "check_any"  # if any video is being played, skip
     PLAYBACK_MODE_CHECK_SAME = "check_same"  # if the same video is being played, skip, otherwise play
 
-    def __init__(self, client):
+    def __init__(self, client, obs_controller):
         self.client = client
+        self.obs_controller = obs_controller
 
         self.transition_name = "Cut"
         self.transition_path = ""
@@ -190,7 +191,8 @@ class OBS:
                 duration = self.client.call(obs.requests.GetMediaDuration(sourceName=source_name)).getMediaDuration()
                 self.media_cb_thread.append_callback(media_end_foo, (duration / 1000) + 1, cb_type=source_name)
 
-                on_start()
+                if on_start is not None and callable(on_start):
+                    on_start()
             except Exception as ex:
                 self.delete_source_if_exist(source_name)
                 # self.set_source_mute(False)
@@ -198,7 +200,8 @@ class OBS:
                 self._current_media_played = None
                 self.media_cb_thread.delete_cb_type(cb_type=source_name)
 
-                on_error(ex)
+                if on_error is not None and callable(on_error):
+                    on_error(ex)
 
         def media_end_foo():
             """
@@ -225,10 +228,12 @@ class OBS:
                 # self.set_ts_mute(False)
                 self.media_cb_thread.delete_cb_type(cb_type=source_name)
 
-                on_finish()
+                if on_finish is not None and callable(on_finish):
+                    on_finish()
             except Exception as ex:
                 self.media_cb_thread.delete_cb_type(cb_type=source_name)
-                on_error(ex)
+                if on_error is not None and callable(on_error):
+                    on_error(ex)
 
         self.media_cb_thread.delete_cb_type(cb_type=source_name)  # clean callbacks queue
 
@@ -261,25 +266,25 @@ class OBS:
         # self.set_ts_mute(False)
         self.media_cb_thread.delete_cb_type(cb_type=source_name)
 
-    def setup_ts_sound(self):
-        """
-        Adds/Resets teamspeak audio input (default device).
-        :return: None if ok, otherwise raises an Exception
-        """
-        self.delete_source_if_exist(OBS.TEAMSPEAK_SOURCE_NAME)
-        current_scene = self.obsws_get_current_scene_name()
-
-        response = self.client.call(
-            obs.requests.CreateSource(
-                sourceName=OBS.TEAMSPEAK_SOURCE_NAME,
-                sourceKind="pulse_output_capture",
-                sceneName=current_scene,
-                sourceSettings={"device_id": "obs_sink.monitor"},
-            )
-        )
-
-        if not response.status:
-            raise RuntimeError(f"OBS::setup_ts_sound(): " f"datain: {response.datain}, dataout: {response.dataout}")
+    # def setup_ts_sound(self):
+    #     """
+    #     Adds/Resets teamspeak audio input (default device).
+    #     :return: None if ok, otherwise raises an Exception
+    #     """
+    #     self.delete_source_if_exist(OBS.TEAMSPEAK_SOURCE_NAME)
+    #     current_scene = self.obsws_get_current_scene_name()
+    #
+    #     response = self.client.call(
+    #         obs.requests.CreateSource(
+    #             sourceName=OBS.TEAMSPEAK_SOURCE_NAME,
+    #             sourceKind="pulse_output_capture",
+    #             sceneName=current_scene,
+    #             sourceSettings={"device_id": "obs_sink.monitor"},
+    #         )
+    #     )
+    #
+    #     if not response.status:
+    #         raise RuntimeError(f"OBS::setup_ts_sound(): " f"datain: {response.datain}, dataout: {response.dataout}")
 
     def setup_transition(self, transition_name="Cut", transition_settings=None):
         """
@@ -307,130 +312,130 @@ class OBS:
 
         self.transition_name = transition_name
 
-    def get_sound_sync_offset(self, source_name):
-        """
-        Returns sound sync offset
-        :return: float
-        """
-        response = self.client.call(obs.requests.GetSyncOffset(source=source_name))
+    # def get_sound_sync_offset(self, source_name):
+    #     """
+    #     Returns sound sync offset
+    #     :return: float
+    #     """
+    #     response = self.client.call(obs.requests.GetSyncOffset(source=source_name))
+    #
+    #     if not response.status:
+    #         raise Exception(f"OBS::get_sync_offset(): " f"datain: {response.datain}, dataout: {response.dataout}")
+    #
+    #     return response.getOffset() // 1_000_000
 
-        if not response.status:
-            raise Exception(f"OBS::get_sync_offset(): " f"datain: {response.datain}, dataout: {response.dataout}")
+    # def set_sound_sync_offset(self, source_name, offset):
+    #     """
+    #     Sets sound sync offset for a source
+    #     :param source_name:
+    #     :param offset: sound offset in seconds
+    #     :return:
+    #     """
+    #     response = self.client.call(
+    #         obs.requests.SetSyncOffset(
+    #             source=source_name,
+    #             offset=offset * 1_000_000,  # convert to nanoseconds (refer to documentation)
+    #         )
+    #     )
+    #
+    #     if not response.status:
+    #         raise Exception(f"OBS::set_sound_sync_offset(): datain: {response.datain}, dataout: {response.dataout}")
 
-        return response.getOffset() // 1_000_000
+    # def get_sound_volume_db(self, source_name):
+    #     """
+    #     Returns sound volume for a source (in decibels)
+    #     :return:
+    #     """
+    #     response = self.client.call(obs.requests.GetVolume(source=source_name, useDecibel=True))
+    #
+    #     if not response.status:
+    #         raise Exception(f"OBS::get_sound_volume_db(): " f"datain: {response.datain}, dataout: {response.dataout}")
+    #
+    #     return response.getVolume()
 
-    def set_sound_sync_offset(self, source_name, offset):
-        """
-        Sets sound sync offset for a source
-        :param source_name:
-        :param offset: sound offset in seconds
-        :return:
-        """
-        response = self.client.call(
-            obs.requests.SetSyncOffset(
-                source=source_name,
-                offset=offset * 1_000_000,  # convert to nanoseconds (refer to documentation)
-            )
-        )
+    # def set_sound_volume_db(self, source_name, volume_db):
+    #     """
+    #     Sets sound volume for a source (in decibels)
+    #     :param volume_db:
+    #     :return:
+    #     """
+    #     response = self.client.call(obs.requests.SetVolume(source=source_name, volume=volume_db, useDecibel=True))
+    #
+    #     if not response.status:
+    #         raise RuntimeError(f"OBS::set_ts_volume_db(): " f"datain: {response.datain}, dataout: {response.dataout}")
 
-        if not response.status:
-            raise Exception(f"OBS::set_sound_sync_offset(): datain: {response.datain}, dataout: {response.dataout}")
-
-    def get_sound_volume_db(self, source_name):
-        """
-        Returns sound volume for a source (in decibels)
-        :return:
-        """
-        response = self.client.call(obs.requests.GetVolume(source=source_name, useDecibel=True))
-
-        if not response.status:
-            raise Exception(f"OBS::get_sound_volume_db(): " f"datain: {response.datain}, dataout: {response.dataout}")
-
-        return response.getVolume()
-
-    def set_sound_volume_db(self, source_name, volume_db):
-        """
-        Sets sound volume for a source (in decibels)
-        :param volume_db:
-        :return:
-        """
-        response = self.client.call(obs.requests.SetVolume(source=source_name, volume=volume_db, useDecibel=True))
-
-        if not response.status:
-            raise RuntimeError(f"OBS::set_ts_volume_db(): " f"datain: {response.datain}, dataout: {response.dataout}")
-
-    def setup_sidechain(
-        self,
-        ratio=None,
-        release_time=None,
-        threshold=None,
-        output_gain=None,
-        sidechain_target=None,
-        sidechain_source=None,
-    ):
-        """
-        [{'enabled': True,
-          'name': 'sidechain',
-          'settings': {'ratio': 15.0,
-           'release_time': 1000,
-           'sidechain_source': 'Mic/Aux',
-           'threshold': -29.2},
-          'type': 'compressor_filter'}]
-        :param sidechain_target: leave empty to use default value (media stream)
-        :param sidechain_source: leave empty to use default value (teamspeak)
-        """
-        if not sidechain_target:
-            sidechain_target = OBS.MAIN_STREAM_SOURCE_NAME
-        if not sidechain_source:
-            sidechain_source = OBS.TEAMSPEAK_SOURCE_NAME
-
-        response = self.client.call(obs.requests.GetSourceFilters(sourceName=sidechain_target))
-
-        if not response.status:
-            raise RuntimeError(f"OBS::setup_sidechain(): " f"datain: {response.datain}, dataout: {response.dataout}")
-
-        filters = response.getFilters()  # [... {'enabled': ..., 'name': ..., 'settings': ..., 'type': ...} ...]
-
-        sourceName = sidechain_target
-        filterName = OBS.COMPRESSOR_FILTER_NAME
-        filterType = "compressor_filter"
-        filterSettings = {
-            "sidechain_source": sidechain_source,
-        }
-        if ratio is not None:
-            filterSettings["ratio"] = ratio
-        if release_time is not None:
-            filterSettings["release_time"] = release_time
-        if threshold is not None:
-            filterSettings["threshold"] = threshold
-        if output_gain is not None:
-            filterSettings["output_gain"] = output_gain
-
-        if all([f["name"] != OBS.COMPRESSOR_FILTER_NAME for f in filters]):  # if no compressor input added before
-            response = self.client.call(
-                obs.requests.AddFilterToSource(
-                    sourceName=sourceName,
-                    filterName=filterName,
-                    filterType=filterType,
-                    filterSettings=filterSettings,
-                )
-            )
-            if not response.status:
-                raise RuntimeError(
-                    f"OBS::setup_sidechain(): " f"datain: {response.datain}, dataout: {response.dataout}"
-                )
-        else:  # if compressor was already added before
-            response = self.client.call(
-                obs.requests.SetSourceFilterSettings(
-                    sourceName=sourceName,
-                    filterName=filterName,
-                    filterSettings=filterSettings,
-                )
-            )
-            if not response.status:
-                raise RuntimeError(
-                    f"OBS::setup_sidechain(): " f"datain: {response.datain}, dataout: {response.dataout}"
-                )
+    # def setup_sidechain(
+    #     self,
+    #     ratio=None,
+    #     release_time=None,
+    #     threshold=None,
+    #     output_gain=None,
+    #     sidechain_target=None,
+    #     sidechain_source=None,
+    # ):
+    #     """
+    #     [{'enabled': True,
+    #       'name': 'sidechain',
+    #       'settings': {'ratio': 15.0,
+    #        'release_time': 1000,
+    #        'sidechain_source': 'Mic/Aux',
+    #        'threshold': -29.2},
+    #       'type': 'compressor_filter'}]
+    #     :param sidechain_target: leave empty to use default value (media stream)
+    #     :param sidechain_source: leave empty to use default value (teamspeak)
+    #     """
+    #     if not sidechain_target:
+    #         sidechain_target = OBS.MAIN_STREAM_SOURCE_NAME
+    #     if not sidechain_source:
+    #         sidechain_source = OBS.TEAMSPEAK_SOURCE_NAME
+    #
+    #     response = self.client.call(obs.requests.GetSourceFilters(sourceName=sidechain_target))
+    #
+    #     if not response.status:
+    #         raise RuntimeError(f"OBS::setup_sidechain(): " f"datain: {response.datain}, dataout: {response.dataout}")
+    #
+    #     filters = response.getFilters()  # [... {'enabled': ..., 'name': ..., 'settings': ..., 'type': ...} ...]
+    #
+    #     sourceName = sidechain_target
+    #     filterName = OBS.COMPRESSOR_FILTER_NAME
+    #     filterType = "compressor_filter"
+    #     filterSettings = {
+    #         "sidechain_source": sidechain_source,
+    #     }
+    #     if ratio is not None:
+    #         filterSettings["ratio"] = ratio
+    #     if release_time is not None:
+    #         filterSettings["release_time"] = release_time
+    #     if threshold is not None:
+    #         filterSettings["threshold"] = threshold
+    #     if output_gain is not None:
+    #         filterSettings["output_gain"] = output_gain
+    #
+    #     if all([f["name"] != OBS.COMPRESSOR_FILTER_NAME for f in filters]):  # if no compressor input added before
+    #         response = self.client.call(
+    #             obs.requests.AddFilterToSource(
+    #                 sourceName=sourceName,
+    #                 filterName=filterName,
+    #                 filterType=filterType,
+    #                 filterSettings=filterSettings,
+    #             )
+    #         )
+    #         if not response.status:
+    #             raise RuntimeError(
+    #                 f"OBS::setup_sidechain(): " f"datain: {response.datain}, dataout: {response.dataout}"
+    #             )
+    #     else:  # if compressor was already added before
+    #         response = self.client.call(
+    #             obs.requests.SetSourceFilterSettings(
+    #                 sourceName=sourceName,
+    #                 filterName=filterName,
+    #                 filterSettings=filterSettings,
+    #             )
+    #         )
+    #         if not response.status:
+    #             raise RuntimeError(
+    #                 f"OBS::setup_sidechain(): " f"datain: {response.datain}, dataout: {response.dataout}"
+    #             )
 
     def set_stream_settings(self, server, key, type="rtmp_custom"):
         """

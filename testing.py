@@ -68,3 +68,22 @@ git clone -b dev https://github.com/ALLATRA-IT/cloudobs.git
 cd cloudobs && docker build -t $(basename $(pwd))-dev . --no-cache
 docker save $(basename $(pwd))-dev > cloudobs-dev.tar
 """
+
+"""
+07.05.2023
+
+
+import obswebsocket as obsws
+import obswebsocket.requests
+
+ip = "5.161.214.30"
+
+obs = obsws.obsws(host=ip, port=4439, timeout=5)
+obs.connect()
+
+response = obs.call(obsws.requests.GetCurrentScene())
+
+from obs import OBSController2
+obs_controller = OBSController2(obs_host=ip, obs_port=4439)
+
+"""

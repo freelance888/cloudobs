@@ -1,9 +1,15 @@
 import glob
 import os
 import re
+import json
+import time
 
 import obswebsocket as obsws
+import obswebsocket.requests
 from dotenv import load_dotenv
+from pydantic import BaseModel, PrivateAttr
+from typing import List, Dict
+import threading
 
 from obs import OBS
 from util import ExecutionStatus
@@ -15,114 +21,194 @@ BASE_MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
 # DEFAULT_API_KEY = os.getenv("GDRIVE_API_KEY", "")
 # DEFAULT_SYNC_SECONDS = int(os.getenv("GDRIVE_SYNC_SECONDS", 60))
 MEDIA_DIR = os.path.join(BASE_MEDIA_DIR, "media")
-# TRANSITION_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 
 
-class OBSController:
-    def __init__(self):
-        self.minion_settings = MinionSettings.default()
+class OBSFilter(BaseModel):
+    filter_type: str
+    filter_settings: dict = None
 
-        self.obs_instance: OBS = None
-        self.obs_client = None
-        self.obs_connected = False
-        self.is_initialized = False
 
-        self.media_dir = MEDIA_DIR
+class OBSInput(BaseModel):
+    source_kind: str
+    scene_name: str = None
+    source_settings: dict = None
+    is_muted: bool = False
+    volume: float = 0
+    filters: Dict[str, OBSFilter] = {}
 
-        self.media_cb_thread = CallbackThread()
-        self.media_cb_thread.start()
 
-    def apply_info(self, minion_settings: MinionSettings):
-        self.minion_settings.modify_from(other=minion_settings)
+class OBSConfig(BaseModel):
+    inputs: Dict[str, OBSInput] = {
+        "Desktop Audio": OBSInput(
+            source_name="Desktop Audio",
+            source_kind="pulse_output_capture",
+            is_muted=True,
+        )
+    }
+    scene: str = "main"
 
-        status = ExecutionStatus(status=True)
-        try:
-            status = self._check_initialization()
-            if not status:
-                return status
 
-            self.activate()
-        except BaseException as ex:
-            status.append_error(f"Server::apply_info(): Couldn't activate settings. Details: {ex}")
-        return status
+class OBSMonitoring:
+    def __init__(self, obs_host, obs_port, obs_wrapper):
+        self.obs_config = OBSConfig()
+        self.obs = obsws.obsws(host=obs_host, port=obs_port, timeout=5)
+        self.obs_wrapper: OBS = obs_wrapper
 
-    def _check_initialization(self):
-        if self.is_initialized:
-            return ExecutionStatus(True)
-        status = self._establish_connections()
-        if not status:
-            return status
-        status = self._initialize_obs_controllers()
-        if status:
-            self.is_initialized = True
-        return status
+        self.lock = threading.RLock()
+        self.monitoring_thread = threading.Thread(target=self.monitoring)
+        self.monitoring_thread.start()
 
-    def _establish_connections(self):
-        """
-        establish obs connection
-        :return: True/False
-        """
-        # create obs ws clients
-        addr_config = self.minion_settings.addr_config
-        status = ExecutionStatus(status=True)
-
-        # establish connections
-        try:
-            if not self.obs_connected:
-                self.obs_client = obsws.obsws(host=addr_config.obs_host, port=addr_config.websocket_port)
-                self.obs_client.connect()
-                self.obs_connected = True
-        except BaseException as ex:
-            status.append_error(
-                "Server::_establish_connections(): Couldn't connect to obs server. "
-                f"Host '{addr_config.obs_host}', "
-                f"port {addr_config.websocket_port}. Details: {ex}"
-            )
-
-        return status
-
-    def _initialize_obs_controllers(self):
-        """
-        Creates obs controller instance and set up basic scenes
-        """
-        # create obs controller instances
-        self.obs_instance = OBS(self.obs_client)
-
-        addr_config = self.minion_settings.addr_config
-        status = ExecutionStatus(status=True)
-
-        # reset scenes, create original media sources
-        try:
-            self.obs_instance.clear_all_scenes()
-            self.obs_instance.setup_scene(scene_name=OBS.MAIN_SCENE_NAME)
-            self.obs_instance.add_or_replace_stream(
-                stream_name=OBS.MAIN_STREAM_SOURCE_NAME, source_url=addr_config.original_media_url
-            )
-            self.obs_instance.setup_ts_sound()
-        except BaseException as ex:
-            status.append_error(
-                f"Server::_initialize_obs_controllers(): " f"Couldn't initialize obs controller. Details: {ex}"
-            )
-
-        return status
-
-    def cleanup(self):
-        # self.stop_streaming()  # no need to check status
-        # self._reset_scenes()
-        # self.settings.deactivate(SUBJECT_SERVER_LANGS)
-        # self.is_initialized = False
-        # self.drop_connections()
-        pass
-
-    def drop_connections(self):
-        if self.obs_client is not None:
+    def monitoring(self):
+        while True:
             try:
-                self.obs_client.disconnect()
+                self.sync()
             except Exception as ex:
-                print(f"PYSERVER::Server::drop_connections(): {ex}")
-        self.obs_connected = False
+                print(f"Monitoring error: {ex}")
+            time.sleep(0.5)
 
-    def run_media(self, name, search_by_num=None, mode=None, source_name=None) -> ExecutionStatus:
+    def sync(self):
+        self._check_connection()
+        self._sync_scene()
+        self._sync_inputs()
+
+    def _check_connection(self):
+        try:
+            if not self.obs.ws or not self.obs.ws.connected:
+                self.obs.connect()
+        except Exception as ex:
+            raise ConnectionError(f"Couldn't connect to OBS: {ex}")
+
+        try:  # check connection by sending a simple request
+            response = self.obs.call(obsws.requests.GetCurrentScene())
+            if not response.status:
+                raise Exception(f"Couldn't check connection. Details: {response.dataout}")
+        except Exception as ex:  # if connection is broken - disconnect and try again
+            self.obs.disconnect()
+            raise ex
+
+    def _sync_scene(self):
+        current_scene = self.obs.call(obsws.requests.GetCurrentScene()).getName()
+        if current_scene != self.obs_config.scene:
+            # [... {'name': '...', 'sources': [...]}, ...]
+            scenes = self.obs.call(obsws.requests.GetSceneList()).getScenes()
+
+            # if such scene doesn't exist, create
+            if all([x["name"] != self.obs_config.scene for x in scenes]):
+                self.obs.call(obsws.requests.CreateScene(sceneName=self.obs_config.scene))
+
+            self.obs.call(obsws.requests.SetCurrentScene(scene_name=self.obs_config.scene))
+
+    def _sync_inputs(self):
+        scene_items = self.obs.call(obsws.requests.GetSceneItemList(sceneName=self.obs_config.scene)).getSceneItems()
+
+        # delete scene items which doesn't exist in configs
+        for scene_item in scene_items:
+            source_name = scene_item["sourceName"]
+            if source_name not in self.obs_config.inputs:
+                # pass
+                if source_name not in ("Desktop Audio", OBS.MAIN_MEDIA_NAME):
+                    self.obs.call(obsws.requests.DeleteSceneItem(item=source_name, scene=self.obs_config.scene))
+        # sync all inputs
+        for source_name in self.obs_config.inputs.keys():
+            self._sync_input(source_name)
+
+    def _sync_input(self, source_name):
+        input_: OBSInput = self.obs_config.inputs[source_name]
+        if not input_.scene_name:
+            input_.scene_name = "main"
+
+        if source_name != "Desktop Audio" and not self._source_exists(source_name):
+            self.obs.call(
+                obsws.requests.CreateSource(
+                    sourceName=source_name,
+                    sourceKind=input_.source_kind,
+                    sceneName=input_.scene_name,
+                    sourceSettings=input_.source_settings,
+                )
+            )
+        else:
+            response = self.obs.call(obsws.requests.GetSourceSettings(sourceName=source_name))
+            source_type = response.getSourceType()
+            source_settings = response.getSourceSettings()
+
+            # if settings are different -> synchronize
+            if json.dumps({"source_kind": source_type, "source_settings": source_settings}) != \
+                    json.dumps({"source_kind": input_.source_kind, "source_settings": input_.source_settings}):
+                self.obs.call(
+                    obsws.requests.SetSourceSettings(sourceName=source_name,
+                                                     sourceSettings=input_.source_settings,
+                                                     sourceType=input_.source_kind)
+                )
+
+        self._sync_filters(source_name)
+        self._sync_volume(source_name)
+        self._sync_mute(source_name)
+
+    def _sync_filters(self, source_name):
+        input_ = self.obs_config.inputs[source_name]
+        filters = self.obs.call(obsws.requests.GetSourceFilters("Media Source")).getFilters()
+
+        for filter_ in filters:  # iterate all filters on the input
+            filter_name = filter_["name"]
+            if filter_name not in input_.filters:  # if such filter doesn't exist in config -> remove
+                self.obs.call(obsws.requests.RemoveFilterFromSource(source_name, filter_name))
+
+        for filter_name in input_.filters:  # iterate through config filters
+            filter_: OBSFilter = input_.filters[filter_name]
+            if filter_name not in [f["name"] for f in filters]:  # if such filter doesn't exist yet -> create
+                self.obs.call(
+                    obsws.requests.AddFilterToSource(
+                        sourceName=source_name,
+                        filterName=filter_name,
+                        filterType=filter_.filter_type,
+                        filterSettings=filter_.filter_settings,
+                    )
+                )
+            else:  # if such filter already exists -> check it
+                existing_filter = [f for f in filters if f["name"] == filter_name][0]
+                filter_dict = {
+                    "enabled": True,
+                    "name": filter_name,
+                    "settings": filter_.filter_settings,
+                    "type": filter_.filter_type,
+                }
+                if json.dumps(existing_filter) != json.dumps(filter_dict):  # if settings are differing
+                    self.obs.call(obsws.requests.SetSourceFilterSettings(  # synchronise them
+                        sourceName=source_name, filterName=filter_name, filterSettings=filter_.filter_settings,
+                    ))
+
+    def _sync_volume(self, source_name):
+        input_: OBSInput = self.obs_config.inputs[source_name]
+
+        self.obs.call(
+            obsws.requests.SetVolume(source=source_name, volume=input_.volume, useDecibel=True)
+        )
+
+    def _sync_mute(self, source_name):
+        input_: OBSInput = self.obs_config.inputs[source_name]
+
+        self.obs.call(
+            obsws.requests.SetMute(source=source_name, mute=input_.is_muted)
+        )
+
+    def _source_exists(self, source_name):
+        """
+        Checks if the item with source name `source_name` exists
+        """
+        return self._get_itemid_from_sourcename(source_name) is not None
+
+    def _get_itemid_from_sourcename(self, source_name):
+        """
+        Returns (item_id, scene_name) given a source_name
+        """
+        items = self.obs.call(obsws.requests.GetSceneItemList(sceneName=self.obs_config.scene)).getSceneItems()
+        for item in items:
+            item_id, source_name_ = item["itemId"], item["sourceName"]
+            if source_name_ == source_name:
+                return item_id
+        return None, None
+
+    def run_media(self, name, media_dir, search_by_num=None, mode=None) -> ExecutionStatus:
         """
         :param name: see docs
         :param search_by_num: points if need to search a media file by leading numbers, defaults to True
@@ -133,22 +219,15 @@ class OBSController:
         :param source_name: input name in OBS, defaults to OBS.MAIN_MEDIA_NAME
         :return: ExecutionStatus()
         """
-        if not self._check_initialization():
-            return ExecutionStatus(status=False, message="Couldn't initialize the server")
-
         if search_by_num is None:
             search_by_num = True
         if mode is None:
             mode = OBS.PLAYBACK_MODE_FORCE
-        if source_name is None:
-            source_name = OBS.MAIN_MEDIA_NAME
 
         if mode not in (OBS.PLAYBACK_MODE_FORCE, OBS.PLAYBACK_MODE_CHECK_ANY, OBS.PLAYBACK_MODE_CHECK_SAME):
             return ExecutionStatus(status=False, message="invalid `mode`")
 
         status = ExecutionStatus(status=True)
-
-        media_dir = self.media_dir
 
         # search for the file
         if search_by_num:
@@ -176,17 +255,24 @@ class OBSController:
                 return status
 
         try:
-
             def on_start():
-                self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=True)
-                self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=True)
+                self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = True
+                self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = True
+                self.sync()
+                # self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=True)
+                # self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=True)
 
             def on_finish():
-                self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=False)
-                self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=False)
+                self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
+                self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
 
-            self.obs_instance.run_media(
-                path, mode=mode, source_name=source_name, on_start=on_start, on_error=on_finish, on_finish=on_finish
+                self.sync()
+                # self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=False)
+                # self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=False)
+
+            self.obs_wrapper.run_media(
+                path, mode=mode, source_name=OBS.MAIN_MEDIA_NAME,
+                on_start=on_start, on_error=on_finish, on_finish=on_finish
             )
         except BaseException as ex:
             status.append_error(f"Server::run_media(): couldn't play media. Details: {ex}")
@@ -197,19 +283,232 @@ class OBSController:
         """
         :return:
         """
-        if not self._check_initialization():
-            return ExecutionStatus(status=False, message="Couldn't initialize the server")
-
         status = ExecutionStatus(status=True)
 
         try:
-            self.obs_instance.stop_media()
-            self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=False)
-            self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=False)
+            self.obs_wrapper.stop_media()
+
+            self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
+            self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+            self.sync()
         except BaseException as ex:
             status.append_error(f"Server::stop_media(): couldn't stop media. Details: {ex}")
 
         return status
+
+
+class OBSController:
+    def __init__(self):
+        self.minion_settings = MinionSettings.default()
+
+        self.obs_instance: OBS = None
+        self.obs_monitoring: OBSMonitoring = None
+        self.obs_connected = False
+        self.is_initialized = False
+
+        self.media_dir = MEDIA_DIR
+
+        self.media_cb_thread = CallbackThread()
+        self.media_cb_thread.start()
+
+    def apply_info(self, minion_settings: MinionSettings):
+        self.minion_settings.modify_from(other=minion_settings)
+
+        status = ExecutionStatus(status=True)
+        try:
+            status = self._check_initialization()
+            if not status:
+                return status
+
+            self.activate()
+        except BaseException as ex:
+            status.append_error(f"Server::apply_info(): Couldn't activate settings. Details: {ex}")
+        return status
+
+    def _check_initialization(self):
+        if self.is_initialized:
+            return ExecutionStatus(True)
+        status = self._establish_connections()
+        # if not status:
+        #     return status
+        # status = self._initialize_obs_controllers()
+        if status:
+            self.is_initialized = True
+        return status
+
+    def _establish_connections(self):
+        """
+        establish obs connection
+        :return: True/False
+        """
+        # create obs ws clients
+        addr_config = self.minion_settings.addr_config
+        status = ExecutionStatus(status=True)
+
+        # establish connections
+        try:
+            if not self.obs_connected:
+                self.obs_monitoring = OBSMonitoring(obs_host=addr_config.obs_host,
+                                                    obs_port=addr_config.websocket_port)
+                self.obs_instance = OBS(self.obs_monitoring.obs, self)
+                # self.obs_client = obsws.obsws(host=addr_config.obs_host, port=addr_config.websocket_port)
+                # self.obs_client.connect()
+                self.obs_connected = True
+        except BaseException as ex:
+            status.append_error(
+                "Server::_establish_connections(): Couldn't connect to obs server. "
+                f"Host '{addr_config.obs_host}', "
+                f"port {addr_config.websocket_port}. Details: {ex}"
+            )
+
+        return status
+
+    def _initialize_obs_controllers(self):
+        """
+        Creates obs controller instance and set up basic scenes
+        """
+        # # create obs controller instances
+        # # self.obs_monitoring =
+        # self.obs_instance = OBS(self.obs_client)
+        #
+        # addr_config = self.minion_settings.addr_config
+        # status = ExecutionStatus(status=True)
+        #
+        # # reset scenes, create original media sources
+        # try:
+        #     self.obs_instance.clear_all_scenes()
+        #     self.obs_instance.setup_scene(scene_name=OBS.MAIN_SCENE_NAME)
+        #     self.obs_instance.add_or_replace_stream(
+        #         stream_name=OBS.MAIN_STREAM_SOURCE_NAME, source_url=addr_config.original_media_url
+        #     )
+        #     self.obs_instance.setup_ts_sound()
+        # except BaseException as ex:
+        #     status.append_error(
+        #         f"Server::_initialize_obs_controllers(): " f"Couldn't initialize obs controller. Details: {ex}"
+        #     )
+        #
+        # return status
+        pass
+
+    def cleanup(self):
+        # self.stop_streaming()  # no need to check status
+        # self._reset_scenes()
+        # self.settings.deactivate(SUBJECT_SERVER_LANGS)
+        # self.is_initialized = False
+        # self.drop_connections()
+        pass
+
+    def drop_connections(self):
+        # if self.obs_client is not None:
+        #     try:
+        #         self.obs_client.disconnect()
+        #     except Exception as ex:
+        #         print(f"PYSERVER::Server::drop_connections(): {ex}")
+        # self.obs_connected = False
+        pass
+
+    def run_media(self, name, search_by_num=None, mode=None, source_name=None) -> ExecutionStatus:
+        """
+        :param name: see docs
+        :param search_by_num: points if need to search a media file by leading numbers, defaults to True
+        :param mode: media play mode. Possible values:
+                     - "force" - stop any media being played right now, and play media specified (default value)
+                     - "check_any" - if any video is being played, skip
+                     - "check_same" - if the same video is being played, skip, otherwise play
+        :param source_name: input name in OBS, defaults to OBS.MAIN_MEDIA_NAME
+        :return: ExecutionStatus()
+        """
+        return self.obs_monitoring.run_media(
+            name=name, media_dir=self.media_dir, search_by_num=search_by_num, mode=mode
+        )
+        # if not self._check_initialization():
+        #     return ExecutionStatus(status=False, message="Couldn't initialize the server")
+        #
+        # if search_by_num is None:
+        #     search_by_num = True
+        # if mode is None:
+        #     mode = OBS.PLAYBACK_MODE_FORCE
+        # if source_name is None:
+        #     source_name = OBS.MAIN_MEDIA_NAME
+        #
+        # if mode not in (OBS.PLAYBACK_MODE_FORCE, OBS.PLAYBACK_MODE_CHECK_ANY, OBS.PLAYBACK_MODE_CHECK_SAME):
+        #     return ExecutionStatus(status=False, message="invalid `mode`")
+        #
+        # status = ExecutionStatus(status=True)
+        #
+        # media_dir = self.media_dir
+        #
+        # # search for the file
+        # if search_by_num:
+        #     # extract file number
+        #     file_num = re.search(r"^[\d\.]+.", name)
+        #     if not file_num:  # if the pattern is incorrect (name doesn't start with numbers)
+        #         status.append_error(
+        #             f"Server::run_media(): while `use_file_num` is set, "
+        #             f"`name` doesn't start with a number. name {name}"
+        #         )
+        #         return status
+        #     else:
+        #         file_num = file_num.group()
+        #
+        #         files = glob.glob(os.path.join(media_dir, f"{file_num}*"))  # find those files
+        #         if len(files) == 0:  # if no media found with name specified
+        #             status.append_warning(f"Server::run_media(): no media found, name {name}")
+        #             return status
+        #         else:
+        #             path = files[0]
+        # else:
+        #     path = os.path.join(media_dir, name)
+        #     if not os.path.isfile(path):
+        #         status.append_warning(f"Server::run_media(): no media found with name specified, name {name}")
+        #         return status
+        #
+        # try:
+        #
+        #     def on_start():
+        #         self.obs_monitoring.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = True
+        #         self.obs_monitoring.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = True
+        #         self.obs_monitoring.sync()
+        #         # self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=True)
+        #         # self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=True)
+        #
+        #     def on_finish():
+        #         self.obs_monitoring.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
+        #         self.obs_monitoring.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+        #         self.obs_monitoring.sync()
+        #         # self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=False)
+        #         # self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=False)
+        #
+        #     self.obs_instance.run_media(
+        #         path, mode=mode, source_name=source_name, on_start=on_start, on_error=on_finish, on_finish=on_finish
+        #     )
+        # except BaseException as ex:
+        #     status.append_error(f"Server::run_media(): couldn't play media. Details: {ex}")
+        #
+        # return status
+
+    def stop_media(self) -> ExecutionStatus:
+        """
+        :return:
+        """
+        return self.obs_monitoring.stop_media()
+        # if not self._check_initialization():
+        #     return ExecutionStatus(status=False, message="Couldn't initialize the server")
+        #
+        # status = ExecutionStatus(status=True)
+        #
+        # try:
+        #     self.obs_monitoring.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
+        #     self.obs_monitoring.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+        #     self.obs_monitoring.sync()
+        #
+        #     self.obs_instance.stop_media()
+        #     # self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=False)
+        #     # self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=False)
+        # except BaseException as ex:
+        #     status.append_error(f"Server::stop_media(): couldn't stop media. Details: {ex}")
+        #
+        # return status
 
     def set_media_dir(self, media_dir) -> ExecutionStatus:
         """
@@ -254,16 +553,55 @@ class OBSController:
     #     return status
 
     def activate(self):
+        self.activate_monitoring()
         status = self.activate_server_langs()
         if not self.minion_settings.addr_config.is_active():
             raise RuntimeError("Server::activate(): Couldn't activate addr_config")
         status = self.activate_stream_settings()
         status = self.activate_stream_on()
         status = self.activate_ts_offset()
-        status = self.activate_ts_volume()
-        status = self.activate_source_volume()
-        status = self.activate_sidechain()
+        # status = self.activate_ts_volume()
+        # status = self.activate_source_volume()
+        # status = self.activate_sidechain()
         status = self.activate_transition()
+
+    def activate_monitoring(self):
+        obs_config: OBSConfig = self.obs_monitoring.obs_config
+
+        # sync teamspeak
+        obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME] = OBSInput(
+            source_kind="pulse_output_capture",
+            source_settings={
+                "device_id": "obs_sink.monitor",
+            },
+            is_muted=False,
+            volume=self.minion_settings.ts_volume.value,
+        )
+
+        # sync main source
+        obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME] = OBSInput(
+            source_kind="ffmpeg_source",
+            source_settings={
+                "buffering_mb": 12,
+                "input": self.minion_settings.addr_config.original_media_url,
+                "is_local_file": False,
+                "clear_on_media_end": False,
+            },
+            is_muted=False,
+            volume=self.minion_settings.source_volume.value,
+            filters={
+                OBS.COMPRESSOR_FILTER_NAME: OBSFilter(
+                    filter_type="compressor_filter",
+                    filter_settings={
+                        "sidechain_source": OBS.TEAMSPEAK_SOURCE_NAME,
+                        "ratio": self.minion_settings.sidechain_settings.ratio,
+                        "release_time": self.minion_settings.sidechain_settings.release_time,
+                        "threshold": self.minion_settings.sidechain_settings.threshold,
+                        "output_gain": self.minion_settings.sidechain_settings.output_gain,
+                    }
+                )
+            }
+        )
 
     def activate_server_langs(self):
         if self.minion_settings.addr_config.is_active():
@@ -274,9 +612,9 @@ class OBSController:
         if not status:
             return status
 
-        self.minion_settings.sidechain_settings.modify()
-        self.minion_settings.source_volume.modify()
-        self.minion_settings.ts_volume.modify()
+        # self.minion_settings.sidechain_settings.modify()
+        # self.minion_settings.source_volume.modify()
+        # self.minion_settings.ts_volume.modify()
         self.minion_settings.ts_offset.modify()
 
         self.minion_settings.addr_config.activate()
@@ -322,7 +660,8 @@ class OBSController:
 
         try:
             os.system(f'bash --login -c "/usr/bin/pactl unload-module module-loopback"')
-            os.system(f'bash --login -c "/usr/bin/pactl load-module module-loopback sink=obs_sink latency_msec={ts_offset}"')
+            os.system(
+                f'bash --login -c "/usr/bin/pactl load-module module-loopback sink=obs_sink latency_msec={ts_offset}"')
             # self.obs_instance.set_sound_sync_offset(source_name=OBS.TEAMSPEAK_SOURCE_NAME, offset=ts_offset)
             self.minion_settings.ts_offset.activate()
 
@@ -330,52 +669,52 @@ class OBSController:
         except Exception as ex:
             return ExecutionStatus(False, f"Couldn't activate teamspeak sound offset. Details: {ex}")
 
-    def activate_ts_volume(self):
-        if self.minion_settings.ts_volume.is_active():
-            return ExecutionStatus(True)
+    # def activate_ts_volume(self):
+    #     if self.minion_settings.ts_volume.is_active():
+    #         return ExecutionStatus(True)
+    #
+    #     ts_volume = self.minion_settings.ts_volume.value
+    #
+    #     try:
+    #         self.obs_instance.set_sound_volume_db(source_name=OBS.TEAMSPEAK_SOURCE_NAME, volume_db=ts_volume)
+    #         self.minion_settings.ts_volume.activate()
+    #
+    #         return ExecutionStatus(True)
+    #     except Exception as ex:
+    #         return ExecutionStatus(False, f"Couldn't activate teamspeak volume. Details: {ex}")
 
-        ts_volume = self.minion_settings.ts_volume.value
+    # def activate_source_volume(self):
+    #     if self.minion_settings.source_volume.is_active():
+    #         return ExecutionStatus(True)
+    #
+    #     source_volume = self.minion_settings.source_volume.value
+    #
+    #     try:
+    #         self.obs_instance.set_sound_volume_db(source_name=OBS.MAIN_STREAM_SOURCE_NAME, volume_db=source_volume)
+    #         self.minion_settings.source_volume.activate()
+    #
+    #         return ExecutionStatus(True)
+    #     except Exception as ex:
+    #         return ExecutionStatus(False, f"Couldn't activate source volume. Details: {ex}")
 
-        try:
-            self.obs_instance.set_sound_volume_db(source_name=OBS.TEAMSPEAK_SOURCE_NAME, volume_db=ts_volume)
-            self.minion_settings.ts_volume.activate()
-
-            return ExecutionStatus(True)
-        except Exception as ex:
-            return ExecutionStatus(False, f"Couldn't activate teamspeak volume. Details: {ex}")
-
-    def activate_source_volume(self):
-        if self.minion_settings.source_volume.is_active():
-            return ExecutionStatus(True)
-
-        source_volume = self.minion_settings.source_volume.value
-
-        try:
-            self.obs_instance.set_sound_volume_db(source_name=OBS.MAIN_STREAM_SOURCE_NAME, volume_db=source_volume)
-            self.minion_settings.source_volume.activate()
-
-            return ExecutionStatus(True)
-        except Exception as ex:
-            return ExecutionStatus(False, f"Couldn't activate source volume. Details: {ex}")
-
-    def activate_sidechain(self):
-        if self.minion_settings.sidechain_settings.is_active():
-            return ExecutionStatus(True)
-
-        sidechain_settings = self.minion_settings.sidechain_settings
-
-        try:
-            self.obs_instance.setup_sidechain(
-                ratio=sidechain_settings.ratio,
-                release_time=sidechain_settings.release_time,
-                threshold=sidechain_settings.threshold,
-                output_gain=sidechain_settings.output_gain,
-            )
-            self.minion_settings.sidechain_settings.activate()
-
-            return ExecutionStatus(True)
-        except Exception as ex:
-            return ExecutionStatus(False, f"Couldn't activate sidechain. Details: {ex}")
+    # def activate_sidechain(self):
+    #     if self.minion_settings.sidechain_settings.is_active():
+    #         return ExecutionStatus(True)
+    #
+    #     sidechain_settings = self.minion_settings.sidechain_settings
+    #
+    #     try:
+    #         self.obs_instance.setup_sidechain(
+    #             ratio=sidechain_settings.ratio,
+    #             release_time=sidechain_settings.release_time,
+    #             threshold=sidechain_settings.threshold,
+    #             output_gain=sidechain_settings.output_gain,
+    #         )
+    #         self.minion_settings.sidechain_settings.activate()
+    #
+    #         return ExecutionStatus(True)
+    #     except Exception as ex:
+    #         return ExecutionStatus(False, f"Couldn't activate sidechain. Details: {ex}")
 
     def activate_transition(self):
         if self.minion_settings.transition_settings.is_active():
