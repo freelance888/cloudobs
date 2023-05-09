@@ -1,13 +1,14 @@
+# REFACTORING: delete this file, use sheets.py
+
 import os
 import re
 
 import pandas as pd
 import pygsheets
 from dotenv import load_dotenv
-
-from media import server
-from media.server import ServerSettings
-from util.util import (MultilangParams, to_seconds)
+from typing import Dict
+from models import MinionSettings
+from datetime import timedelta
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -24,55 +25,33 @@ class OBSGoogleSheets:
 
         self.sheet = None
         self.ws = None
-        self.settings = {}  # dictionary of Lang: ServerSettings()
 
-        self._ok = False
-
-    def ok(self):
-        return self._ok
+        self.setup_status = False
 
     def set_sheet(self, sheet_url, worksheet_name):
         self.sheet = self.gc.open_by_url(sheet_url)
         self.ws = self.sheet.worksheet_by_title(worksheet_name)
-        self.settings = {}
-        self._ok = True
+        self.setup_status = True
 
-    def langs(self):
-        return list(self.settings.keys())
+    def pull(self) -> Dict[str, MinionSettings]:
+        df = self.ws.get_as_df()  # load data from google sheets
+        return self.parse_df(df)
 
-    def pull(self):
-        data = self.ws.get_as_df()  # load data from google sheets
-        self.from_df(data)
-
-    def push(self):
-        df = self.to_df()
+    def push(self, sheet_config: Dict[str, MinionSettings]):
+        df = self.to_df(sheet_config)
         self.ws.set_dataframe(df, (1, 1))
 
-    def from_info(self, lang, info):
-        """
-        Updates server settings from the given `info`. Also pushes the dataframe to the google sheet
-        """
-        # TODO
-        langs = self.langs()
-        if lang not in langs:  # skip lang if it is not in our langs
-            raise KeyError(f"Invalid lang {lang}")
-        for subject, data in info.items():  # for each subject
-            for k, v in data.items():  # for each key-value pair
-                self._set_subject_value(lang, subject, k, v)
-        self.push()
+    def parse_df(self, df: pd.DataFrame) -> Dict[str, MinionSettings]:
+        langs = {}
 
-    def dump_info(self, lang):
-        # TODO
-        return self.settings[lang].to_dict()
+        for id in df.index:  # for each lang
+            lang = df.loc[id, "lang"]
+            source_url = df.loc[id, "source_url"]
+            target_server = df.loc[id, "target_server"]
+            target_key = df.loc[id, "target_key"]
+            gdrive_folder_url = df.loc[id, "gdrive_folder_url"]
 
-    def from_df(self, df):
-        for lang in df["lang"]:  # for each lang
-            data_ = df.loc[df["lang"] == lang]
-            source_url = data_["source_url"].values[0]
-            target_server = data_["target_server"].values[0]
-            target_key = data_["target_key"].values[0]
-            gdrive_folder_url = data_["gdrive_folder_url"].values[0]
-            if gdrive_folder_url:
+            if gdrive_folder_url:  # validate gdrive_folder_url format
                 url = re.search(r"\/folders\/(?P<id>[a-zA-Z0-9\_\-]+)", gdrive_folder_url)
                 if len(url.groups()) != 1:
                     raise ValueError(f"Invalid link: {gdrive_folder_url}")
@@ -80,107 +59,36 @@ class OBSGoogleSheets:
             else:
                 gdrive_folder_id = ""
 
-            self._update_lang(
-                lang,
-                source_url=source_url,
-                target_server=target_server,
-                target_key=target_key,
-                gdrive_folder_id=gdrive_folder_id,
-            )
+            settings = MinionSettings.get_none()
 
-    def to_df(self):
-        """
-        Forms a dataframe based on self.settings.
-        Has the following structure:
-        | lang    | source_url    | target_server | target_key    | gdrive_folder_url   |
-        """
-        data = []
-        for lang in self.settings:
-            # settings: ServerSettings = self.settings[lang]
-            source_url = self._get_value(lang, "source_url")
-            target_server = self._get_value(lang, "target_server")
-            target_key = self._get_value(lang, "target_key")
-            gdrive_folder_id = self._get_value(lang, "gdrive_folder_id")
-            if gdrive_folder_id:
-                gdrive_folder_url = f"https://drive.google.com/drive/u/0/folders/{gdrive_folder_id}"
+            settings.addr_config.original_media_url = source_url
+            settings.stream_settings.server = target_server
+            settings.stream_settings.key = target_key
+            settings.gdrive_settings.media_dir = MEDIA_DIR
+            settings.gdrive_settings.api_key = API_KEY
+            settings.gdrive_settings.sync_seconds = SYNC_SECONDS
+            settings.gdrive_settings.gdrive_sync_addr = GDRIVE_SYNC_ADDR
+            settings.gdrive_settings.folder_id = gdrive_folder_id
+
+            if lang in langs:
+                raise KeyError(f'Multiple entries for lang "{lang}"')
+
+            langs[lang] = settings
+
+        return langs
+
+    def to_df(self, sheet_config: Dict[str, MinionSettings]) -> pd.DataFrame:
+        rows = []
+        for lang, settings in sheet_config.items():  # for each lang
+            source_url = settings.addr_config.original_media_url
+            target_server = settings.stream_settings.server
+            target_key = settings.stream_settings.key
+            if settings.gdrive_settings.folder_id:
+                gdrive_folder_url = f"https://drive.google.com/drive/folders/{settings.gdrive_settings.folder_id}"
             else:
                 gdrive_folder_url = ""
-            data.append([lang, source_url, target_server, target_key, gdrive_folder_url])
-        return pd.DataFrame(data, columns=["lang", "source_url", "target_server", "target_key", "gdrive_folder_url"])
-
-    def to_multilang_params(
-        self, subjects=(server.SUBJECT_SERVER_LANGS, server.SUBJECT_GDRIVE_SETTINGS, server.SUBJECT_STREAM_SETTINGS)
-    ):
-        params = {}
-        for lang in self.settings:
-            info_ = self.dump_info(lang)
-            for subject in list(info_.keys()):
-                if subject not in subjects:  # leave only those subjects specified in `subjects` parameter
-                    info_.pop(subject)
-            params[lang] = info_
-        return MultilangParams(params, langs=list(self.settings.keys()))
-
-    def _update_lang(self, lang, **kwargs):
-        """
-        Updates a single language settings.
-        **kwargs available keys: [source_url, target_server, target_key, gdrive_folder_id]
-        """
-        if lang not in self.settings:
-            self._init_settings(lang)
-        for k, v in kwargs.items():
-            self._set_value(lang, k, v)
-
-    def _get_value(self, lang, k):
-        if k == "source_url":
-            return self.settings[lang].get(server.SUBJECT_SERVER_LANGS, "original_media_url")
-        elif k == "target_server":
-            return self.settings[lang].get(server.SUBJECT_STREAM_SETTINGS, "server")
-        elif k == "target_key":
-            return self.settings[lang].get(server.SUBJECT_STREAM_SETTINGS, "key")
-        elif k == "gdrive_folder_id":
-            return self.settings[lang].get(server.SUBJECT_GDRIVE_SETTINGS, "drive_id")
-        elif k == "media_dir":
-            return self.settings[lang].get(server.SUBJECT_GDRIVE_SETTINGS, "media_dir")
-        elif k == "api_key":
-            return self.settings[lang].get(server.SUBJECT_GDRIVE_SETTINGS, "api_key")
-        elif k == "sync_seconds":
-            return self.settings[lang].get(server.SUBJECT_GDRIVE_SETTINGS, "sync_seconds")
-        elif k == "gdrive_sync_addr":
-            return self.settings[lang].get(server.SUBJECT_GDRIVE_SETTINGS, "gdrive_sync_addr")
-        else:
-            raise KeyError(f"Invalid key: {k}")
-
-    def _set_value(self, lang, k, v):
-        if k == "source_url":
-            self.settings[lang].set(server.SUBJECT_SERVER_LANGS, "original_media_url", v)
-        elif k == "target_server":
-            self.settings[lang].set(server.SUBJECT_STREAM_SETTINGS, "server", v)
-        elif k == "target_key":
-            self.settings[lang].set(server.SUBJECT_STREAM_SETTINGS, "key", v)
-        elif k == "gdrive_folder_id":
-            self.settings[lang].set(server.SUBJECT_GDRIVE_SETTINGS, "drive_id", v)
-        elif k == "media_dir":
-            self.settings[lang].set(server.SUBJECT_GDRIVE_SETTINGS, "media_dir", v)
-        elif k == "api_key":
-            self.settings[lang].set(server.SUBJECT_GDRIVE_SETTINGS, "api_key", v)
-        elif k == "sync_seconds":
-            self.settings[lang].set(server.SUBJECT_GDRIVE_SETTINGS, "sync_seconds", v)
-        elif k == "gdrive_sync_addr":
-            self.settings[lang].set(server.SUBJECT_GDRIVE_SETTINGS, "gdrive_sync_addr", v)
-        else:
-            raise KeyError(f"Invalid key: {k}")
-
-    def _set_subject_value(self, lang, subject, k, v):
-        if lang not in self.settings:
-            self._init_settings(lang)
-        self.settings[lang].set(subject, k, v)
-
-    def _init_settings(self, lang):
-        self.settings[lang] = ServerSettings()
-        self._set_value(lang, "media_dir", MEDIA_DIR)
-        self._set_value(lang, "api_key", API_KEY)
-        self._set_value(lang, "sync_seconds", SYNC_SECONDS)
-        self._set_value(lang, "gdrive_sync_addr", GDRIVE_SYNC_ADDR)
+            rows.append([lang, source_url, target_server, target_key, gdrive_folder_url])
+        return pd.DataFrame(rows, columns=["lang", "source_url", "target_server", "target_key", "gdrive_folder_url"])
 
 
 class TimingGoogleSheets:
@@ -191,21 +99,33 @@ class TimingGoogleSheets:
         self.sheet = None
         self.ws = None
 
-        self._ok = False
-        self.timing_df = None
+        self.setup_status = False
 
-    def cleanup(self):
-        self._ok = False
-
-    def ok(self):
-        return self._ok
+    @classmethod
+    def to_timedelta(cls, timestamp_str):
+        """
+        :param timestamp_str: string representation of time. Format of 00:00:00[.000]
+        :return:
+        """
+        if re.fullmatch("\d{1,2}\:\d{2}\:\d{2}\.\d{1,6}", timestamp_str):  # format of 00:00:00.000000
+            r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})\.(?P<microsecond>\d{1,6})",
+                          timestamp_str)
+            hour, minute, second = int(r.group("hour")), int(r.group("minute")), int(r.group("second"))
+            microseconds = int(r.group("microsecond").ljust(6, "0"))
+            return timedelta(hours=hour, minutes=minute, seconds=second, microseconds=microseconds)
+        elif re.fullmatch("\d{1,2}\:\d{2}\:\d{2}", timestamp_str):  # format of 00:00:00
+            r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})", timestamp_str)
+            hour, minute, second = int(r.group("hour")), int(r.group("minute")), int(r.group("second"))
+            return timedelta(hours=hour, minutes=minute, seconds=second)
+        else:
+            raise f"Timestamp has invalid format: {timestamp_str}"
 
     def set_sheet(self, sheet_url, worksheet_name):
         self.sheet = self.gc.open_by_url(sheet_url)
         self.ws = self.sheet.worksheet_by_title(worksheet_name)
-        self._ok = True
+        self.setup_status = True
 
-    def pull(self):
+    def pull(self) -> pd.DataFrame:
         """
         df - dataframe, e.g.:
         timestamp   name
@@ -215,7 +135,7 @@ class TimingGoogleSheets:
         """
         df = self.ws.get_as_df()  # load data from google sheets
 
-        df["timestamp"] = df["timestamp"].apply(to_seconds)
+        df["timestamp"] = df["timestamp"].apply(TimingGoogleSheets.to_timedelta)
         df = df[["timestamp", "name"]]
 
-        self.timing_df = df
+        return df

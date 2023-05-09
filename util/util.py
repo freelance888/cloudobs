@@ -1,18 +1,15 @@
 import asyncio
 import hashlib
+import json
 import re
 import sys
 import threading
-from threading import Lock
 import time
+from threading import Lock
 
 import aiohttp
 from asgiref import sync
 
-
-PLAYBACK_MODE_FORCE = "force"  # stop any media being played right now, and play media specified
-PLAYBACK_MODE_CHECK_ANY = "check_any"  # if any video is being played, skip
-PLAYBACK_MODE_CHECK_SAME = "check_same"  # if the same video is being played, skip, otherwise play
 
 def async_aiohttp_get_all(urls):
     """
@@ -21,7 +18,6 @@ def async_aiohttp_get_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.get(url) as response:
                     return Response(await response.text(), response.status)
@@ -39,7 +35,6 @@ def async_aiohttp_post_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.post(url) as response:
                     return Response(await response.text(), response.status)
@@ -57,7 +52,6 @@ def async_aiohttp_delete_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.delete(url) as response:
                     return Response(await response.text(), response.status)
@@ -75,7 +69,6 @@ def async_aiohttp_put_all(urls):
 
     async def get_all(urls):
         async with aiohttp.ClientSession() as session:
-
             async def fetch(url):
                 async with session.put(url) as response:
                     return Response(await response.text(), response.status)
@@ -112,7 +105,7 @@ def validate_media_play_params(name, use_file_num):
     return ExecutionStatus(status=True)
 
 
-def generate_file_md5(filename, blocksize=2**25):
+def generate_file_md5(filename, blocksize=2 ** 25):
     m = hashlib.md5()
     with open(filename, "rb") as f:
         while True:
@@ -121,20 +114,6 @@ def generate_file_md5(filename, blocksize=2**25):
                 break
             m.update(buf)
     return m.hexdigest()
-
-
-def to_seconds(timestamp_str):
-    """
-    :param timestamp_str: string representation of time. Format of 00:00:00
-    :return:
-    """
-    if not re.fullmatch(r"\d{1,2}\:\d{2}\:\d{2}", timestamp_str):
-        raise f"Timestamp has invalid format: {timestamp_str}"
-    r = re.search(r"(?P<hour>\d{1,2})\:(?P<minute>\d{2})\:(?P<second>\d{2})", timestamp_str)
-    hour, minute, second = r.group("hour"), r.group("minute"), r.group("second")
-    hour, minute, second = int(hour), int(minute), int(second)
-
-    return hour * 3600 + minute * 60 + second * 1
 
 
 def log(text):
@@ -203,9 +182,18 @@ class MultilangParams:
 
 
 class ExecutionStatus:
-    def __init__(self, status=True, message=""):
+    def __init__(self, status=True, message="", serializable_object=None):
+        """
+        :param status:
+        :param message:
+        :param json_result:
+        """
         self.status = status
-        self.message = message
+        if isinstance(message, list):
+            self.message = message
+        else:
+            self.message = [message]
+        self.serializable_object = serializable_object
 
         if re.match(r"\d{3}$", str(status)):
             self._type = "http"
@@ -219,15 +207,10 @@ class ExecutionStatus:
             return bool(self.status)
 
     def append_warning(self, message):
-        if self.message:
-            self.message += "\n-----\n"
-        self.message += message
-        self.status = False
+        self.message.append(message)
 
     def append_error(self, message):
-        if self.message:
-            self.message += "\n-----\n"
-        self.message += message
+        self.message.append(message)
         self.status = False
 
     def to_http_status(self):
@@ -236,8 +219,59 @@ class ExecutionStatus:
         `(message, code)`
         """
         code = 200 if self.__bool__() else 500
-        msg = "Ok" if code == 200 and not self.message else self.message
-        return msg, code
+
+        if self.message:
+            message = "\n".join(self.message)
+        else:
+            message = "Ok"
+
+        return message, code
+
+    def json(self):
+        """
+        Converts the ExecutionStatus into json string.
+        Has the following structure:
+        {
+            "result": True/False,
+            "details": "message",
+            "serializable_object": some_serializable_object
+        }
+        :return:
+        """
+        # if there is only one message, leave it as string
+        if isinstance(self.message, list):
+            if len(self.message) == 1:
+                message = self.message[0]
+            else:
+                message = self.message
+        else:
+            message = self.message
+
+        return json.dumps(
+            {"result": self.__bool__(), "details": message, "serializable_object": self.serializable_object}
+        )
+
+    def dict(self):
+        # if there is only one message, leave it as string
+        if isinstance(self.message, list):
+            if len(self.message) == 1:
+                message = self.message[0]
+            else:
+                message = self.message
+        else:
+            message = self.message
+
+        return {"result": self.__bool__(), "details": message, "serializable_object": self.serializable_object}
+
+    @classmethod
+    def from_json(cls, json_string: str):
+        obj = json.loads(json_string)
+
+        return ExecutionStatus(
+            status=obj["result"],
+            message=obj["details"],
+            serializable_object=(obj["serializable_object"] if "serializable_object" in obj else None),
+        )
 
 
 class DefaultDict:
@@ -304,7 +338,7 @@ class GDriveFiles:
 
 class CallbackThread(threading.Thread):
     def __init__(self):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.callbacks = []  # list of {"foo": foo, "args": args, "delay": delay}, note: delay in seconds
         self.running = True
         threading.Thread.__init__(self)
@@ -341,9 +375,9 @@ class CallbackThread(threading.Thread):
             time.sleep(0.01)
 
     def _check_callbacks(self):
-        for cb in self.callbacks.copy():
-            self._check_callback(cb)
         with self.lock:
+            for cb in self.callbacks.copy():
+                self._check_callback(cb)
             self.callbacks = [cb for cb in self.callbacks if not cb["__done__"]]
 
     def _check_callback(self, cb):
@@ -376,14 +410,24 @@ class ServerState:
     DISPOSING = "disposing"
 
     def __init__(self, state):
-        assert state in (ServerState.SLEEPING, ServerState.NOT_INITIALIZED, ServerState.INITIALIZING,
-                         ServerState.RUNNING, ServerState.DISPOSING)
+        assert state in (
+            ServerState.SLEEPING,
+            ServerState.NOT_INITIALIZED,
+            ServerState.INITIALIZING,
+            ServerState.RUNNING,
+            ServerState.DISPOSING,
+        )
         self.state = state
         self.lock = Lock()
 
     def set(self, state):
-        assert state in (ServerState.SLEEPING, ServerState.NOT_INITIALIZED, ServerState.INITIALIZING,
-                         ServerState.RUNNING, ServerState.DISPOSING)
+        assert state in (
+            ServerState.SLEEPING,
+            ServerState.NOT_INITIALIZED,
+            ServerState.INITIALIZING,
+            ServerState.RUNNING,
+            ServerState.DISPOSING,
+        )
         with self.lock:
             self.state = state
 
@@ -405,3 +449,31 @@ class ServerState:
 
     def disposing(self):
         return self.state == ServerState.DISPOSING
+
+
+class WebsocketResponse:
+    @classmethod
+    def wait_for(cls, responses):
+        if not responses:
+            return responses
+        while not all([r.done() for r in responses]):
+            time.sleep(0.1)
+        return responses
+
+    def __init__(self, timeout=5.0):
+        self.t = time.time()
+        self.timeout = timeout
+        self.response = None
+        self._done = False
+
+    def callback(self, *data):
+        self.response = data
+        if isinstance(self.response, tuple) and len(self.response) == 1:
+            self.response = self.response[0]
+        self._done = True
+
+    def done(self):
+        return self._done or (time.time() - self.t) >= self.timeout
+
+    def result(self):
+        return self.response

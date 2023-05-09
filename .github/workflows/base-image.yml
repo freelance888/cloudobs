@@ -11,6 +11,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    environment: ${{ vars.GITHUB_BASE_REF }}
     steps:
     - uses: actions/checkout@v3
 
@@ -18,6 +19,7 @@ jobs:
       run: |
         docker build -t base-image -f ./base-image.dockerfile .
         docker save base-image > base-image.tar
+        ls -1
 
     - name: Saving base docker image to artifacts
       uses: actions/upload-artifact@v3
