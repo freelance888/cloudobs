@@ -42,16 +42,16 @@ class OBSConfig(BaseModel):
         "Desktop Audio": OBSInput(
             source_name="Desktop Audio",
             source_kind="pulse_output_capture",
-            is_muted=True,
+            is_muted=True, source_settings={"device_id": "default"},
         )
     }
     scene: str = "main"
 
 
 class OBSMonitoring:
-    def __init__(self, obs_host, obs_port, obs_wrapper):
+    def __init__(self, obs, obs_wrapper):
         self.obs_config = OBSConfig()
-        self.obs = obsws.obsws(host=obs_host, port=obs_port, timeout=5)
+        self.obs = obs
         self.obs_wrapper: OBS = obs_wrapper
 
         self.lock = threading.RLock()
@@ -132,8 +132,10 @@ class OBSMonitoring:
             source_settings = response.getSourceSettings()
 
             # if settings are different -> synchronize
-            if json.dumps({"source_kind": source_type, "source_settings": source_settings}) != \
-                    json.dumps({"source_kind": input_.source_kind, "source_settings": input_.source_settings}):
+            if not self._settings_equal(input_.source_kind, source_type,
+                                        input_.source_settings, source_settings):
+            # if json.dumps({"source_kind": source_type, "source_settings": source_settings}) != \
+            #         json.dumps({"source_kind": input_.source_kind, "source_settings": input_.source_settings}):
                 self.obs.call(
                     obsws.requests.SetSourceSettings(sourceName=source_name,
                                                      sourceSettings=input_.source_settings,
@@ -146,7 +148,7 @@ class OBSMonitoring:
 
     def _sync_filters(self, source_name):
         input_ = self.obs_config.inputs[source_name]
-        filters = self.obs.call(obsws.requests.GetSourceFilters("Media Source")).getFilters()
+        filters = self.obs.call(obsws.requests.GetSourceFilters(source_name)).getFilters()
 
         for filter_ in filters:  # iterate all filters on the input
             filter_name = filter_["name"]
@@ -172,7 +174,8 @@ class OBSMonitoring:
                     "settings": filter_.filter_settings,
                     "type": filter_.filter_type,
                 }
-                if json.dumps(existing_filter) != json.dumps(filter_dict):  # if settings are differing
+                if not self._settings_equal("sidechain", "sidechain", filter_dict, existing_filter):
+                # if json.dumps(existing_filter) != json.dumps(filter_dict):  # if settings are differing
                     self.obs.call(obsws.requests.SetSourceFilterSettings(  # synchronise them
                         sourceName=source_name, filterName=filter_name, filterSettings=filter_.filter_settings,
                     ))
@@ -206,7 +209,20 @@ class OBSMonitoring:
             item_id, source_name_ = item["itemId"], item["sourceName"]
             if source_name_ == source_name:
                 return item_id
-        return None, None
+        return None
+
+    def _settings_equal(self, source_kind_conf, source_kind_obs, source_settings_conf, source_settings_obs):
+        if source_kind_conf != source_kind_obs:
+            return False
+
+        if source_settings_conf is not None:
+            if source_settings_obs is None:
+                return False
+            for key, value in source_settings_conf.items():
+                if source_settings_obs[key] != value:
+                    return False
+
+        return True
 
     def run_media(self, name, media_dir, search_by_num=None, mode=None) -> ExecutionStatus:
         """
@@ -301,6 +317,7 @@ class OBSController:
     def __init__(self):
         self.minion_settings = MinionSettings.default()
 
+        self.obs_ws: obsws.obsws = None
         self.obs_instance: OBS = None
         self.obs_monitoring: OBSMonitoring = None
         self.obs_connected = False
@@ -348,10 +365,9 @@ class OBSController:
         # establish connections
         try:
             if not self.obs_connected:
-                self.obs_instance = OBS(self.obs_monitoring.obs)
-                self.obs_monitoring = OBSMonitoring(obs_host=addr_config.obs_host,
-                                                    obs_port=addr_config.websocket_port,
-                                                    obs_wrapper=self.obs_instance)
+                self.obs_ws = obsws.obsws(host=addr_config.obs_host, port=addr_config.websocket_port, timeout=5)
+                self.obs_instance = OBS(self.obs_ws)
+                self.obs_monitoring = OBSMonitoring(obs=self.obs_ws, obs_wrapper=self.obs_instance)
                 # self.obs_client = obsws.obsws(host=addr_config.obs_host, port=addr_config.websocket_port)
                 # self.obs_client.connect()
                 self.obs_connected = True

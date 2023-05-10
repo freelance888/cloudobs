@@ -19,15 +19,17 @@ for lang in minion_configs:
     skipper.registry.update_minion(lang, minion_configs[lang])
 
 # infrastructure
-skipper.infrastructure.spawner.ensure_langs(skipper.registry.list_langs(), wait_for_provision=True)
+skipper.infrastructure.set_ip_langs({"5.161.214.30": "Bel"})
+#skipper.infrastructure.spawner.ensure_langs(skipper.registry.list_langs(), wait_for_provision=True)
 
 skipper.registry.minion_configs["Bel"].addr_config.minion_server_addr = "localhost"
 ip = skipper.infrastructure.spawner.ip_dict.ip_list()[0][1]
 skipper.registry.minion_configs["Bel"].addr_config.obs_host = ip
 
 for lang, server_ip in skipper.infrastructure.spawner.ip_dict.ip_list():
-    if lang not in skipper.minions:
-        skipper.minions[lang] = Skipper.Minion(minion_ip="localhost", lang=lang)
+    # if lang not in skipper.minions:
+    skipper.minions[lang] = Skipper.Minion(minion_ip="localhost", lang=lang, skipper=skipper,
+                                               ws_port=6006)
 
 # apply configs
 configs_to_activate = [
