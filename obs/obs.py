@@ -27,9 +27,8 @@ class OBS:
     PLAYBACK_MODE_CHECK_ANY = "check_any"  # if any video is being played, skip
     PLAYBACK_MODE_CHECK_SAME = "check_same"  # if the same video is being played, skip, otherwise play
 
-    def __init__(self, client, obs_controller):
+    def __init__(self, client):
         self.client = client
-        self.obs_controller = obs_controller
 
         self.transition_name = "Cut"
         self.transition_path = ""

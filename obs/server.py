@@ -348,9 +348,10 @@ class OBSController:
         # establish connections
         try:
             if not self.obs_connected:
+                self.obs_instance = OBS(self.obs_monitoring.obs)
                 self.obs_monitoring = OBSMonitoring(obs_host=addr_config.obs_host,
-                                                    obs_port=addr_config.websocket_port)
-                self.obs_instance = OBS(self.obs_monitoring.obs, self)
+                                                    obs_port=addr_config.websocket_port,
+                                                    obs_wrapper=self.obs_instance)
                 # self.obs_client = obsws.obsws(host=addr_config.obs_host, port=addr_config.websocket_port)
                 # self.obs_client.connect()
                 self.obs_connected = True
