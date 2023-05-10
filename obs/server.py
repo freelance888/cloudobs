@@ -134,8 +134,8 @@ class OBSMonitoring:
             # if settings are different -> synchronize
             if not self._settings_equal(input_.source_kind, source_type,
                                         input_.source_settings, source_settings):
-            # if json.dumps({"source_kind": source_type, "source_settings": source_settings}) != \
-            #         json.dumps({"source_kind": input_.source_kind, "source_settings": input_.source_settings}):
+                # if json.dumps({"source_kind": source_type, "source_settings": source_settings}) != \
+                #         json.dumps({"source_kind": input_.source_kind, "source_settings": input_.source_settings}):
                 self.obs.call(
                     obsws.requests.SetSourceSettings(sourceName=source_name,
                                                      sourceSettings=input_.source_settings,
@@ -175,7 +175,7 @@ class OBSMonitoring:
                     "type": filter_.filter_type,
                 }
                 if not self._settings_equal("sidechain", "sidechain", filter_dict, existing_filter):
-                # if json.dumps(existing_filter) != json.dumps(filter_dict):  # if settings are differing
+                    # if json.dumps(existing_filter) != json.dumps(filter_dict):  # if settings are differing
                     self.obs.call(obsws.requests.SetSourceFilterSettings(  # synchronise them
                         sourceName=source_name, filterName=filter_name, filterSettings=filter_.filter_settings,
                     ))
@@ -372,11 +372,11 @@ class OBSController:
                 # self.obs_client.connect()
                 self.obs_connected = True
         except BaseException as ex:
-            status.append_error(
-                "Server::_establish_connections(): Couldn't connect to obs server. "
-                f"Host '{addr_config.obs_host}', "
-                f"port {addr_config.websocket_port}. Details: {ex}"
-            )
+            msg = "Server::_establish_connections(): Couldn't connect to obs server. " \
+                  f"Host '{addr_config.obs_host}', " \
+                  f"port {addr_config.websocket_port}. Details: {ex}"
+            # print(msg)
+            status.append_error(msg)
 
         return status
 
@@ -573,7 +573,7 @@ class OBSController:
         self.activate_monitoring()
         status = self.activate_server_langs()
         if not self.minion_settings.addr_config.is_active():
-            raise RuntimeError("Server::activate(): Couldn't activate addr_config")
+            raise RuntimeError(f"Server::activate(): Couldn't activate addr_config. Details: {status.message}")
         status = self.activate_stream_settings()
         status = self.activate_stream_on()
         status = self.activate_ts_offset()
