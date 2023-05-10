@@ -67,9 +67,10 @@ class OBSMonitoring:
             time.sleep(0.5)
 
     def sync(self):
-        self._check_connection()
-        self._sync_scene()
-        self._sync_inputs()
+        with self.lock:
+            self._check_connection()
+            self._sync_scene()
+            self._sync_inputs()
 
     def _check_connection(self):
         try:
@@ -365,7 +366,7 @@ class OBSController:
         # establish connections
         try:
             if not self.obs_connected:
-                self.obs_ws = obsws.obsws(host=addr_config.obs_host, port=addr_config.websocket_port, timeout=5)
+                self.obs_ws = obsws.obsws(host=addr_config.obs_host, port=addr_config.websocket_port, timeout=10)
                 self.obs_instance = OBS(self.obs_ws)
                 self.obs_monitoring = OBSMonitoring(obs=self.obs_ws, obs_wrapper=self.obs_instance)
                 # self.obs_client = obsws.obsws(host=addr_config.obs_host, port=addr_config.websocket_port)
