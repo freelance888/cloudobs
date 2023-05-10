@@ -620,6 +620,8 @@ class OBSController:
             }
         )
 
+        self.obs_monitoring.sync()
+
     def activate_server_langs(self):
         if self.minion_settings.addr_config.is_active():
             return ExecutionStatus(True)
