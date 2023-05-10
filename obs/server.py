@@ -64,7 +64,7 @@ class OBSMonitoring:
                 self.sync()
             except Exception as ex:
                 print(f"Monitoring error: {ex}")
-            time.sleep(0.5)
+            time.sleep(3)
 
     def sync(self):
         with self.lock:
