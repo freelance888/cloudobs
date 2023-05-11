@@ -1074,6 +1074,16 @@ class Skipper:
                     )
                 self.skipper.sio.sleep(0.2)
 
+        def start_sending_time(self):
+            while True:
+                try:
+                    self.skipper.sio.emit("on_datetime_update",
+                                          data=datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S"),
+                                          broadcast=True)
+                except Exception as ex:
+                    print(f"BGWorker::start_sending_time(): Couldn't send time. Details: {ex}")
+                self.skipper.sio.sleep(1)
+
         def _get_registry_changes(self, current: dict) -> dict:
             prev = self._last_registry_dict
             diff = {}
@@ -1200,6 +1210,7 @@ class Skipper:
 
     def _setup_background_tasks(self):
         self.sio.start_background_task(self.bg_worker.track_registry_change)
+        self.sio.start_background_task(self.bg_worker.start_sending_time)
 
     def _on_connect(self, sid, environ):
         self._sid_envs[sid] = environ
