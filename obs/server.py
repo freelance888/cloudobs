@@ -34,6 +34,7 @@ class OBSInput(BaseModel):
     source_settings: dict = None
     is_muted: bool = False
     volume: float = 0
+    monitor_type: str = "none"
     filters: Dict[str, OBSFilter] = {}
 
 
@@ -146,6 +147,7 @@ class OBSMonitoring:
         self._sync_filters(source_name)
         self._sync_volume(source_name)
         self._sync_mute(source_name)
+        self._sync_monitor_type(source_name)
 
     def _sync_filters(self, source_name):
         input_ = self.obs_config.inputs[source_name]
@@ -194,6 +196,12 @@ class OBSMonitoring:
         self.obs.call(
             obsws.requests.SetMute(source=source_name, mute=input_.is_muted)
         )
+
+    def _sync_monitor_type(self, source_name):
+        input_: OBSInput = self.obs_config.inputs[source_name]
+
+        self.obs.call(obsws.requests.SetAudioMonitorType(sourceName=source_name,
+                                                         monitorType=input_.monitor_type))
 
     def _source_exists(self, source_name):
         """
@@ -656,16 +664,22 @@ class OBSController:
             return ExecutionStatus(False, f"Couldn't activate stream settings. Details {ex}")
 
     def activate_stream_on(self):
-        if self.minion_settings.stream_on.is_active():
+        if self.minion_settings.stream_on.is_active() or \
+                not self.minion_settings.stream_settings.server or \
+                not self.minion_settings.stream_settings.key:
             return ExecutionStatus(True)
 
         stream_on = self.minion_settings.stream_on.value
 
         try:
-            if stream_on:
-                self.obs_instance.start_streaming()
-            else:
-                self.obs_instance.stop_streaming()
+            response = self.obs_monitoring.obs.call(obsws.requests.GetStreamingStatus())
+
+            if stream_on:  # if need to start streaming
+                if not response.getStreaming():  # and streaming is not active
+                    self.obs_instance.start_streaming()  # start it
+            else:  # if need to stop streaming
+                if response.getStreaming():  # and streaming is active
+                    self.obs_instance.stop_streaming()  # stop it
             self.minion_settings.stream_on.activate()
 
             return ExecutionStatus(True)

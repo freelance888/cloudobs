@@ -119,36 +119,36 @@ class OBS:
         # delete a source if it already exists
         self.delete_source_if_exist(source_name=stream_name)
 
-        request = obs.requests.CreateSource(
-            sourceName=stream_name,
-            sourceKind="ffmpeg_source",
-            sceneName=scene_name,
-            sourceSettings=source_settings,
-        )
-        response = self.client.call(request)
-        if not response.status:
-            raise RuntimeError(
-                f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
-            )
+        # request = obs.requests.CreateSource(
+        #     sourceName=stream_name,
+        #     sourceKind="ffmpeg_source",
+        #     sceneName=scene_name,
+        #     sourceSettings=source_settings,
+        # )
+        # response = self.client.call(request)
+        # if not response.status:
+        #     raise RuntimeError(
+        #         f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
+        #     )
 
-        response = self.client.call(
-            obs.requests.SetSourceSettings(
-                stream_name,
-                source_settings,
-            )
-        )
-        if not response.status:
-            raise RuntimeError(
-                f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
-            )
+        # response = self.client.call(
+        #     obs.requests.SetSourceSettings(
+        #         stream_name,
+        #         source_settings,
+        #     )
+        # )
+        # if not response.status:
+        #     raise RuntimeError(
+        #         f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
+        #     )
 
-        request = obs.requests.SetAudioMonitorType(sourceName=stream_name, monitorType="none")
-        response = self.client.call(request)
+        # request = obs.requests.SetAudioMonitorType(sourceName=stream_name, monitorType="none")
+        # response = self.client.call(request)
 
-        if not response.status:
-            raise RuntimeError(
-                f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
-            )
+        # if not response.status:
+        #     raise RuntimeError(
+        #         f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
+        #     )
 
     def run_media(self, path, mode=None, source_name=None, on_start=None, on_error=None, on_finish=None):
         """
