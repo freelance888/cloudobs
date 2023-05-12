@@ -726,11 +726,13 @@ class Skipper:
                     return ExecutionStatus(True)
                 elif command == "start streaming":
                     for minion_config in minion_configs:
-                        minion_config.stream_on.value = True
+                        if minion_config.stream_settings.key and minion_config.stream_settings.server:
+                            minion_config.stream_on.value = True
                     return self.skipper.activate_registry()
                 elif command == "stop streaming":
                     for minion_config in minion_configs:
-                        minion_config.stream_on.value = False
+                        if minion_config.stream_settings.key and minion_config.stream_settings.server:
+                            minion_config.stream_on.value = False
                     return self.skipper.activate_registry()
                 elif command == "pull timing":
                     # details:

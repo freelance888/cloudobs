@@ -104,12 +104,14 @@ class Minion:
                 with self.lock:
                     for downloaded_fname in downloaded_files:  # iterate downloaded files
                         if downloaded_fname not in gdrive_files:  # if such file doesn't exist in google drive
-                            os.system(f"rm {os.path.join(media_dir, downloaded_fname)}")  # remove it
+                            downloaded_fname_ = f"'{downloaded_fname}'"
+                            os.system(f"rm {os.path.join(media_dir, downloaded_fname_)}")  # remove it
 
                     for fname in self.files:  # for each file we have already downloaded
                         # if we have downloaded this file, but it doesn't appear in Google Drive
                         if fname not in gdrive_files:
-                            os.system(f"rm {os.path.join(media_dir, fname)}")  # remove it
+                            fname_ = f"'{fname}'"
+                            os.system(f"rm {os.path.join(media_dir, fname_)}")  # remove it
                             self.files.pop(fname)
 
                 print(f"I PYSERVER::run_drive_sync(): Sync {len(gdrive_files)} files")
