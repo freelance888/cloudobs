@@ -150,7 +150,7 @@ class Minion:
 
         def list_files(self) -> Dict[str, bool]:
             with self.lock:
-                return self.files.copy()
+                return self.files.copy()  #
 
     class Command:
         """
