@@ -34,7 +34,7 @@ jobs:
       uses: dawidd6/action-download-artifact@v2
       with:
         workflow: base-image.yml
-        branch: dev
+        branch: main
         name: base-image
         if_no_artifact_found: fail
 
