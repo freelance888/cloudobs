@@ -501,8 +501,8 @@ class OBS:
         if not response.status:
             raise RuntimeError(f"OBS::_run_media(): datain: {response.datain}, dataout: {response.dataout}")
 
-        request = obs.requests.SetAudioMonitorType(sourceName=source_name, monitorType="monitorAndOutput")
-        response = self.client.call(request)
+        # request = obs.requests.SetAudioMonitorType(sourceName=source_name, monitorType="monitorAndOutput")
+        # response = self.client.call(request)
         # if not response.status:
         #     obs_fire("E", "OBS", "_run_media", "SetAudioMonitorType", response.datain, response.dataout)
 
