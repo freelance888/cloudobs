@@ -503,8 +503,8 @@ class OBS:
 
         request = obs.requests.SetAudioMonitorType(sourceName=source_name, monitorType="monitorAndOutput")
         response = self.client.call(request)
-        if not response.status:
-            obs_fire("E", "OBS", "_run_media", "SetAudioMonitorType", response.datain, response.dataout)
+        # if not response.status:
+        #     obs_fire("E", "OBS", "_run_media", "SetAudioMonitorType", response.datain, response.dataout)
 
     def delete_source_if_exist(self, source_name, scene_name=None):
         """
