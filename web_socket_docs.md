@@ -12,6 +12,9 @@
   "registry": models.Registry().dict()
 }
 ```
+###  - `on_datetime_update`
+ - **Description:** Sends server time to clients every second.
+ - **Format:** `YYYY-mm-ss HH:MM:SS`
 
 ###  - `on_log`
  - **Description:** Point to receive all backend (skipper and any minions) logs.

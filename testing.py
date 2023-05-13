@@ -19,15 +19,17 @@ for lang in minion_configs:
     skipper.registry.update_minion(lang, minion_configs[lang])
 
 # infrastructure
-skipper.infrastructure.spawner.ensure_langs(skipper.registry.list_langs(), wait_for_provision=True)
+skipper.infrastructure.set_ip_langs({"5.161.214.30": "Bel"})
+#skipper.infrastructure.spawner.ensure_langs(skipper.registry.list_langs(), wait_for_provision=True)
 
 skipper.registry.minion_configs["Bel"].addr_config.minion_server_addr = "localhost"
 ip = skipper.infrastructure.spawner.ip_dict.ip_list()[0][1]
 skipper.registry.minion_configs["Bel"].addr_config.obs_host = ip
 
 for lang, server_ip in skipper.infrastructure.spawner.ip_dict.ip_list():
-    if lang not in skipper.minions:
-        skipper.minions[lang] = Skipper.Minion(minion_ip="localhost", lang=lang)
+    # if lang not in skipper.minions:
+    skipper.minions[lang] = Skipper.Minion(minion_ip="localhost", lang=lang, skipper=skipper,
+                                               ws_port=6006)
 
 # apply configs
 configs_to_activate = [
@@ -67,4 +69,23 @@ sudo systemctl enable containerd.service
 git clone -b dev https://github.com/ALLATRA-IT/cloudobs.git
 cd cloudobs && docker build -t $(basename $(pwd))-dev . --no-cache
 docker save $(basename $(pwd))-dev > cloudobs-dev.tar
+"""
+
+"""
+07.05.2023
+
+
+import obswebsocket as obsws
+import obswebsocket.requests
+
+ip = "5.161.214.30"
+
+obs = obsws.obsws(host=ip, port=4439, timeout=5)
+obs.connect()
+
+response = obs.call(obsws.requests.GetCurrentScene())
+
+from obs import OBSController2
+obs_controller = OBSController2(obs_host=ip, obs_port=4439)
+
 """

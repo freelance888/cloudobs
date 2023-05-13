@@ -89,6 +89,8 @@ class Minion:
                 if "files" not in gfiles:
                     raise RuntimeError(f"Couldn't list files in specified driveId. Error: {gfiles}")
 
+                downloaded_files = os.listdir(media_dir)
+
                 for fileinfo in gfiles["files"]:  # for each file in Google Drive
                     fid, fname = fileinfo["id"], fileinfo["name"]
                     if "md5Checksum" not in fileinfo:
@@ -100,10 +102,16 @@ class Minion:
 
                 gdrive_files = [f["name"] for f in gfiles["files"] if f["name"] in self.files]
                 with self.lock:
+                    for downloaded_fname in downloaded_files:  # iterate downloaded files
+                        if downloaded_fname not in gdrive_files:  # if such file doesn't exist in google drive
+                            downloaded_fname_ = f"'{downloaded_fname}'"
+                            os.system(f"rm {os.path.join(media_dir, downloaded_fname_)}")  # remove it
+
                     for fname in self.files:  # for each file we have already downloaded
                         # if we have downloaded this file, but it doesn't appear in Google Drive
                         if fname not in gdrive_files:
-                            os.system(f"rm {os.path.join(media_dir, fname)}")  # remove it
+                            fname_ = f"'{fname}'"
+                            os.system(f"rm {os.path.join(media_dir, fname_)}")  # remove it
                             self.files.pop(fname)
 
                 print(f"I PYSERVER::run_drive_sync(): Sync {len(gdrive_files)} files")
@@ -142,7 +150,7 @@ class Minion:
 
         def list_files(self) -> Dict[str, bool]:
             with self.lock:
-                return self.files.copy()
+                return self.files.copy()  #
 
     class Command:
         """
