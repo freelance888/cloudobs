@@ -107,15 +107,15 @@ class OBS:
         :param scene_name: optional
         :return: None if ok, otherwise throws RuntimeError
         """
-        if not scene_name:
-            scene_name = OBS.MAIN_SCENE_NAME
+        # if not scene_name:
+        #     scene_name = OBS.MAIN_SCENE_NAME
 
-        source_settings = {
-            "buffering_mb": 12,
-            "input": source_url,
-            "is_local_file": False,
-            "clear_on_media_end": False,
-        }
+        # source_settings = {
+        #     "buffering_mb": 12,
+        #     "input": source_url,
+        #     "is_local_file": False,
+        #     "clear_on_media_end": False,
+        # }
         # delete a source if it already exists
         self.delete_source_if_exist(source_name=stream_name)
 
@@ -501,10 +501,10 @@ class OBS:
         if not response.status:
             raise RuntimeError(f"OBS::_run_media(): datain: {response.datain}, dataout: {response.dataout}")
 
-        # request = obs.requests.SetAudioMonitorType(sourceName=source_name, monitorType="monitorAndOutput")
-        # response = self.client.call(request)
-        # if not response.status:
-        #     obs_fire("E", "OBS", "_run_media", "SetAudioMonitorType", response.datain, response.dataout)
+        request = obs.requests.SetAudioMonitorType(sourceName=source_name, monitorType="monitorAndOutput")
+        response = self.client.call(request)
+        if not response.status:
+            obs_fire("E", "OBS", "_run_media", "SetAudioMonitorType", response.datain, response.dataout)
 
     def delete_source_if_exist(self, source_name, scene_name=None):
         """

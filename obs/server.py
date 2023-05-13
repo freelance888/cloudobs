@@ -614,6 +614,7 @@ class OBSController:
                 "clear_on_media_end": False,
             },
             is_muted=False,
+            monitor_type="none",
             volume=self.minion_settings.source_volume.value,
             filters={
                 OBS.COMPRESSOR_FILTER_NAME: OBSFilter(
