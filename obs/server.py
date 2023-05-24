@@ -50,10 +50,11 @@ class OBSConfig(BaseModel):
 
 
 class OBSMonitoring:
-    def __init__(self, obs, obs_wrapper):
+    def __init__(self, obs, obs_wrapper, obs_controller):
         self.obs_config = OBSConfig()
         self.obs = obs
         self.obs_wrapper: OBS = obs_wrapper
+        self.obs_controller = obs_controller
 
         self.lock = threading.RLock()
         self.monitoring_thread = threading.Thread(target=self.monitoring)
@@ -267,7 +268,7 @@ class OBSMonitoring:
             else:
                 file_num = file_num.group()
 
-                files = glob.glob(os.path.join(media_dir, f"{file_num}*"))  # find those files
+                files = glob.glob(os.path.join(media_dir, f"{file_num}_*"))  # find those files
                 if len(files) == 0:  # if no media found with name specified
                     status.append_warning(f"Server::run_media(): no media found, name {name}")
                     return status
@@ -280,20 +281,25 @@ class OBSMonitoring:
                 return status
 
         try:
-            def on_start():
+            def on_start(filename):
+                if re.match(r"^[\d\.]+_vs_", filename):  # if the file is vmix speaker
+                    # do not mute original stream
+                    self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
+                        self.obs_controller.minion_settings.vmix_speaker_background_volume.value
+                    self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+                else:
+                    self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = True
                 self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = True
-                self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = True
+
                 self.sync()
-                # self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=True)
-                # self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=True)
 
             def on_finish():
                 self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
                 self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+                self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
+                    self.obs_controller.minion_settings.source_volume.value
 
                 self.sync()
-                # self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=False)
-                # self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=False)
 
             self.obs_wrapper.run_media(
                 path, mode=mode, source_name=OBS.MAIN_MEDIA_NAME,
@@ -376,7 +382,9 @@ class OBSController:
             if not self.obs_connected:
                 self.obs_ws = obsws.obsws(host=addr_config.obs_host, port=addr_config.websocket_port, timeout=10)
                 self.obs_instance = OBS(self.obs_ws)
-                self.obs_monitoring = OBSMonitoring(obs=self.obs_ws, obs_wrapper=self.obs_instance)
+                self.obs_monitoring = OBSMonitoring(obs=self.obs_ws,
+                                                    obs_wrapper=self.obs_instance,
+                                                    obs_controller=self)
                 # self.obs_client = obsws.obsws(host=addr_config.obs_host, port=addr_config.websocket_port)
                 # self.obs_client.connect()
                 self.obs_connected = True

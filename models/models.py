@@ -71,6 +71,9 @@ class MinionSettings(BaseModel):
     class TSVolume(OBSCloudModel):
         value: Optional[float] = 0.0
 
+    class VmixSpeakerBackgroundVolume(OBSCloudModel):
+        value: Optional[float] = -30.0
+
     class SourceVolume(OBSCloudModel):
         value: Optional[float] = 0.0
 
@@ -98,6 +101,7 @@ class MinionSettings(BaseModel):
     ts_offset: TSOffset = TSOffset()
     ts_volume: TSVolume = TSVolume()
     source_volume: SourceVolume = SourceVolume()
+    vmix_speaker_background_volume: VmixSpeakerBackgroundVolume = VmixSpeakerBackgroundVolume()
     sidechain_settings: SidechainSettings = SidechainSettings()
     transition_settings: TransitionSettings = TransitionSettings()
     gdrive_settings: GDriveSettings = GDriveSettings()

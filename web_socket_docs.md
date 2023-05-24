@@ -227,6 +227,30 @@
 }
 ```
 ------------------------------------------------------------------------------
+###  - `set vmix speaker background volume`
+ - **Description:** Sets vmix speaker background volume.
+ - **Parameters:**
+   - `value` - target value in decibels.
+   - `lang` - use this parameter to specify a language. By default,
+     all languages are affected (optional parameter).
+ - **Returns:**
+```json
+{
+  "result": true/false,
+  "details": "... message ...",
+  "serializable_object": null
+}
+```
+ - **Notes:**
+ - **Command example (json):**
+```json
+{
+  "command": "set vmix speaker background volume",
+  "details": {"value": numeric_value},
+  "lang": "Rus"
+}
+```
+------------------------------------------------------------------------------
 ###  - `set sidechain settings`
  - **Description:** Sets sidechain settings.
  - **Parameters:**

@@ -860,6 +860,17 @@ class Skipper:
                 for settings in minion_settings:
                     settings.source_volume.value = value
                 return self.skipper.activate_registry()
+            elif command == "set vmix speaker background volume":
+                # details: {"value": numeric_value}  - volume in decibels
+                if "value" not in details:
+                    return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
+                try:
+                    value = float(details["value"])
+                except Exception as ex:
+                    return ExecutionStatus(False, f"Couldn't parse source volume: {details}")
+                for settings in minion_settings:
+                    settings.vmix_speaker_background_volume.value = value
+                return self.skipper.activate_registry()
             elif command == "set sidechain settings":
                 # details: {"ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...}
                 # all parameters are numeric
