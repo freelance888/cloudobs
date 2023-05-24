@@ -114,6 +114,9 @@ class Minion:
                             os.system(f"rm {os.path.join(media_dir, fname_)}")  # remove it
                             if not os.path.isfile(os.path.join(media_dir, fname_)):  # check if file has been removed
                                 self.files.pop(fname)
+                        # if the file is marked as 'downloaded' but actually there is no such file
+                        if self.files[fname] and not os.path.isfile(os.path.join(media_dir, fname_)):
+                            self.files[fname] = False  # unmark
 
                 print(f"I PYSERVER::run_drive_sync(): Sync {len(gdrive_files)} files")
                 for fileinfo in gfiles["files"]:
