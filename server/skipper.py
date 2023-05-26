@@ -640,6 +640,7 @@ class Skipper:
                         "set teamspeak offset",
                         "set teamspeak volume",
                         "set source volume",
+                        "set vmix speaker background volume",
                         "set sidechain settings",
                         "set transition settings",
                 ):
