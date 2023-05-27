@@ -8,6 +8,7 @@ from util.util import (
     CallbackThread,
 )
 from util.util import (
+    hash_passwd,
     async_aiohttp_get_all,
     async_aiohttp_post_all,
     async_aiohttp_delete_all,

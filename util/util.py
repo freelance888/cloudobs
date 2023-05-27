@@ -11,6 +11,14 @@ import aiohttp
 from asgiref import sync
 
 
+def hash_passwd(passwd: str) -> str:
+    hasher = hashlib.sha512()
+    src_str = passwd + "salt!@#"
+    hasher.update(src_str.encode("utf-8"))
+    result_hash = hasher.hexdigest()
+    return result_hash
+
+
 def async_aiohttp_get_all(urls):
     """
     performs asynchronous get requests
