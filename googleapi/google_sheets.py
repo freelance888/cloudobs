@@ -2,13 +2,14 @@
 
 import os
 import re
+from datetime import timedelta
+from typing import Dict
 
 import pandas as pd
 import pygsheets
 from dotenv import load_dotenv
-from typing import Dict
-from models import MinionSettings
-from datetime import timedelta
+
+from models import MinionSettings, User
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -139,3 +140,51 @@ class TimingGoogleSheets:
         df = df[["timestamp", "name"]]
 
         return df
+
+
+class UsersGoogleSheets:
+    def __init__(self):
+        self.service_file = SERVICE_FILE
+        self.gc = pygsheets.authorize(service_account_file=self.service_file)
+        self.sheet = None
+        self.ws = None
+        self.setup_status = False
+
+    def set_sheet(self, sheet_url, worksheet_name):
+        self.sheet = self.gc.open_by_url(sheet_url)
+        self.ws = self.sheet.worksheet_by_title(worksheet_name)
+        self.setup_status = True
+
+    def get_user_by_login(self, login: str) -> User | None:
+        all_logins = self.ws.get_col(1, include_tailing_empty=False)
+        index = next((i + 1
+                      for i, val in enumerate(all_logins)
+                      if val == login), -1)
+        if index == -1:
+            return None
+
+        row = self.ws.get_row(index, include_tailing_empty=False)
+        return User(
+            login=row[0],
+            passwd=row[1],
+            passwd_hash=row[2],
+            permissions=[] if row[3].strip() == "" else row[3].split(" "),
+        )
+
+    def set_passwd(self, index: int, passwd_placeholder: str, passwd_hash: str):
+        self.ws.update_value(f"B{index}", passwd_placeholder)
+        self.ws.update_value(f"C{index}", passwd_hash)
+
+    def reset_passwd_hash(self, index: int):
+        self.ws.update_value(f"C{index}", "")
+
+    def get_all_passwds(self) -> list:
+        passwd_col = self.ws.get_col(2, include_tailing_empty=False)[3:]
+        hashes_col = self.ws.get_col(3, include_tailing_empty=False)[3:]
+        passwd_len = len(passwd_col)
+        hashes_len = len(hashes_col)
+        return [{
+            "col": i + 4,
+            "passwd": passwd_col[i] if i < passwd_len else "",
+            "hash": hashes_col[i] if i < hashes_len else "",
+        } for i in range(max(passwd_len, hashes_len))]

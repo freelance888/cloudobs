@@ -14,6 +14,31 @@ def orjson_dumps(v, *, default=None):
     return orjson.dumps(v, default=default).decode()
 
 
+class User:
+    """
+    login: Just a user unique name
+    passwd: User plain text password (won't be empty only when password changes)
+    passwd_hash: Hashed password (will be used instead of plain text password for checks)
+    permissions: A list of user permissions ('admin' - full access, 'en' - specific lang access)
+    """
+
+    def __init__(self, login: str, passwd: str, passwd_hash: str, permissions: list[str]):
+        self.login = login
+        self.passwd = passwd
+        self.passwd_hash = passwd_hash
+        self.permissions = permissions
+
+    def __repr__(self):
+        return f"User<{self.login}:{'+'.join(self.permissions)}>"
+
+
+class SessionContext:
+    def __init__(self, **kwargs):
+        self.sid: str = kwargs["sid"]
+        self.ip: str = kwargs["ip"]
+        self.user: User = kwargs["user"]
+
+
 class OBSCloudModel(BaseModel):
     _objvers: str = PrivateAttr("")
 
@@ -173,6 +198,8 @@ class State:
 class Registry(BaseModel):
     obs_sheet_url: str = None
     obs_sheet_name: str = None
+    users_sheet_url: str = None
+    users_sheet_name: str = None
     minion_configs: Dict[str, MinionSettings] = {}  # lang: config
     infrastructure_lock: bool = False  # points if needed to lock infrastructure
 

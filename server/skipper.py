@@ -11,11 +11,11 @@ from flask import Flask, request
 from socketio.exceptions import ConnectionError
 
 from deployment import Spawner, IPDict
-from googleapi import OBSGoogleSheets, TimingGoogleSheets
-from models import MinionSettings, VmixPlayer, Registry, State, TimingEntry, orjson_dumps
+from googleapi import OBSGoogleSheets, TimingGoogleSheets, UsersGoogleSheets
+from models import MinionSettings, VmixPlayer, Registry, State, TimingEntry, orjson_dumps, User, SessionContext
 from models.logging import LogsStorage, Log, LogLevel
 from obs import OBS
-from util import ExecutionStatus, WebsocketResponse, CallbackThread
+from util import ExecutionStatus, WebsocketResponse, CallbackThread, hash_passwd
 
 MINION_WS_PORT = 6000
 
@@ -158,6 +158,73 @@ class Skipper:
                 return ExecutionStatus(True)
             except Exception as ex:
                 return ExecutionStatus(False, f"Something happened while pushing obs_config info. Details: {ex}")
+
+    class Authorizer:
+        passwd_placeholder = "●●●●●●●●"
+
+        def __init__(self, skipper: 'Skipper'):
+            self.users_sheet = UsersGoogleSheets()
+            self.skipper = skipper
+            self.prev_passwds: dict | None = None
+
+        def setup(self, sheet_url, sheet_name) -> ExecutionStatus:
+            # with self.skipper.registry_lock:
+            try:
+                self.users_sheet.set_sheet(sheet_url, sheet_name)
+                self.skipper.registry.users_sheet_url = sheet_url
+                self.skipper.registry.users_sheet_name = sheet_name
+                return ExecutionStatus(True)
+            except Exception as ex:
+                return ExecutionStatus(False, f"Couldn't set up users sheet config.\nDetails: {ex}")
+
+        def sing_in(self, login: str, passwd: str) -> User | None:
+            if self.users_sheet.setup_status:
+                # 1. Get user by login from GSheet
+                user = self.users_sheet.get_user_by_login(login)
+                # 2. Compare password hashes
+                if user and hash_passwd(passwd) == user.passwd_hash:
+                    return user
+                return None
+
+            # If Google Sheet didn't set up, allow only master credentials
+            master_login = os.getenv("MASTER_LOGIN")
+            master_passwd = os.getenv("MASTER_PASSWD")
+            if login == master_login and passwd == master_passwd:
+                return User(
+                    login=login,
+                    passwd=self.passwd_placeholder,
+                    passwd_hash=hash_passwd(passwd),
+                    permissions=["admin"],
+                )
+            return None
+
+        def track_passwd_changes(self):
+            passwds = self.users_sheet.get_all_passwds()
+            if self.prev_passwds is None or len(self.prev_passwds) != len(passwds):
+                self.prev_passwds = passwds
+                return
+            for i in range(len(passwds)):
+                passwd = passwds[i]
+                prev = self.prev_passwds[i]
+
+                # Disallow to change manually hash if password is a placeholder
+                if passwd["passwd"] == self.passwd_placeholder:
+                    if passwd["hash"] != prev["hash"]:
+                        self.users_sheet.set_passwd(passwd["col"], self.passwd_placeholder, prev["hash"])
+
+                # If password is empty - reset hash
+                elif passwd["passwd"].strip() == "":
+                    if passwd["hash"].strip() != "":
+                        self.users_sheet.reset_passwd_hash(passwd["col"])
+
+                # Update hash only if passwords doesn't change since last check
+                elif passwd["passwd"] == prev["passwd"]:
+                    passwd_hash = hash_passwd(passwd["passwd"])
+                    if passwd_hash != passwd["hash"] or passwd["passwd"] != self.passwd_placeholder:
+                        passwd["hash"] = passwd_hash
+                        self.users_sheet.set_passwd(passwd["col"], self.passwd_placeholder, passwd_hash)
+
+            self.prev_passwds = passwds
 
     class Minion:
         def __init__(self, minion_ip, lang, skipper, ws_port=MINION_WS_PORT):
@@ -363,11 +430,9 @@ class Skipper:
             ]
             self.event_handlers.append([command, run_in_new_thread, foo, id])
 
-        def on_command_completed(self, command, details, lang, result: ExecutionStatus, environ):
+        def on_command_completed(self, command, details, lang, result: ExecutionStatus, session: SessionContext):
             ip = self.skipper.registry.get_ip_name(
-                environ["REMOTE_ADDR"]
-                if environ is not None and isinstance(environ, dict)
-                   and "REMOTE_ADDR" in environ else "0.0.0.0"
+                session.ip if session.ip != "*" else "0.0.0.0"  # TODO: not sure about this condition
             )
             self.skipper.logger.log_command_completed(
                 status=result.status,
@@ -399,9 +464,20 @@ class Skipper:
         def send_log(self, log: Log):
             self._send_event("on_log", {"log": log.dict()})
 
-        def _send_event(self, event: str, data: dict, broadcast=True):
+        def send_auth_result(self, sid: str, status: bool):
+            if status:
+                data = {"status": True, "message": "User successfully authorized"}
+            else:
+                data = {"status": False, "message": "Login or password is not valid"}
+            self._send_event("on_auth", data, sid, broadcast=False)
+
+        def _send_event(self, event: str, data: dict, sid: str = None, broadcast=True):
             try:
-                self.skipper.sio.emit(event, data=orjson_dumps(data), broadcast=broadcast)
+                data = orjson_dumps(data)
+                if broadcast:
+                    self.skipper.sio.emit(event, data, broadcast=broadcast)
+                else:
+                    self.skipper.sio.emit(event, data, to=sid)
             except Exception as ex:
                 print(f"Error occurred while sending ws event: {ex}")
 
@@ -425,6 +501,22 @@ class Skipper:
                 type="command_completed",
                 message=f"Command '{extra['command']}' {m}",
                 extra=extra,
+            ))
+
+        def log_failed_login_attempt(self, message: str, login: str):
+            self._add_log(Log(
+                level=LogLevel.error,
+                type="login_failure",
+                message=message,
+                extra={"login": login},
+            ))
+
+        def log_success_login_attempt(self, message: str, login: str):
+            self._add_log(Log(
+                level=LogLevel.error,
+                type="login_success",
+                message=message,
+                extra={"login": login},
             ))
 
         def log_server_error(self, message: str, error: Exception, extra: dict = None):
@@ -497,11 +589,14 @@ class Skipper:
                 return False
             return True
 
-        def _check_caller(self, ip, command, details=None, lang=None) -> ExecutionStatus:
+        def _check_caller(self, session: SessionContext, command, details=None, lang=None) -> ExecutionStatus:
             """
             Checks if the command is allowed given the command, ip, lang and details.
             If returned ExecutionStatus(True) - the command is allowed, otherwise not allowed
             """
+            # if user didn't authorize - disallow access
+            if session.user is None:
+                return ExecutionStatus(False, "User is not authorized")
             # if the server is sleeping - only allow the following commands
             if self.skipper.registry.server_status == State.sleeping:
                 if command in ("pull config", "get info", "infrastructure unlock", "get logs"):
@@ -517,8 +612,8 @@ class Skipper:
             # check vmix player's ip
             if self.skipper.registry.active_vmix_player == "*":
                 return ExecutionStatus(True)
-            if command in ("play media", "run timing") and ip != self.skipper.registry.active_vmix_player:
-                return ExecutionStatus(False, f"Command '{command}' is not allowed from {ip}")
+            if command in ("play media", "run timing") and session.ip != self.skipper.registry.active_vmix_player:
+                return ExecutionStatus(False, f"Command '{command}' is not allowed from {session.ip}")
             # True - allows the command
             return ExecutionStatus(True)
 
@@ -529,7 +624,7 @@ class Skipper:
             if self.skipper.registry.server_status == State.sleeping:
                 self.skipper.registry.infrastructure_lock = False
 
-        def exec_raw(self, command_raw, environ=None) -> ExecutionStatus:
+        def exec_raw(self, command_raw, session: SessionContext = None) -> ExecutionStatus:
             """
             Command structure for a Skipper:
             {
@@ -549,9 +644,9 @@ class Skipper:
                 command["lang"] = "*"
             command, details, lang = command["command"], command["details"], command["lang"]
 
-            return self.exec(command, details=details, lang=lang, environ=environ)
+            return self.exec(command, details=details, lang=lang, session=session)
 
-        def exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
+        def exec(self, command, details=None, lang=None, session: SessionContext = None) -> ExecutionStatus:
             """
             Command structure for a Streamer:
             {
@@ -560,11 +655,11 @@ class Skipper:
             }
             :return: ExecutionStatus
             """
-            result = self._exec(command, details, lang, environ)
-            self.skipper.event_handler.on_command_completed(command, details, lang, result, environ)
+            result = self._exec(command, details, lang, session)
+            self.skipper.event_handler.on_command_completed(command, details, lang, result, session)
             return result
 
-        def _exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
+        def _exec(self, command, details=None, lang=None, session: SessionContext = None) -> ExecutionStatus:
             if lang is None:
                 lang = "*"  # langs
             # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
@@ -574,9 +669,8 @@ class Skipper:
                 if (lang == "*" or lang_ == lang)
             ]
 
-            remote_addr = environ["REMOTE_ADDR"] if environ and "REMOTE_ADDR" in environ else "*"
-            if not self._check_caller(remote_addr, command):
-                return self._check_caller(remote_addr, command)
+            if not self._check_caller(session, command):
+                return self._check_caller(session, command)
             self._fix_infrastructure_lock()  # if the server is sleeping - infrastructure should not be locked
 
             try:
@@ -591,6 +685,8 @@ class Skipper:
                     # }
                     sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
                     sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
+                    users_sheet_name = None if not details or "users_sheet_name" not in details \
+                        else details["users_sheet_name"]
                     # check if details is not None and has "langs" and details["lang"] is a list of strings
                     langs = (
                         None  # None - means all langs
@@ -604,7 +700,8 @@ class Skipper:
                     )
                     # pull_obs_config() manages registry lock itself
                     status: ExecutionStatus = self.pull_obs_config(
-                        sheet_url=sheet_url, sheet_name=sheet_name, langs=langs
+                        sheet_url=sheet_url, sheet_name=sheet_name,
+                        users_sheet_name=users_sheet_name, langs=langs
                     )
                     if not status:
                         return status
@@ -801,7 +898,7 @@ class Skipper:
                         "command": command,
                         "details": details,
                         "lang": lang,
-                        "ip": self.skipper.registry.get_ip_name(remote_addr)
+                        "ip": self.skipper.registry.get_ip_name(session.ip)
                     })
 
                 return ExecutionStatus(
@@ -977,17 +1074,22 @@ class Skipper:
                     serializable_object={lang: ExecutionStatus(False, "Exception has been thrown").dict()},
                 )
 
-        def pull_obs_config(self, sheet_url=None, sheet_name=None, langs=None) -> ExecutionStatus:
+        def pull_obs_config(self, sheet_url=None, sheet_name=None,
+                            users_sheet_name=None, langs=None) -> ExecutionStatus:
             """
             Pulls and applies OBS configuration from google sheets
             :param sheet_url: sheet url. No need to specify if it has been specified once before (cache)
             :param sheet_name: works same as sheet_url
+            :param users_sheet_name: users google sheet name
             :param langs: if specified, takes only specified langs from google sheets
             :return: ExecutionStatus
             """
             with self.skipper.registry_lock:
                 if sheet_url and sheet_name:
                     status: ExecutionStatus = self.skipper.obs_config.setup(sheet_url, sheet_name)
+                    if not status:
+                        return status
+                    status: ExecutionStatus = self.skipper.authorizer.setup(sheet_url, users_sheet_name)
                     if not status:
                         return status
 
@@ -1051,7 +1153,7 @@ class Skipper:
             return self.skipper.command.exec(
                 command=command,
                 details=details,
-                environ={"REMOTE_ADDR": request.remote_addr}
+                session=SessionContext(ip=request.remote_addr)
             ).to_http_status()
 
     class BGWorker:
@@ -1088,6 +1190,23 @@ class Skipper:
                     )
                 self.skipper.sio.sleep(0.2)
 
+        def track_gsheet_users_change(self):
+            """
+            This function has to be started as a background worker. It tracks user password changes in Google Sheets
+            """
+            while True:
+                try:
+                    if self.skipper.authorizer.users_sheet.setup_status:
+                        self.skipper.authorizer.track_passwd_changes()
+                except Exception as ex:
+                    print(f"E Skipper::BGWorker::track_gsheet_users_change(): "
+                          f"Couldn't track user password changes. Details: {ex}")  # TODO: handle and log
+                    self.skipper.logger.log_server_error(
+                        message="Couldn't track user password changes",
+                        error=ex
+                    )
+                self.skipper.sio.sleep(5)
+
         def start_sending_time(self):
             while True:
                 try:
@@ -1113,6 +1232,7 @@ class Skipper:
         self.registry: Registry = Registry()
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
+        self.authorizer: Skipper.Authorizer = Skipper.Authorizer(self)
         self.minions: Dict[str, Skipper.Minion] = {}
         self.timing: Skipper.Timing = Skipper.Timing(self)
         self.command: Skipper.Command = Skipper.Command(self)
@@ -1128,7 +1248,7 @@ class Skipper:
 
         self.http_api: Skipper.HTTPApi = Skipper.HTTPApi(self)
 
-        self._sid_envs = {}
+        self._sessions: dict[str, SessionContext] = {}
 
     def activate_registry(self) -> ExecutionStatus:
         with self.registry_lock:
@@ -1224,19 +1344,43 @@ class Skipper:
 
     def _setup_background_tasks(self):
         self.sio.start_background_task(self.bg_worker.track_registry_change)
+        self.sio.start_background_task(self.bg_worker.track_gsheet_users_change)
         self.sio.start_background_task(self.bg_worker.start_sending_time)
 
-    def _on_connect(self, sid, environ):
-        self._sid_envs[sid] = environ
+    def _setup_session_context(self, sid: str, environ: dict) -> SessionContext:
+        login = environ.get("HTTP_LOGIN")
+        password = environ.get("HTTP_PASSWORD")
+        ip = environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "*"
+
+        user = None
+        if login and password:
+            user = self.authorizer.sing_in(login, password)
+            if user is None:
+                # Notify user about failed auth
+                self.event_sender.send_auth_result(sid, status=False)
+                self.logger.log_failed_login_attempt("Invalid login or password", login)
+            else:
+                # Notify user about success
+                self.event_sender.send_auth_result(sid, status=True)
+                self.logger.log_success_login_attempt("User authorized", login)
+
+        return SessionContext(sid=sid, ip=ip, user=user)
+
+    def _on_connect(self, sid, environ: dict):
+        if environ is None or not isinstance(environ, dict):
+            environ = {}
+        self._sessions[sid] = self._setup_session_context(sid, environ)
+
         # self.sio.save_session(sid, {'env': environ})
 
     def _on_disconnect(self, sid):
-        self._sid_envs.pop(sid)
+        if sid in self._sessions.keys():
+            self._sessions.pop(sid)
 
     def _on_command(self, sid, data):
         try:
-            session = self._sid_envs[sid]
-            return self.command.exec_raw(data, environ=session).json()
+            session = self._sessions[sid]
+            return self.command.exec_raw(data, session=session).json()
         except Exception as ex:
             return ExecutionStatus(False, f"Details: {ex}").json()
 
