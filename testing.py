@@ -9,17 +9,17 @@ from models import MinionSettings
 from server import Skipper
 from util.util import WebsocketResponse
 
-skipper = Skipper()
+skipper = Skipper(port=5010)
 
 # pull sheets
 skipper.obs_config.setup("https://docs.google.com/spreadsheets/d/"
-                         "10J2FG-6nKodpXcTVPmNwKGOwGXSxPUWf1MppT7yUgME/edit#gid=404124283", "table_4")
+                         "10J2FG-6nKodpXcTVPmNwKGOwGXSxPUWf1MppT7yUgME/edit#gid=404124283", "Master (копия)")
 minion_configs = skipper.obs_config.obs_sheets.pull()
 for lang in minion_configs:
     skipper.registry.update_minion(lang, minion_configs[lang])
 
 # infrastructure
-skipper.infrastructure.set_ip_langs({"5.161.214.30": "Bel"})
+skipper.infrastructure.set_ip_langs({"5.161.208.17": "Bel"})
 #skipper.infrastructure.spawner.ensure_langs(skipper.registry.list_langs(), wait_for_provision=True)
 
 skipper.registry.minion_configs["Bel"].addr_config.minion_server_addr = "localhost"

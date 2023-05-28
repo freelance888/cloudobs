@@ -258,7 +258,7 @@ class OBSMonitoring:
         # search for the file
         if search_by_num:
             # extract file number
-            file_num = re.search(r"^[\d\.]+.", name)
+            file_num = re.search(r"(?P<file_num>[\d\.]+)_.", name)
             if not file_num:  # if the pattern is incorrect (name doesn't start with numbers)
                 status.append_error(
                     f"Server::run_media(): while `use_file_num` is set, "
@@ -266,7 +266,7 @@ class OBSMonitoring:
                 )
                 return status
             else:
-                file_num = file_num.group()
+                file_num = file_num.group("file_num")
 
                 files = glob.glob(os.path.join(media_dir, f"{file_num}_*"))  # find those files
                 if len(files) == 0:  # if no media found with name specified
