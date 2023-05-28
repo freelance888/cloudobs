@@ -282,7 +282,7 @@ class OBSMonitoring:
 
         try:
             def on_start(filename):
-                if re.match(r"^[\d\.]+_vs_", filename):  # if the file is vmix speaker
+                if re.match(r"^[\d\.]+_vs_", os.path.basename(filename)):  # if the file is vmix speaker
                     # do not mute original stream
                     self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
                         self.obs_controller.minion_settings.vmix_speaker_background_volume.value
