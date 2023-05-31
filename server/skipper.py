@@ -12,7 +12,8 @@ from socketio.exceptions import ConnectionError
 
 from deployment import Spawner, IPDict
 from googleapi import OBSGoogleSheets, TimingGoogleSheets, UsersGoogleSheets
-from models import MinionSettings, VmixPlayer, Registry, State, TimingEntry, orjson_dumps, User, SessionContext
+from models import (MinionSettings, VmixPlayer, Registry, State, TimingEntry,
+                    orjson_dumps, User, SessionContext, PermissionDeniedException)
 from models.logging import LogsStorage, Log, LogLevel
 from obs import OBS
 from util import ExecutionStatus, WebsocketResponse, CallbackThread, hash_passwd
@@ -225,6 +226,16 @@ class Skipper:
                         self.users_sheet.set_passwd(passwd["col"], self.passwd_placeholder, passwd_hash)
 
             self.prev_passwds = passwds
+
+        def clean_copy_registry(self, session: SessionContext, masked=False) -> dict:
+            registry = self.skipper.registry.masked_dict() if masked else self.skipper.registry.dict()
+            if session.is_admin():
+                return registry
+            perms = session.user.permissions
+            # Select only langs from user permissions
+            registry["minion_configs"] = {k: v for k, v in registry["minion_configs"].items() if k in perms}
+            registry["gdrive_files"] = {k: v for k, v in registry["gdrive_files"].items() if k in perms}
+            return registry
 
     class Minion:
         def __init__(self, minion_ip, lang, skipper, ws_port=MINION_WS_PORT):
@@ -595,7 +606,8 @@ class Skipper:
             If returned ExecutionStatus(True) - the command is allowed, otherwise not allowed
             """
             # if user didn't authorize - disallow access
-            if session.user is None:
+            no_auth_ips = (self.skipper.registry.active_vmix_player, "*")
+            if session.user is None and session.ip not in no_auth_ips:
                 return ExecutionStatus(False, "User is not authorized")
             # if the server is sleeping - only allow the following commands
             if self.skipper.registry.server_status == State.sleeping:
@@ -675,6 +687,7 @@ class Skipper:
 
             try:
                 if command == "pull config":
+                    session.ensure_is_admin()
                     # details:
                     # note that all the parameters are optional
                     # {
@@ -713,6 +726,7 @@ class Skipper:
                             return status
                     return self.skipper.activate_registry()
                 elif command == "dispose":
+                    session.ensure_is_admin()
                     return self.delete_minions()
                 elif command == "get info":
                     if not details:  # validate
@@ -722,16 +736,8 @@ class Skipper:
                     else:
                         return ExecutionStatus(False, "Invalid details provided for command 'get info'")
 
-                    if masked:
-                        return ExecutionStatus(True,
-                                               serializable_object=orjson_dumps({
-                                                   "registry": self.skipper.registry.masked_dict()
-                                               }))
-                    else:
-                        return ExecutionStatus(True,
-                                               serializable_object=orjson_dumps({
-                                                   "registry": self.skipper.registry.dict()
-                                               }))
+                    registry = self.skipper.authorizer.clean_copy_registry(session, masked=masked)
+                    return ExecutionStatus(True, serializable_object=orjson_dumps({"registry": registry}))
                 elif command in (
                         "set stream settings",
                         "set teamspeak offset",
@@ -741,6 +747,7 @@ class Skipper:
                         "set sidechain settings",
                         "set transition settings",
                 ):
+                    session.ensure_lang_access(lang)
                     return self.set_info(command=command, details=details, lang=lang)
                 elif command == "get logs":
                     count = None
@@ -888,7 +895,11 @@ class Skipper:
                     return self.skipper.timing.remove()
                 else:
                     with self.skipper.infrastructure_lock:
+                        session.ensure_lang_access(lang)
                         return self._minion_command(command=command, details=details, lang=lang)
+
+            except PermissionDeniedException as ex:
+                return ExecutionStatus(False, ex.message)
 
             except Exception as ex:
                 self.skipper.logger.log_server_error(

@@ -1,5 +1,6 @@
 from models.models import (
     User,
+    PermissionDeniedException,
     SessionContext,
     OBSCloudModel,
     MinionSettings,

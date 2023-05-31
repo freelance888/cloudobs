@@ -32,11 +32,37 @@ class User:
         return f"User<{self.login}:{'+'.join(self.permissions)}>"
 
 
+class PermissionDeniedException(Exception):
+    def __init__(self):
+        super().__init__()
+        self.message = "Permission denied"
+
+
 class SessionContext:
     def __init__(self, **kwargs):
         self.sid: str = kwargs["sid"]
         self.ip: str = kwargs["ip"]
         self.user: User = kwargs["user"]
+
+    def is_admin(self) -> bool:
+        return "admin" in self.user.permissions if self.user and self.user.permissions else False
+
+    def ensure_is_admin(self):
+        if not self.is_admin():
+            raise PermissionDeniedException()
+
+    def ensure_lang_access(self, lang: str):
+        if not self.user and not self.is_admin() and lang not in self.user.permissions:
+            raise PermissionDeniedException()
+
+    def ensure_langs_access(self, langs: list[str]):
+        if not self.user and not self.is_admin() and any(x not in self.user.permissions for x in langs):
+            raise PermissionDeniedException()
+
+    def langs(self):
+        if self.user and self.user.permissions:
+            return tuple(filter(lambda x: x != "admin", self.user.permissions))
+        return "*"
 
 
 class OBSCloudModel(BaseModel):
