@@ -258,7 +258,7 @@ class OBSMonitoring:
         # search for the file
         if search_by_num:
             # extract file number
-            file_num = re.search(r"^[\d\.]+.", name)
+            file_num = re.search(r"(?P<file_num>[\d\.]+)_.", name)
             if not file_num:  # if the pattern is incorrect (name doesn't start with numbers)
                 status.append_error(
                     f"Server::run_media(): while `use_file_num` is set, "
@@ -266,7 +266,7 @@ class OBSMonitoring:
                 )
                 return status
             else:
-                file_num = file_num.group()
+                file_num = file_num.group("file_num")
 
                 files = glob.glob(os.path.join(media_dir, f"{file_num}_*"))  # find those files
                 if len(files) == 0:  # if no media found with name specified
@@ -282,7 +282,7 @@ class OBSMonitoring:
 
         try:
             def on_start(filename):
-                if re.match(r"^[\d\.]+_vs_", filename):  # if the file is vmix speaker
+                if re.match(r"^[\d\.]+_vs_", os.path.basename(filename)):  # if the file is vmix speaker
                     # do not mute original stream
                     self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
                         self.obs_controller.minion_settings.vmix_speaker_background_volume.value
