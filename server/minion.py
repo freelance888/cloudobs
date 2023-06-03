@@ -112,7 +112,11 @@ class Minion:
                         if fname not in gdrive_files:
                             fname_ = f"'{fname}'"
                             os.system(f"rm {os.path.join(media_dir, fname_)}")  # remove it
-                            self.files.pop(fname)
+                            if not os.path.isfile(os.path.join(media_dir, fname_)):  # check if file has been removed
+                                self.files.pop(fname)
+                        # if the file is marked as 'downloaded' but actually there is no such file
+                        if self.files[fname] and not os.path.isfile(os.path.join(media_dir, fname_)):
+                            self.files[fname] = False  # unmark
 
                 print(f"I PYSERVER::run_drive_sync(): Sync {len(gdrive_files)} files")
                 for fileinfo in gfiles["files"]:
@@ -126,6 +130,8 @@ class Minion:
                             if generate_file_md5(flocal) == fmd5Checksum:  # and hash sums are ok
                                 self.files[fname] = True  # don't download - just mark as downloaded
                                 # self.on_files_changed()
+                            else:  # if we see that the file is different
+                                os.system(f"rm {flocal}")
 
                     if not self.files[fname]:  # if not downloaded
                         try:
