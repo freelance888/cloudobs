@@ -52,3 +52,4 @@ cp cloudobs-infrastructure/shared/files/docker-compose.yml .
 ENVIRONMENT=prod BACKEND_PORT=5000 FRONTEND_PORT=3000 docker compose up -d
 ```
 * Open http://localhost:3003
+
