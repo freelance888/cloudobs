@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import List, Dict
@@ -5,6 +6,10 @@ from typing import List, Dict
 from pydantic import BaseModel, PrivateAttr
 from pydantic.schema import Optional
 import orjson
+
+from util import hash_passwd
+
+passwd_placeholder = "●●●●●●●●"
 
 
 def orjson_dumps(v, *, default=None):
@@ -31,6 +36,39 @@ class User:
     def __repr__(self):
         return f"User<{self.login}:{'+'.join(self.permissions)}>"
 
+    @staticmethod
+    def master():
+        master_login = os.getenv("MASTER_LOGIN")
+        master_passwd = os.getenv("MASTER_PASSWD")
+        return User(
+            login=master_login,
+            passwd=passwd_placeholder,
+            passwd_hash=hash_passwd(master_passwd),
+            permissions=["admin"],
+        )
+
+    def is_admin(self) -> bool:
+        return "admin" in self.permissions if self and self.permissions else False
+
+    def ensure_is_admin(self):
+        if not self.is_admin():
+            raise PermissionDeniedException()
+
+    def ensure_lang_access(self, lang: str):
+        if not self.is_admin() and lang not in self.permissions:
+            raise PermissionDeniedException()
+
+    def ensure_langs_access(self, langs: list[str]):
+        if not self.is_admin() and any(x not in self.permissions for x in langs):
+            raise PermissionDeniedException()
+
+    def langs(self):
+        if self.permissions:
+            if "admin" in self.permissions or "*" in self.permissions:
+                return ["*"]
+            return self.permissions
+        return ["*"]
+
 
 class PermissionDeniedException(Exception):
     def __init__(self):
@@ -42,27 +80,6 @@ class SessionContext:
     def __init__(self, **kwargs):
         self.sid: str = kwargs["sid"]
         self.ip: str = kwargs["ip"]
-        self.user: User = kwargs["user"]
-
-    def is_admin(self) -> bool:
-        return "admin" in self.user.permissions if self.user and self.user.permissions else False
-
-    def ensure_is_admin(self):
-        if not self.is_admin():
-            raise PermissionDeniedException()
-
-    def ensure_lang_access(self, lang: str):
-        if not self.user and not self.is_admin() and lang not in self.user.permissions:
-            raise PermissionDeniedException()
-
-    def ensure_langs_access(self, langs: list[str]):
-        if not self.user and not self.is_admin() and any(x not in self.user.permissions for x in langs):
-            raise PermissionDeniedException()
-
-    def langs(self):
-        if self.user and self.user.permissions:
-            return tuple(filter(lambda x: x != "admin", self.user.permissions))
-        return "*"
 
 
 class OBSCloudModel(BaseModel):

@@ -2,7 +2,7 @@
 
 import os
 import re
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Dict
 
 import pandas as pd
@@ -155,36 +155,31 @@ class UsersGoogleSheets:
         self.ws = self.sheet.worksheet_by_title(worksheet_name)
         self.setup_status = True
 
-    def get_user_by_login(self, login: str) -> User | None:
-        all_logins = self.ws.get_col(1, include_tailing_empty=False)
-        index = next((i + 1
-                      for i, val in enumerate(all_logins)
-                      if val == login), -1)
-        if index == -1:
-            return None
-
-        row = self.ws.get_row(index, include_tailing_empty=False)
-        return User(
-            login=row[0],
-            passwd=row[1],
-            passwd_hash=row[2],
-            permissions=[] if row[3].strip() == "" else row[3].split(" "),
-        )
-
     def set_passwd(self, index: int, passwd_placeholder: str, passwd_hash: str):
         self.ws.update_value(f"B{index}", passwd_placeholder)
         self.ws.update_value(f"C{index}", passwd_hash)
 
+    def set_sync_status(self, message: str):
+        now = datetime.now()
+        now_formatted = now.strftime("%H:%M:%S")
+        self.ws.update_value(f"F1", now_formatted)
+        self.ws.update_value(f"F2", message)
+
     def reset_passwd_hash(self, index: int):
         self.ws.update_value(f"C{index}", "")
 
-    def get_all_passwds(self) -> list:
-        passwd_col = self.ws.get_col(2, include_tailing_empty=False)[3:]
-        hashes_col = self.ws.get_col(3, include_tailing_empty=False)[3:]
+    def fetch_all(self) -> list:
+        skip = 3  # skip rows from beginning
+        logins_col = self.ws.get_col(1, include_tailing_empty=False)[skip:]
+        passwd_col = self.ws.get_col(2, include_tailing_empty=False)[skip:]
+        hashes_col = self.ws.get_col(3, include_tailing_empty=False)[skip:]
+        perms_col = self.ws.get_col(4, include_tailing_empty=False)[skip:]
         passwd_len = len(passwd_col)
         hashes_len = len(hashes_col)
         return [{
-            "col": i + 4,
+            "col": i + skip + 1,
+            "login": logins_col[i] if i < passwd_len else "",
             "passwd": passwd_col[i] if i < passwd_len else "",
             "hash": hashes_col[i] if i < hashes_len else "",
+            "permissions": ["*"] if perms_col[i].strip() == "" else perms_col[i].split(" ")
         } for i in range(max(passwd_len, hashes_len))]

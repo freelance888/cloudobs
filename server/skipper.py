@@ -13,7 +13,7 @@ from socketio.exceptions import ConnectionError
 from deployment import Spawner, IPDict
 from googleapi import OBSGoogleSheets, TimingGoogleSheets, UsersGoogleSheets
 from models import (MinionSettings, VmixPlayer, Registry, State, TimingEntry,
-                    orjson_dumps, User, SessionContext, PermissionDeniedException)
+                    orjson_dumps, User, SessionContext, PermissionDeniedException, passwd_placeholder)
 from models.logging import LogsStorage, Log, LogLevel
 from obs import OBS
 from util import ExecutionStatus, WebsocketResponse, CallbackThread, hash_passwd
@@ -160,82 +160,106 @@ class Skipper:
             except Exception as ex:
                 return ExecutionStatus(False, f"Something happened while pushing obs_config info. Details: {ex}")
 
-    class Authorizer:
-        passwd_placeholder = "●●●●●●●●"
-
-        def __init__(self, skipper: 'Skipper'):
+    class SecurityWorker:
+        def __init__(self, skipper: "Skipper"):
             self.users_sheet = UsersGoogleSheets()
+            self.users: list[User] = [User.master()]
+            self.authorized_users: dict[str, User] = {}
             self.skipper = skipper
-            self.prev_passwds: dict | None = None
 
-        def setup(self, sheet_url, sheet_name) -> ExecutionStatus:
-            # with self.skipper.registry_lock:
+        def authorize(self, sid: str, login: str, passwd: str) -> bool:
+            """Checks if user is authorized"""
+            for user in self.users:
+                if user.login == login:
+                    if user.passwd_hash == hash_passwd(passwd):
+                        self.authorized_users.update({sid: user})
+                        return True
+                    return False
+            return False
+
+        def logout(self, sid: str):
+            """Deletes user from authorized"""
+            if sid in self.authorized_users.keys():
+                del self.authorized_users[sid]
+
+        def sync_from_sheets(self):
+            """Syncs users with Google Sheet"""
+            if not self.users_sheet.setup_status:
+                return
+            message = "Success"
             try:
-                self.users_sheet.set_sheet(sheet_url, sheet_name)
-                self.skipper.registry.users_sheet_url = sheet_url
-                self.skipper.registry.users_sheet_name = sheet_name
+                sheet_data = self.users_sheet.fetch_all()
+                prev_users = self.users
+                # Reset users list
+                self.users = [User.master()]
+                for i in range(len(sheet_data)):
+                    row_data = sheet_data[i]
+                    col_index = row_data["col"]
+                    login = row_data["login"]
+                    passwd = row_data["passwd"]
+                    passwd_hash = row_data["hash"]
+                    permissions = row_data["permissions"]
+                    # Get cached user by login equality
+                    cur_user: User = next((u for u in prev_users if u.login == login), None)
+                    if cur_user:
+                        cur_user.permissions = permissions
+                        self.users.append(cur_user)
+                    elif login.strip() != "":
+                        cur_user = User(
+                            login=login,
+                            passwd=passwd_placeholder,
+                            passwd_hash=passwd_hash,
+                            permissions=permissions,
+                        )
+                        self.users.append(cur_user)
+
+                    # Disallow to change manually hash if password is a placeholder
+                    if passwd == passwd_placeholder:
+                        if cur_user and passwd_hash != cur_user.passwd_hash:
+                            self.users_sheet.set_passwd(col_index, passwd_placeholder, cur_user.passwd_hash)
+                    # If password is empty - reset hash
+                    elif passwd.strip() == "":
+                        if passwd_hash.strip() != "":
+                            self.users_sheet.reset_passwd_hash(col_index)
+                    # Update password and hash
+                    else:
+                        passwd_hash = hash_passwd(passwd)
+                        if passwd != passwd_placeholder or passwd_hash != cur_user.passwd_hash:
+                            cur_user.passwd_hash = passwd_hash
+                            self.users_sheet.set_passwd(col_index, passwd_placeholder, passwd_hash)
+            except Exception as e:
+                message = str(e)
+            print('users:', " ".join([str(u) for u in self.users]))
+            self.users_sheet.set_sync_status(message)
+
+        def set_sheets(self, sheet_url: str, sheet_name: str) -> ExecutionStatus:
+            """Binds users with Google Sheet table"""
+            try:
+                with self.skipper.registry_lock:
+                    self.users_sheet.set_sheet(sheet_url, sheet_name)
+                    self.skipper.registry.users_sheet_url = sheet_url
+                    self.skipper.registry.users_sheet_name = sheet_name
+                self.sync_from_sheets()
                 return ExecutionStatus(True)
             except Exception as ex:
                 return ExecutionStatus(False, f"Couldn't set up users sheet config.\nDetails: {ex}")
 
-        def sing_in(self, login: str, passwd: str) -> User | None:
-            if self.users_sheet.setup_status:
-                # 1. Get user by login from GSheet
-                user = self.users_sheet.get_user_by_login(login)
-                # 2. Compare password hashes
-                if user and hash_passwd(passwd) == user.passwd_hash:
-                    return user
-                return None
+        def get_user(self, sid: str) -> User | None:
+            """Returns a list of user permissions"""
+            if sid in self.authorized_users.keys():
+                return self.authorized_users[sid]
 
-            # If Google Sheet didn't set up, allow only master credentials
-            master_login = os.getenv("MASTER_LOGIN")
-            master_passwd = os.getenv("MASTER_PASSWD")
-            if login == master_login and passwd == master_passwd:
-                return User(
-                    login=login,
-                    passwd=self.passwd_placeholder,
-                    passwd_hash=hash_passwd(passwd),
-                    permissions=["admin"],
-                )
-            return None
-
-        def track_passwd_changes(self):
-            passwds = self.users_sheet.get_all_passwds()
-            if self.prev_passwds is None or len(self.prev_passwds) != len(passwds):
-                self.prev_passwds = passwds
-                return
-            for i in range(len(passwds)):
-                passwd = passwds[i]
-                prev = self.prev_passwds[i]
-
-                # Disallow to change manually hash if password is a placeholder
-                if passwd["passwd"] == self.passwd_placeholder:
-                    if passwd["hash"] != prev["hash"]:
-                        self.users_sheet.set_passwd(passwd["col"], self.passwd_placeholder, prev["hash"])
-
-                # If password is empty - reset hash
-                elif passwd["passwd"].strip() == "":
-                    if passwd["hash"].strip() != "":
-                        self.users_sheet.reset_passwd_hash(passwd["col"])
-
-                # Update hash only if passwords doesn't change since last check
-                elif passwd["passwd"] == prev["passwd"]:
-                    passwd_hash = hash_passwd(passwd["passwd"])
-                    if passwd_hash != passwd["hash"] or passwd["passwd"] != self.passwd_placeholder:
-                        passwd["hash"] = passwd_hash
-                        self.users_sheet.set_passwd(passwd["col"], self.passwd_placeholder, passwd_hash)
-
-            self.prev_passwds = passwds
-
-        def clean_copy_registry(self, session: SessionContext, masked=False) -> dict:
-            registry = self.skipper.registry.masked_dict() if masked else self.skipper.registry.dict()
-            if session.is_admin():
+        def copy_registry_for_user(self, user: User, masked=False) -> dict:
+            """Returns a copy of the original registry without data user has no access"""
+            with self.skipper.registry_lock:
+                registry = self.skipper.registry.masked_dict() if masked else self.skipper.registry.dict()
+                if user.is_admin():
+                    return registry
+                perms = user.permissions
+                # Select only langs from user permissions
+                registry["minion_configs"] = {k: v for k, v in registry["minion_configs"].items() if k in perms}
+                registry["gdrive_files"] = {k: v for k, v in registry["gdrive_files"].items() if k in perms}
                 return registry
-            perms = session.user.permissions
-            # Select only langs from user permissions
-            registry["minion_configs"] = {k: v for k, v in registry["minion_configs"].items() if k in perms}
-            registry["gdrive_files"] = {k: v for k, v in registry["gdrive_files"].items() if k in perms}
-            return registry
 
     class Minion:
         def __init__(self, minion_ip, lang, skipper, ws_port=MINION_WS_PORT):
@@ -607,7 +631,8 @@ class Skipper:
             """
             # if user didn't authorize - disallow access
             no_auth_ips = (self.skipper.registry.active_vmix_player, "*")
-            if session.user is None and session.ip not in no_auth_ips:
+            user = self.skipper.security.get_user(session.sid)
+            if user is None or not user.passwd_hash and session.ip not in no_auth_ips:
                 return ExecutionStatus(False, "User is not authorized")
             # if the server is sleeping - only allow the following commands
             if self.skipper.registry.server_status == State.sleeping:
@@ -653,7 +678,11 @@ class Skipper:
             if "details" not in command:
                 command["details"] = {}
             if "lang" not in command:
-                command["lang"] = "*"
+                user = self.skipper.security.get_user(session.sid)
+                if user:
+                    command["lang"] = user.langs()[0]  # TODO: not sure about getting by index[0] here
+                else:
+                    command["lang"] = "*"
             command, details, lang = command["command"], command["details"], command["lang"]
 
             return self.exec(command, details=details, lang=lang, session=session)
@@ -672,6 +701,7 @@ class Skipper:
             return result
 
         def _exec(self, command, details=None, lang=None, session: SessionContext = None) -> ExecutionStatus:
+            user = self.skipper.security.get_user(session.sid)
             if lang is None:
                 lang = "*"  # langs
             # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
@@ -681,13 +711,14 @@ class Skipper:
                 if (lang == "*" or lang_ == lang)
             ]
 
-            if not self._check_caller(session, command):
-                return self._check_caller(session, command)
+            check_result = self._check_caller(session, command)
+            if not check_result.status:
+                return check_result
             self._fix_infrastructure_lock()  # if the server is sleeping - infrastructure should not be locked
 
             try:
                 if command == "pull config":
-                    session.ensure_is_admin()
+                    user.ensure_is_admin()
                     # details:
                     # note that all the parameters are optional
                     # {
@@ -711,11 +742,12 @@ class Skipper:
                         )
                         else details["langs"]  # the code above validates details["langs"]
                     )
+                    # fetch users from Google Sheet
+                    status: ExecutionStatus = self.skipper.security.set_sheets(sheet_url, users_sheet_name)
+                    if not status:
+                        return status
                     # pull_obs_config() manages registry lock itself
-                    status: ExecutionStatus = self.pull_obs_config(
-                        sheet_url=sheet_url, sheet_name=sheet_name,
-                        users_sheet_name=users_sheet_name, langs=langs
-                    )
+                    status = self.pull_obs_config(sheet_url, sheet_name, langs)
                     if not status:
                         return status
 
@@ -726,7 +758,7 @@ class Skipper:
                             return status
                     return self.skipper.activate_registry()
                 elif command == "dispose":
-                    session.ensure_is_admin()
+                    user.ensure_is_admin()
                     return self.delete_minions()
                 elif command == "get info":
                     if not details:  # validate
@@ -736,7 +768,7 @@ class Skipper:
                     else:
                         return ExecutionStatus(False, "Invalid details provided for command 'get info'")
 
-                    registry = self.skipper.authorizer.clean_copy_registry(session, masked=masked)
+                    registry = self.skipper.security.copy_registry_for_user(user, masked=masked)
                     return ExecutionStatus(True, serializable_object=orjson_dumps({"registry": registry}))
                 elif command in (
                         "set stream settings",
@@ -747,7 +779,7 @@ class Skipper:
                         "set sidechain settings",
                         "set transition settings",
                 ):
-                    session.ensure_lang_access(lang)
+                    user.ensure_lang_access(lang)
                     return self.set_info(command=command, details=details, lang=lang)
                 elif command == "get logs":
                     count = None
@@ -1085,22 +1117,17 @@ class Skipper:
                     serializable_object={lang: ExecutionStatus(False, "Exception has been thrown").dict()},
                 )
 
-        def pull_obs_config(self, sheet_url=None, sheet_name=None,
-                            users_sheet_name=None, langs=None) -> ExecutionStatus:
+        def pull_obs_config(self, sheet_url=None, sheet_name=None, langs=None) -> ExecutionStatus:
             """
             Pulls and applies OBS configuration from google sheets
             :param sheet_url: sheet url. No need to specify if it has been specified once before (cache)
             :param sheet_name: works same as sheet_url
-            :param users_sheet_name: users google sheet name
             :param langs: if specified, takes only specified langs from google sheets
             :return: ExecutionStatus
             """
             with self.skipper.registry_lock:
                 if sheet_url and sheet_name:
                     status: ExecutionStatus = self.skipper.obs_config.setup(sheet_url, sheet_name)
-                    if not status:
-                        return status
-                    status: ExecutionStatus = self.skipper.authorizer.setup(sheet_url, users_sheet_name)
                     if not status:
                         return status
 
@@ -1207,8 +1234,9 @@ class Skipper:
             """
             while True:
                 try:
-                    if self.skipper.authorizer.users_sheet.setup_status:
-                        self.skipper.authorizer.track_passwd_changes()
+                    with self.skipper.registry_lock:
+                        if self.skipper.security.users_sheet.setup_status:
+                            self.skipper.security.sync_from_sheets()
                 except Exception as ex:
                     print(f"E Skipper::BGWorker::track_gsheet_users_change(): "
                           f"Couldn't track user password changes. Details: {ex}")  # TODO: handle and log
@@ -1216,7 +1244,7 @@ class Skipper:
                         message="Couldn't track user password changes",
                         error=ex
                     )
-                self.skipper.sio.sleep(5)
+                self.skipper.sio.sleep(seconds=30)
 
         def start_sending_time(self):
             while True:
@@ -1243,7 +1271,7 @@ class Skipper:
         self.registry: Registry = Registry()
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
-        self.authorizer: Skipper.Authorizer = Skipper.Authorizer(self)
+        self.security: Skipper.SecurityWorker = Skipper.SecurityWorker(self)
         self.minions: Dict[str, Skipper.Minion] = {}
         self.timing: Skipper.Timing = Skipper.Timing(self)
         self.command: Skipper.Command = Skipper.Command(self)
@@ -1365,7 +1393,7 @@ class Skipper:
 
         user = None
         if login and password:
-            user = self.authorizer.sing_in(login, password)
+            user = self.security.authorize(sid, login, password)
             if user is None:
                 # Notify user about failed auth
                 self.event_sender.send_auth_result(sid, status=False)
@@ -1386,6 +1414,7 @@ class Skipper:
 
     def _on_disconnect(self, sid):
         if sid in self._sessions.keys():
+            self.security.logout(sid)
             self._sessions.pop(sid)
 
     def _on_command(self, sid, data):
