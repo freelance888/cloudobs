@@ -222,7 +222,7 @@ class Skipper:
                     # Get cached user by login equality
                     if not self._validate_user(errors, login, permissions):
                         continue
-                    cur_user = self._get_cur_user(login, passwd_hash, permissions, prev_users)
+                    cur_user = self._sync_cur_user(login, passwd_hash, permissions, prev_users)
 
                     # Disallow to change manually hash if password is a placeholder
                     if passwd == passwd_placeholder:
@@ -258,7 +258,7 @@ class Skipper:
                 return False
             return True
 
-        def _get_cur_user(self, login, passwd_hash, permissions, prev_users):
+        def _sync_cur_user(self, login, passwd_hash, permissions, prev_users):
             if login in prev_users:
                 cur_user = prev_users[login]
                 cur_user.permissions = permissions
@@ -675,8 +675,7 @@ class Skipper:
             If returned ExecutionStatus(True) - the command is allowed, otherwise not allowed
             """
             # if user didn't authorize - disallow access
-            is_active_vmix_player = self.skipper.registry.active_vmix_player == "*" or \
-                                    self.skipper.registry.active_vmix_player == session.ip
+            is_active_vmix_player = self.skipper.registry.active_vmix_player == session.ip
             if not is_active_vmix_player and (not session or session.user is None or not session.user.passwd_hash):
                 return ExecutionStatus(False, "User is not authorized")
             user_langs = session.user.langs()
