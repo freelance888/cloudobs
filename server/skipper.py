@@ -13,7 +13,7 @@ from socketio.exceptions import ConnectionError
 from deployment import Spawner, IPDict
 from googleapi import OBSGoogleSheets, TimingGoogleSheets, UsersGoogleSheets
 from models import (MinionSettings, VmixPlayer, Registry, State, TimingEntry,
-                    orjson_dumps, User, SessionContext, PermissionDeniedException, passwd_placeholder)
+                    orjson_dumps, User, SessionContext, passwd_placeholder)
 from models.logging import LogsStorage, Log, LogLevel
 from obs import OBS
 from util import ExecutionStatus, WebsocketResponse, CallbackThread, hash_passwd
@@ -163,18 +163,35 @@ class Skipper:
     class SecurityWorker:
         def __init__(self, skipper: "Skipper"):
             self.users_sheet = UsersGoogleSheets()
-            self.users: list[User] = [User.master()]
+            master_user = User.master()
+            self.users: dict[str, User] = {master_user.login: master_user}
             self.authorized_users: dict[str, User] = {}
             self.skipper = skipper
+            self.public_commands = Skipper.SecurityWorker.get_public_commands()
+
+        @staticmethod
+        def get_public_commands() -> set[str]:
+            """Returns a list of commands available for users without 'admin' permission"""
+            return {
+                "get info",
+                "set stream settings",
+                "set teamspeak offset",
+                "set teamspeak volume",
+                "set source volume",
+                "set vmix speaker background volume",
+                "set sidechain settings",
+                "set transition settings",
+                "start streaming",
+                "stop streaming",
+                "refresh source",
+                "get logs",
+            }
 
         def authorize(self, sid: str, login: str, passwd: str) -> bool:
             """Checks if user is authorized"""
-            for user in self.users:
-                if user.login == login:
-                    if user.passwd_hash == hash_passwd(passwd):
-                        self.authorized_users.update({sid: user})
-                        return True
-                    return False
+            if login in self.users and self.users[login].passwd_hash == hash_passwd(passwd):
+                self.authorized_users.update({sid: self.users[login]})
+                return True
             return False
 
         def logout(self, sid: str):
@@ -186,12 +203,13 @@ class Skipper:
             """Syncs users with Google Sheet"""
             if not self.users_sheet.setup_status:
                 return
-            message = "Success"
+            errors = []
             try:
                 sheet_data = self.users_sheet.fetch_all()
                 prev_users = self.users
                 # Reset users list
-                self.users = [User.master()]
+                master_user = User.master()
+                self.users = {master_user.login: master_user}
                 for i in range(len(sheet_data)):
                     row_data = sheet_data[i]
                     col_index = row_data["col"]
@@ -199,19 +217,12 @@ class Skipper:
                     passwd = row_data["passwd"]
                     passwd_hash = row_data["hash"]
                     permissions = row_data["permissions"]
+                    if login.strip() == "":
+                        continue
                     # Get cached user by login equality
-                    cur_user: User = next((u for u in prev_users if u.login == login), None)
-                    if cur_user:
-                        cur_user.permissions = permissions
-                        self.users.append(cur_user)
-                    elif login.strip() != "":
-                        cur_user = User(
-                            login=login,
-                            passwd=passwd_placeholder,
-                            passwd_hash=passwd_hash,
-                            permissions=permissions,
-                        )
-                        self.users.append(cur_user)
+                    if not self._validate_user(errors, login, permissions):
+                        continue
+                    cur_user = self._get_cur_user(login, passwd_hash, permissions, prev_users)
 
                     # Disallow to change manually hash if password is a placeholder
                     if passwd == passwd_placeholder:
@@ -219,6 +230,7 @@ class Skipper:
                             self.users_sheet.set_passwd(col_index, passwd_placeholder, cur_user.passwd_hash)
                     # If password is empty - reset hash
                     elif passwd.strip() == "":
+                        errors.append(f"{login}: has no password")
                         if passwd_hash.strip() != "":
                             self.users_sheet.reset_passwd_hash(col_index)
                     # Update password and hash
@@ -228,9 +240,40 @@ class Skipper:
                             cur_user.passwd_hash = passwd_hash
                             self.users_sheet.set_passwd(col_index, passwd_placeholder, passwd_hash)
             except Exception as e:
-                message = str(e)
-            print('users:', " ".join([str(u) for u in self.users]))
+                errors.append(str(e))
+            # TODO: DEBUG ONLY
+            # print('users:', " ".join([str(u) for u in self.users]))
+            if len(errors) == 0:
+                message = "Success"
+            else:
+                message = "\n".join(errors)
             self.users_sheet.set_sync_status(message)
+
+        def _validate_user(self, errors, login, permissions):
+            if not permissions or len(permissions) < 1:
+                errors.append(f"{login}: has no permissions")
+                return False
+            if login in self.users:
+                errors.append(f"{login}: duplicated login")
+                return False
+            return True
+
+        def _get_cur_user(self, login, passwd_hash, permissions, prev_users):
+            if login in prev_users:
+                cur_user = prev_users[login]
+                cur_user.permissions = permissions
+                self.users.update({cur_user.login: cur_user})
+                return cur_user
+            elif login.strip() != "":
+                cur_user = User(
+                    login=login,
+                    passwd=passwd_placeholder,
+                    passwd_hash=passwd_hash,
+                    permissions=permissions,
+                )
+                self.users.update({cur_user.login: cur_user})
+                return cur_user
+            return None
 
         def set_sheets(self, sheet_url: str, sheet_name: str) -> ExecutionStatus:
             """Binds users with Google Sheet table"""
@@ -249,7 +292,7 @@ class Skipper:
             if sid in self.authorized_users.keys():
                 return self.authorized_users[sid]
 
-        def copy_registry_for_user(self, user: User, masked=False) -> dict:
+        def copy_registry_for_user(self, user: User, masked=True) -> dict:
             """Returns a copy of the original registry without data user has no access"""
             with self.skipper.registry_lock:
                 registry = self.skipper.registry.masked_dict() if masked else self.skipper.registry.dict()
@@ -259,6 +302,8 @@ class Skipper:
                 # Select only langs from user permissions
                 registry["minion_configs"] = {k: v for k, v in registry["minion_configs"].items() if k in perms}
                 registry["gdrive_files"] = {k: v for k, v in registry["gdrive_files"].items() if k in perms}
+                del registry["vmix_players"]
+                del registry["active_vmix_player"]
                 return registry
 
     class Minion:
@@ -467,7 +512,7 @@ class Skipper:
 
         def on_command_completed(self, command, details, lang, result: ExecutionStatus, session: SessionContext):
             ip = self.skipper.registry.get_ip_name(
-                session.ip if session.ip != "*" else "0.0.0.0"  # TODO: not sure about this condition
+                session.ip if session and session.ip else "0.0.0.0"
             )
             self.skipper.logger.log_command_completed(
                 status=result.status,
@@ -630,10 +675,17 @@ class Skipper:
             If returned ExecutionStatus(True) - the command is allowed, otherwise not allowed
             """
             # if user didn't authorize - disallow access
-            no_auth_ips = (self.skipper.registry.active_vmix_player, "*")
-            user = self.skipper.security.get_user(session.sid)
-            if user is None or not user.passwd_hash and session.ip not in no_auth_ips:
+            is_active_vmix_player = self.skipper.registry.active_vmix_player == "*" or \
+                                    self.skipper.registry.active_vmix_player == session.ip
+            if not is_active_vmix_player and (not session or session.user is None or not session.user.passwd_hash):
                 return ExecutionStatus(False, "User is not authorized")
+            user_langs = session.user.langs()
+            if "*" not in user_langs and lang not in user_langs:
+                return ExecutionStatus(False, f"Permission denied (language: '{lang}')")
+            if command in self.skipper.security.public_commands:
+                return ExecutionStatus(True)
+            if not is_active_vmix_player and "admin" not in session.user.permissions:
+                return ExecutionStatus(False, "Permission denied")
             # if the server is sleeping - only allow the following commands
             if self.skipper.registry.server_status == State.sleeping:
                 if command in ("pull config", "get info", "infrastructure unlock", "get logs"):
@@ -678,9 +730,8 @@ class Skipper:
             if "details" not in command:
                 command["details"] = {}
             if "lang" not in command:
-                user = self.skipper.security.get_user(session.sid)
-                if user:
-                    command["lang"] = user.langs()[0]  # TODO: not sure about getting by index[0] here
+                if session.user:
+                    command["lang"] = session.user.langs()[0]  # TODO: Nice to have multi-language support
                 else:
                     command["lang"] = "*"
             command, details, lang = command["command"], command["details"], command["lang"]
@@ -701,7 +752,6 @@ class Skipper:
             return result
 
         def _exec(self, command, details=None, lang=None, session: SessionContext = None) -> ExecutionStatus:
-            user = self.skipper.security.get_user(session.sid)
             if lang is None:
                 lang = "*"  # langs
             # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
@@ -718,7 +768,6 @@ class Skipper:
 
             try:
                 if command == "pull config":
-                    user.ensure_is_admin()
                     # details:
                     # note that all the parameters are optional
                     # {
@@ -758,7 +807,6 @@ class Skipper:
                             return status
                     return self.skipper.activate_registry()
                 elif command == "dispose":
-                    user.ensure_is_admin()
                     return self.delete_minions()
                 elif command == "get info":
                     if not details:  # validate
@@ -768,7 +816,7 @@ class Skipper:
                     else:
                         return ExecutionStatus(False, "Invalid details provided for command 'get info'")
 
-                    registry = self.skipper.security.copy_registry_for_user(user, masked=masked)
+                    registry = self.skipper.security.copy_registry_for_user(session.user, masked=masked)
                     return ExecutionStatus(True, serializable_object=orjson_dumps({"registry": registry}))
                 elif command in (
                         "set stream settings",
@@ -779,7 +827,6 @@ class Skipper:
                         "set sidechain settings",
                         "set transition settings",
                 ):
-                    user.ensure_lang_access(lang)
                     return self.set_info(command=command, details=details, lang=lang)
                 elif command == "get logs":
                     count = None
@@ -927,11 +974,7 @@ class Skipper:
                     return self.skipper.timing.remove()
                 else:
                     with self.skipper.infrastructure_lock:
-                        session.ensure_lang_access(lang)
                         return self._minion_command(command=command, details=details, lang=lang)
-
-            except PermissionDeniedException as ex:
-                return ExecutionStatus(False, ex.message)
 
             except Exception as ex:
                 self.skipper.logger.log_server_error(
@@ -1391,18 +1434,18 @@ class Skipper:
         password = environ.get("HTTP_PASSWORD")
         ip = environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "*"
 
-        user = None
         if login and password:
-            user = self.security.authorize(sid, login, password)
-            if user is None:
-                # Notify user about failed auth
-                self.event_sender.send_auth_result(sid, status=False)
-                self.logger.log_failed_login_attempt("Invalid login or password", login)
-            else:
+            authorized_status = self.security.authorize(sid, login, password)
+            if authorized_status:
                 # Notify user about success
                 self.event_sender.send_auth_result(sid, status=True)
                 self.logger.log_success_login_attempt("User authorized", login)
+            else:
+                # Notify user about failed auth
+                self.event_sender.send_auth_result(sid, status=False)
+                self.logger.log_failed_login_attempt("Invalid login or password", login)
 
+        user = self.security.get_user(sid)
         return SessionContext(sid=sid, ip=ip, user=user)
 
     def _on_connect(self, sid, environ: dict):
@@ -1413,7 +1456,7 @@ class Skipper:
         # self.sio.save_session(sid, {'env': environ})
 
     def _on_disconnect(self, sid):
-        if sid in self._sessions.keys():
+        if sid in self._sessions:
             self.security.logout(sid)
             self._sessions.pop(sid)
 

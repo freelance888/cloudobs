@@ -50,18 +50,6 @@ class User:
     def is_admin(self) -> bool:
         return "admin" in self.permissions if self and self.permissions else False
 
-    def ensure_is_admin(self):
-        if not self.is_admin():
-            raise PermissionDeniedException()
-
-    def ensure_lang_access(self, lang: str):
-        if not self.is_admin() and lang not in self.permissions:
-            raise PermissionDeniedException()
-
-    def ensure_langs_access(self, langs: list[str]):
-        if not self.is_admin() and any(x not in self.permissions for x in langs):
-            raise PermissionDeniedException()
-
     def langs(self):
         if self.permissions:
             if "admin" in self.permissions or "*" in self.permissions:
@@ -70,16 +58,11 @@ class User:
         return ["*"]
 
 
-class PermissionDeniedException(Exception):
-    def __init__(self):
-        super().__init__()
-        self.message = "Permission denied"
-
-
 class SessionContext:
     def __init__(self, **kwargs):
         self.sid: str = kwargs["sid"]
         self.ip: str = kwargs["ip"]
+        self.user: User = kwargs["user"]
 
 
 class OBSCloudModel(BaseModel):

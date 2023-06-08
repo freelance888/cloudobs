@@ -174,12 +174,13 @@ class UsersGoogleSheets:
         passwd_col = self.ws.get_col(2, include_tailing_empty=False)[skip:]
         hashes_col = self.ws.get_col(3, include_tailing_empty=False)[skip:]
         perms_col = self.ws.get_col(4, include_tailing_empty=False)[skip:]
+        logins_len = len(logins_col)
         passwd_len = len(passwd_col)
         hashes_len = len(hashes_col)
         return [{
             "col": i + skip + 1,
-            "login": logins_col[i] if i < passwd_len else "",
+            "login": logins_col[i] if i < logins_len else "",
             "passwd": passwd_col[i] if i < passwd_len else "",
             "hash": hashes_col[i] if i < hashes_len else "",
-            "permissions": ["*"] if perms_col[i].strip() == "" else perms_col[i].split(" ")
-        } for i in range(max(passwd_len, hashes_len))]
+            "permissions": [] if perms_col[i].strip() == "" else perms_col[i].split(" ")
+        } for i in range(len(logins_col))]
