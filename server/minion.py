@@ -109,8 +109,8 @@ class Minion:
 
                     for fname in self.files:  # for each file we have already downloaded
                         # if we have downloaded this file, but it doesn't appear in Google Drive
+                        fname_ = f"'{fname}'"
                         if fname not in gdrive_files:
-                            fname_ = f"'{fname}'"
                             os.system(f"rm {os.path.join(media_dir, fname_)}")  # remove it
                             if not os.path.isfile(os.path.join(media_dir, fname_)):  # check if file has been removed
                                 self.files.pop(fname)

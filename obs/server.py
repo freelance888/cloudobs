@@ -47,6 +47,8 @@ class OBSConfig(BaseModel):
         )
     }
     scene: str = "main"
+    playing_media_name: str = None
+    playing_media_is_vs: bool = False
 
 
 class OBSMonitoring:
@@ -70,9 +72,35 @@ class OBSMonitoring:
 
     def sync(self):
         with self.lock:
+            self._check_configs()
             self._check_connection()
             self._sync_scene()
             self._sync_inputs()
+
+    def _check_configs(self):
+        if OBS.MAIN_STREAM_SOURCE_NAME in self.obs_config.inputs and \
+                OBS.TEAMSPEAK_SOURCE_NAME in self.obs_config.inputs:
+            if self.obs_config.playing_media_name:  # media is playing rn
+
+                if self.obs_config.playing_media_is_vs:  # if it is vmix speaker running
+                    self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+                    self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
+                        self.obs_controller.minion_settings.vmix_speaker_background_volume.value
+
+                    self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = True
+
+                else:  # if non vmix speaker running
+                    self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = True
+                    self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = True
+
+            else:  # media is not playing rn
+                self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+                self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
+                    self.obs_controller.minion_settings.source_volume.value
+
+                self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
+                self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].volume = \
+                    self.obs_controller.minion_settings.ts_volume.value
 
     def _check_connection(self):
         try:
@@ -282,22 +310,28 @@ class OBSMonitoring:
 
         try:
             def on_start(filename):
+                self.obs_config.playing_media_name = filename
                 if re.match(r"^[\d\.]+_vs_", os.path.basename(filename)):  # if the file is vmix speaker
                     # do not mute original stream
-                    self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
-                        self.obs_controller.minion_settings.vmix_speaker_background_volume.value
-                    self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+                    self.obs_config.playing_media_is_vs = True
+                    # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
+                    #     self.obs_controller.minion_settings.vmix_speaker_background_volume.value
+                    # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
                 else:
-                    self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = True
-                self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = True
+                    self.obs_config.playing_media_is_vs = False
+                    # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = True
+                # self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = True
 
                 self.sync()
 
             def on_finish():
-                self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
-                self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
-                self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
-                    self.obs_controller.minion_settings.source_volume.value
+                # self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
+                # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+                # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
+                #     self.obs_controller.minion_settings.source_volume.value
+
+                self.obs_config.playing_media_name = None
+                self.obs_config.playing_media_is_vs = False
 
                 self.sync()
 
@@ -319,8 +353,11 @@ class OBSMonitoring:
         try:
             self.obs_wrapper.stop_media()
 
-            self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
-            self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+            # self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
+            # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
+            self.obs_config.playing_media_name = None
+            self.obs_config.playing_media_is_vs = False
+
             self.sync()
         except BaseException as ex:
             status.append_error(f"Server::stop_media(): couldn't stop media. Details: {ex}")
