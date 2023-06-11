@@ -40,6 +40,16 @@
 }
 ```
 
+###  - `on_auth`
+ - **Description:** Event to handle authorization result.
+ - **Returns:**
+```json
+{
+  "status": true/false,
+  "message": "Login or password is not valid"
+}
+```
+
 ------------------------------------------------------------------------------
 
 # Commands

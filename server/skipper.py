@@ -11,11 +11,12 @@ from flask import Flask, request
 from socketio.exceptions import ConnectionError
 
 from deployment import Spawner, IPDict
-from googleapi import OBSGoogleSheets, TimingGoogleSheets
-from models import MinionSettings, VmixPlayer, Registry, State, TimingEntry, orjson_dumps
+from googleapi import OBSGoogleSheets, TimingGoogleSheets, UsersGoogleSheets
+from models import (MinionSettings, VmixPlayer, Registry, State, TimingEntry,
+                    orjson_dumps, User, SessionContext, passwd_placeholder)
 from models.logging import LogsStorage, Log, LogLevel
 from obs import OBS
-from util import ExecutionStatus, WebsocketResponse, CallbackThread
+from util import ExecutionStatus, WebsocketResponse, CallbackThread, hash_passwd
 
 MINION_WS_PORT = 6000
 
@@ -158,6 +159,164 @@ class Skipper:
                 return ExecutionStatus(True)
             except Exception as ex:
                 return ExecutionStatus(False, f"Something happened while pushing obs_config info. Details: {ex}")
+
+    class SecurityWorker:
+        def __init__(self, skipper: "Skipper"):
+            self.users_sheet = UsersGoogleSheets()
+            master_user = User.master()
+            self.users: dict[str, User] = {master_user.login: master_user}
+            self.authorized_users: dict[str, User] = {}
+            self.skipper = skipper
+            self.public_commands = Skipper.SecurityWorker.get_public_commands()
+
+        @staticmethod
+        def get_public_commands() -> set[str]:
+            """Returns a list of commands available for users without 'admin' permission"""
+            return {
+                "get info",
+                "set stream settings",
+                "set teamspeak offset",
+                "set teamspeak volume",
+                "set source volume",
+                "set vmix speaker background volume",
+                "set sidechain settings",
+                "set transition settings",
+                "start streaming",
+                "stop streaming",
+                "refresh source",
+                "get logs",
+            }
+
+        def authorize(self, sid: str, login: str, passwd: str) -> bool:
+            """Checks if user is authorized"""
+            if login in self.users and self.users[login].passwd_hash == hash_passwd(passwd):
+                self.authorized_users.update({sid: self.users[login]})
+                return True
+            return False
+
+        def logout(self, sid: str):
+            """Deletes user from authorized"""
+            if sid in self.authorized_users.keys():
+                del self.authorized_users[sid]
+
+        def sync_from_sheets(self):
+            """Syncs users with Google Sheet"""
+            if not self.users_sheet.setup_status:
+                return
+            errors = []
+            try:
+                sheet_data = self.users_sheet.fetch_all()
+                prev_users = self.users
+                # Reset users list
+                master_user = User.master()
+                self.users = {master_user.login: master_user}
+                for i in range(len(sheet_data)):
+                    row_data = sheet_data[i]
+                    col_index = row_data["col"]
+                    login = row_data["login"]
+                    passwd = row_data["passwd"]
+                    passwd_hash = row_data["hash"]
+                    permissions = row_data["permissions"]
+                    if login.strip() == "":
+                        continue
+                    # Get cached user by login equality
+                    if not self._validate_user(errors, login, permissions):
+                        continue
+                    cur_user = self._sync_cur_user(login, passwd_hash, permissions, prev_users)
+
+                    # Disallow to change manually hash if password is a placeholder
+                    if passwd == passwd_placeholder:
+                        if cur_user and passwd_hash != cur_user.passwd_hash:
+                            self.users_sheet.set_passwd(col_index, passwd_placeholder, cur_user.passwd_hash)
+                    # If password is empty - reset hash
+                    elif passwd.strip() == "":
+                        errors.append(f"{login}: has no password")
+                        if passwd_hash.strip() != "":
+                            self.users_sheet.reset_passwd_hash(col_index)
+                    # Update password and hash
+                    else:
+                        passwd_hash = hash_passwd(passwd)
+                        if passwd != passwd_placeholder or passwd_hash != cur_user.passwd_hash:
+                            cur_user.passwd_hash = passwd_hash
+                            self.users_sheet.set_passwd(col_index, passwd_placeholder, passwd_hash)
+            except Exception as e:
+                errors.append(str(e))
+            # TODO: DEBUG ONLY
+            # print('users:', " ".join([str(u) for u in self.users]))
+            if len(errors) == 0:
+                message = "Success"
+            else:
+                message = "\n".join(errors)
+            self.users_sheet.set_sync_status(message)
+
+        def _validate_user(self, errors, login, permissions):
+            if not re.match(r"^(?=.{2,50}$)(?:[a-zA-Z\d]+(?:(?:-|_)[a-zA-Z\d])*)+$", login):
+                errors.append(f"{login}: invalid login (allowed only alphanumeric and _ or -)")
+                return False
+            if not permissions or len(permissions) < 1:
+                errors.append(f"{login}: has no permissions")
+                return False
+            if login in self.users:
+                errors.append(f"{login}: duplicated login")
+                return False
+            return True
+
+        def _sync_cur_user(self, login, passwd_hash, permissions, prev_users):
+            if login in prev_users:
+                cur_user = prev_users[login]
+                cur_user.permissions = permissions
+                self.users.update({cur_user.login: cur_user})
+                return cur_user
+            elif login.strip() != "":
+                cur_user = User(
+                    login=login,
+                    passwd=passwd_placeholder,
+                    passwd_hash=passwd_hash,
+                    permissions=permissions,
+                )
+                self.users.update({cur_user.login: cur_user})
+                return cur_user
+            return None
+
+        def set_sheets(self, sheet_url: str, sheet_name: str) -> ExecutionStatus:
+            """Binds users with Google Sheet table"""
+            try:
+                with self.skipper.registry_lock:
+                    self.users_sheet.set_sheet(sheet_url, sheet_name)
+                    self.skipper.registry.users_sheet_url = sheet_url
+                    self.skipper.registry.users_sheet_name = sheet_name
+                self.sync_from_sheets()
+                return ExecutionStatus(True)
+            except Exception as ex:
+                return ExecutionStatus(False, f"Couldn't set up users sheet config.\nDetails: {ex}")
+
+        def get_user(self, sid: str) -> User | None:
+            """Returns a list of user permissions"""
+            if sid in self.authorized_users.keys():
+                return self.authorized_users[sid]
+
+        def copy_registry_for_user(self, user: User, masked=True) -> dict:
+            """Returns a copy of the original registry without data user has no access"""
+            with self.skipper.registry_lock:
+                registry = self.skipper.registry.masked_dict() if masked else self.skipper.registry.dict()
+                return self.adjust_registry_for_user(registry, user)
+
+        @staticmethod
+        def adjust_registry_for_user(registry: dict, user: User) -> dict:
+            """Returns a copy of the original registry without data user has no access"""
+            if user.is_admin():
+                return registry
+            perms = user.permissions
+            # Select only langs from user permissions
+            if "minion_configs" in registry:
+                registry["minion_configs"] = {k: v for k, v in registry["minion_configs"].items() if k in perms}
+            if "gdrive_files" in registry:
+                registry["gdrive_files"] = {k: v for k, v in registry["gdrive_files"].items() if k in perms}
+            if "vmix_players" in registry:
+                del registry["vmix_players"]
+            if "active_vmix_player" in registry:
+                del registry["active_vmix_player"]
+            return registry
 
     class Minion:
         def __init__(self, minion_ip, lang, skipper, ws_port=MINION_WS_PORT):
@@ -363,11 +522,9 @@ class Skipper:
             ]
             self.event_handlers.append([command, run_in_new_thread, foo, id])
 
-        def on_command_completed(self, command, details, lang, result: ExecutionStatus, environ):
+        def on_command_completed(self, command, details, lang, result: ExecutionStatus, session: SessionContext):
             ip = self.skipper.registry.get_ip_name(
-                environ["REMOTE_ADDR"]
-                if environ is not None and isinstance(environ, dict)
-                   and "REMOTE_ADDR" in environ else "0.0.0.0"
+                session.ip if session and session.ip else "0.0.0.0"
             )
             self.skipper.logger.log_command_completed(
                 status=result.status,
@@ -394,14 +551,34 @@ class Skipper:
             self.skipper: Skipper = skipper
 
         def send_registry_change(self, registry: dict):
-            self._send_event("on_registry_change", {"registry": registry})
+            """Sends a registry changes to every client who has enough access rights"""
+            for sid, user in self.skipper.security.authorized_users.items():
+                registry = self.skipper.security.adjust_registry_for_user(registry, user)
+                if len(registry.keys()) > 0:
+                    self._send_event("on_registry_change", {"registry": registry}, sid=sid)
 
         def send_log(self, log: Log):
-            self._send_event("on_log", {"log": log.dict()})
+            """Sends log events to all admins"""
+            for sid, user in self.skipper.security.authorized_users.items():
+                if user.is_admin():
+                    self._send_event("on_log", {"log": log.dict()}, sid=sid)
 
-        def _send_event(self, event: str, data: dict, broadcast=True):
+        def send_auth_result(self, sid: str, status: bool):
+            """Sends an auth result to user himself"""
+            if status:
+                data = {"status": True, "message": "User successfully authorized"}
+            else:
+                data = {"status": False, "message": "Login or password is not valid"}
+            self._send_event("on_auth", data, sid)
+
+        def _send_event(self, event: str, data: dict, sid: str = None):
+            """Sends an event to specific client by SessionID (SID) or broadcasts an event it SID didn't specify"""
             try:
-                self.skipper.sio.emit(event, data=orjson_dumps(data), broadcast=broadcast)
+                data = orjson_dumps(data)
+                if sid:
+                    self.skipper.sio.emit(event, data, to=sid)
+                else:
+                    self.skipper.sio.emit(event, data, broadcast=True)
             except Exception as ex:
                 print(f"Error occurred while sending ws event: {ex}")
 
@@ -425,6 +602,22 @@ class Skipper:
                 type="command_completed",
                 message=f"Command '{extra['command']}' {m}",
                 extra=extra,
+            ))
+
+        def log_failed_login_attempt(self, message: str, login: str):
+            self._add_log(Log(
+                level=LogLevel.error,
+                type="login_failure",
+                message=message,
+                extra={"login": login},
+            ))
+
+        def log_success_login_attempt(self, message: str, login: str):
+            self._add_log(Log(
+                level=LogLevel.error,
+                type="login_success",
+                message=message,
+                extra={"login": login},
             ))
 
         def log_server_error(self, message: str, error: Exception, extra: dict = None):
@@ -497,11 +690,22 @@ class Skipper:
                 return False
             return True
 
-        def _check_caller(self, ip, command, details=None, lang=None) -> ExecutionStatus:
+        def _check_caller(self, session: SessionContext, command, details=None, lang=None) -> ExecutionStatus:
             """
             Checks if the command is allowed given the command, ip, lang and details.
             If returned ExecutionStatus(True) - the command is allowed, otherwise not allowed
             """
+            # if user didn't authorize - disallow access
+            is_active_vmix_player = self.skipper.registry.active_vmix_player == session.ip
+            if not is_active_vmix_player and (not session or session.user is None or not session.user.passwd_hash):
+                return ExecutionStatus(False, "User is not authorized")
+            user_langs = session.user.langs()
+            if "*" not in user_langs and lang not in user_langs:
+                return ExecutionStatus(False, f"Permission denied (language: '{lang}')")
+            if command in self.skipper.security.public_commands:
+                return ExecutionStatus(True)
+            if not is_active_vmix_player and "admin" not in session.user.permissions:
+                return ExecutionStatus(False, "Permission denied")
             # if the server is sleeping - only allow the following commands
             if self.skipper.registry.server_status == State.sleeping:
                 if command in ("pull config", "get info", "infrastructure unlock", "get logs"):
@@ -517,8 +721,8 @@ class Skipper:
             # check vmix player's ip
             if self.skipper.registry.active_vmix_player == "*":
                 return ExecutionStatus(True)
-            if command in ("play media", "run timing") and ip != self.skipper.registry.active_vmix_player:
-                return ExecutionStatus(False, f"Command '{command}' is not allowed from {ip}")
+            if command in ("play media", "run timing") and session.ip != self.skipper.registry.active_vmix_player:
+                return ExecutionStatus(False, f"Command '{command}' is not allowed from {session.ip}")
             # True - allows the command
             return ExecutionStatus(True)
 
@@ -529,7 +733,7 @@ class Skipper:
             if self.skipper.registry.server_status == State.sleeping:
                 self.skipper.registry.infrastructure_lock = False
 
-        def exec_raw(self, command_raw, environ=None) -> ExecutionStatus:
+        def exec_raw(self, command_raw, session: SessionContext = None) -> ExecutionStatus:
             """
             Command structure for a Skipper:
             {
@@ -546,12 +750,15 @@ class Skipper:
             if "details" not in command:
                 command["details"] = {}
             if "lang" not in command:
-                command["lang"] = "*"
+                if session.user:
+                    command["lang"] = session.user.langs()[0]  # TODO: Nice to have multi-language support
+                else:
+                    command["lang"] = "*"
             command, details, lang = command["command"], command["details"], command["lang"]
 
-            return self.exec(command, details=details, lang=lang, environ=environ)
+            return self.exec(command, details=details, lang=lang, session=session)
 
-        def exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
+        def exec(self, command, details=None, lang=None, session: SessionContext = None) -> ExecutionStatus:
             """
             Command structure for a Streamer:
             {
@@ -560,11 +767,11 @@ class Skipper:
             }
             :return: ExecutionStatus
             """
-            result = self._exec(command, details, lang, environ)
-            self.skipper.event_handler.on_command_completed(command, details, lang, result, environ)
+            result = self._exec(command, details, lang, session)
+            self.skipper.event_handler.on_command_completed(command, details, lang, result, session)
             return result
 
-        def _exec(self, command, details=None, lang=None, environ=None) -> ExecutionStatus:
+        def _exec(self, command, details=None, lang=None, session: SessionContext = None) -> ExecutionStatus:
             if lang is None:
                 lang = "*"  # langs
             # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
@@ -574,9 +781,9 @@ class Skipper:
                 if (lang == "*" or lang_ == lang)
             ]
 
-            remote_addr = environ["REMOTE_ADDR"] if environ and "REMOTE_ADDR" in environ else "*"
-            if not self._check_caller(remote_addr, command):
-                return self._check_caller(remote_addr, command)
+            check_result = self._check_caller(session, command)
+            if not check_result.status:
+                return check_result
             self._fix_infrastructure_lock()  # if the server is sleeping - infrastructure should not be locked
 
             try:
@@ -591,6 +798,8 @@ class Skipper:
                     # }
                     sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
                     sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
+                    users_sheet_name = None if not details or "users_sheet_name" not in details \
+                        else details["users_sheet_name"]
                     # check if details is not None and has "langs" and details["lang"] is a list of strings
                     langs = (
                         None  # None - means all langs
@@ -602,10 +811,12 @@ class Skipper:
                         )
                         else details["langs"]  # the code above validates details["langs"]
                     )
+                    # fetch users from Google Sheet
+                    status: ExecutionStatus = self.skipper.security.set_sheets(sheet_url, users_sheet_name)
+                    if not status:
+                        return status
                     # pull_obs_config() manages registry lock itself
-                    status: ExecutionStatus = self.pull_obs_config(
-                        sheet_url=sheet_url, sheet_name=sheet_name, langs=langs
-                    )
+                    status = self.pull_obs_config(sheet_url, sheet_name, langs)
                     if not status:
                         return status
 
@@ -625,16 +836,8 @@ class Skipper:
                     else:
                         return ExecutionStatus(False, "Invalid details provided for command 'get info'")
 
-                    if masked:
-                        return ExecutionStatus(True,
-                                               serializable_object=orjson_dumps({
-                                                   "registry": self.skipper.registry.masked_dict()
-                                               }))
-                    else:
-                        return ExecutionStatus(True,
-                                               serializable_object=orjson_dumps({
-                                                   "registry": self.skipper.registry.dict()
-                                               }))
+                    registry = self.skipper.security.copy_registry_for_user(session.user, masked=masked)
+                    return ExecutionStatus(True, serializable_object=orjson_dumps({"registry": registry}))
                 elif command in (
                         "set stream settings",
                         "set teamspeak offset",
@@ -801,7 +1004,7 @@ class Skipper:
                         "command": command,
                         "details": details,
                         "lang": lang,
-                        "ip": self.skipper.registry.get_ip_name(remote_addr)
+                        "ip": self.skipper.registry.get_ip_name(session.ip)
                     })
 
                 return ExecutionStatus(
@@ -1051,7 +1254,7 @@ class Skipper:
             return self.skipper.command.exec(
                 command=command,
                 details=details,
-                environ={"REMOTE_ADDR": request.remote_addr}
+                session=SessionContext(ip=request.remote_addr)
             ).to_http_status()
 
     class BGWorker:
@@ -1088,6 +1291,24 @@ class Skipper:
                     )
                 self.skipper.sio.sleep(0.2)
 
+        def track_gsheet_users_change(self):
+            """
+            This function has to be started as a background worker. It tracks user password changes in Google Sheets
+            """
+            while True:
+                try:
+                    with self.skipper.registry_lock:
+                        if self.skipper.security.users_sheet.setup_status:
+                            self.skipper.security.sync_from_sheets()
+                except Exception as ex:
+                    print(f"E Skipper::BGWorker::track_gsheet_users_change(): "
+                          f"Couldn't track user password changes. Details: {ex}")  # TODO: handle and log
+                    self.skipper.logger.log_server_error(
+                        message="Couldn't track user password changes",
+                        error=ex
+                    )
+                self.skipper.sio.sleep(seconds=30)
+
         def start_sending_time(self):
             while True:
                 try:
@@ -1113,6 +1334,7 @@ class Skipper:
         self.registry: Registry = Registry()
         self.infrastructure: Skipper.Infrastructure = Skipper.Infrastructure(self)
         self.obs_config: Skipper.OBSSheets = Skipper.OBSSheets(self)
+        self.security: Skipper.SecurityWorker = Skipper.SecurityWorker(self)
         self.minions: Dict[str, Skipper.Minion] = {}
         self.timing: Skipper.Timing = Skipper.Timing(self)
         self.command: Skipper.Command = Skipper.Command(self)
@@ -1128,7 +1350,7 @@ class Skipper:
 
         self.http_api: Skipper.HTTPApi = Skipper.HTTPApi(self)
 
-        self._sid_envs = {}
+        self._sessions: dict[str, SessionContext] = {}
 
     def activate_registry(self) -> ExecutionStatus:
         with self.registry_lock:
@@ -1224,19 +1446,44 @@ class Skipper:
 
     def _setup_background_tasks(self):
         self.sio.start_background_task(self.bg_worker.track_registry_change)
+        self.sio.start_background_task(self.bg_worker.track_gsheet_users_change)
         self.sio.start_background_task(self.bg_worker.start_sending_time)
 
-    def _on_connect(self, sid, environ):
-        self._sid_envs[sid] = environ
+    def _setup_session_context(self, sid: str, environ: dict) -> SessionContext:
+        login = environ.get("HTTP_LOGIN")
+        password = environ.get("HTTP_PASSWORD")
+        ip = environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "*"
+
+        if login and password:
+            authorized_status = self.security.authorize(sid, login, password)
+            if authorized_status:
+                # Notify user about success
+                self.event_sender.send_auth_result(sid, status=True)
+                self.logger.log_success_login_attempt("User authorized", login)
+            else:
+                # Notify user about failed auth
+                self.event_sender.send_auth_result(sid, status=False)
+                self.logger.log_failed_login_attempt("Invalid login or password", login)
+
+        user = self.security.get_user(sid)
+        return SessionContext(sid=sid, ip=ip, user=user)
+
+    def _on_connect(self, sid, environ: dict):
+        if environ is None or not isinstance(environ, dict):
+            environ = {}
+        self._sessions[sid] = self._setup_session_context(sid, environ)
+
         # self.sio.save_session(sid, {'env': environ})
 
     def _on_disconnect(self, sid):
-        self._sid_envs.pop(sid)
+        if sid in self._sessions:
+            self.security.logout(sid)
+            self._sessions.pop(sid)
 
     def _on_command(self, sid, data):
         try:
-            session = self._sid_envs[sid]
-            return self.command.exec_raw(data, environ=session).json()
+            session = self._sessions[sid]
+            return self.command.exec_raw(data, session=session).json()
         except Exception as ex:
             return ExecutionStatus(False, f"Details: {ex}").json()
 

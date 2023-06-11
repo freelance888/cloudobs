@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import List, Dict
@@ -6,12 +7,62 @@ from pydantic import BaseModel, PrivateAttr
 from pydantic.schema import Optional
 import orjson
 
+from util import hash_passwd
+
+passwd_placeholder = "●●●●●●●●"
+
 
 def orjson_dumps(v, *, default=None):
     # orjson.dumps returns bytes, to match standard json.dumps we need to decode
     if default is None:
         default = Registry.__json_encoder__
     return orjson.dumps(v, default=default).decode()
+
+
+class User:
+    """
+    login: Just a user unique name
+    passwd: User plain text password (won't be empty only when password changes)
+    passwd_hash: Hashed password (will be used instead of plain text password for checks)
+    permissions: A list of user permissions ('admin' - full access, 'en' - specific lang access)
+    """
+
+    def __init__(self, login: str, passwd: str, passwd_hash: str, permissions: list[str]):
+        self.login = login
+        self.passwd = passwd
+        self.passwd_hash = passwd_hash
+        self.permissions = permissions
+
+    def __repr__(self):
+        return f"User<{self.login}:{'+'.join(self.permissions)}>"
+
+    @staticmethod
+    def master():
+        master_login = os.getenv("MASTER_LOGIN")
+        master_passwd = os.getenv("MASTER_PASSWD")
+        return User(
+            login=master_login,
+            passwd=passwd_placeholder,
+            passwd_hash=hash_passwd(master_passwd),
+            permissions=["admin"],
+        )
+
+    def is_admin(self) -> bool:
+        return "admin" in self.permissions if self and self.permissions else False
+
+    def langs(self):
+        if self.permissions:
+            if "admin" in self.permissions or "*" in self.permissions:
+                return ["*"]
+            return self.permissions
+        return ["*"]
+
+
+class SessionContext:
+    def __init__(self, **kwargs):
+        self.sid: str = kwargs["sid"]
+        self.ip: str = kwargs["ip"]
+        self.user: User = kwargs["user"]
 
 
 class OBSCloudModel(BaseModel):
@@ -173,6 +224,8 @@ class State:
 class Registry(BaseModel):
     obs_sheet_url: str = None
     obs_sheet_name: str = None
+    users_sheet_url: str = None
+    users_sheet_name: str = None
     minion_configs: Dict[str, MinionSettings] = {}  # lang: config
     infrastructure_lock: bool = False  # points if needed to lock infrastructure
 

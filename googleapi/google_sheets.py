@@ -2,13 +2,14 @@
 
 import os
 import re
+from datetime import timedelta, datetime
+from typing import Dict
 
 import pandas as pd
 import pygsheets
 from dotenv import load_dotenv
-from typing import Dict
-from models import MinionSettings
-from datetime import timedelta
+
+from models import MinionSettings, User
 
 load_dotenv()
 MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -139,3 +140,47 @@ class TimingGoogleSheets:
         df = df[["timestamp", "name"]]
 
         return df
+
+
+class UsersGoogleSheets:
+    def __init__(self):
+        self.service_file = SERVICE_FILE
+        self.gc = pygsheets.authorize(service_account_file=self.service_file)
+        self.sheet = None
+        self.ws = None
+        self.setup_status = False
+
+    def set_sheet(self, sheet_url, worksheet_name):
+        self.sheet = self.gc.open_by_url(sheet_url)
+        self.ws = self.sheet.worksheet_by_title(worksheet_name)
+        self.setup_status = True
+
+    def set_passwd(self, index: int, passwd_placeholder: str, passwd_hash: str):
+        self.ws.update_value(f"B{index}", passwd_placeholder)
+        self.ws.update_value(f"C{index}", passwd_hash)
+
+    def set_sync_status(self, message: str):
+        now = datetime.now()
+        now_formatted = now.strftime("%H:%M:%S")
+        self.ws.update_value(f"F1", now_formatted)
+        self.ws.update_value(f"F2", message)
+
+    def reset_passwd_hash(self, index: int):
+        self.ws.update_value(f"C{index}", "")
+
+    def fetch_all(self) -> list:
+        skip = 3  # skip rows from beginning
+        logins_col = self.ws.get_col(1, include_tailing_empty=False)[skip:]
+        passwd_col = self.ws.get_col(2, include_tailing_empty=False)[skip:]
+        hashes_col = self.ws.get_col(3, include_tailing_empty=False)[skip:]
+        perms_col = self.ws.get_col(4, include_tailing_empty=False)[skip:]
+        logins_len = len(logins_col)
+        passwd_len = len(passwd_col)
+        hashes_len = len(hashes_col)
+        return [{
+            "col": i + skip + 1,
+            "login": logins_col[i] if i < logins_len else "",
+            "passwd": passwd_col[i] if i < passwd_len else "",
+            "hash": hashes_col[i] if i < hashes_len else "",
+            "permissions": [] if perms_col[i].strip() == "" else perms_col[i].split(" ")
+        } for i in range(len(logins_col))]
