@@ -250,6 +250,9 @@ class Skipper:
             self.users_sheet.set_sync_status(message)
 
         def _validate_user(self, errors, login, permissions):
+            if not re.match(r"^(?=.{2,50}$)(?:[a-zA-Z\d]+(?:(?:-|_)[a-zA-Z\d])*)+$", login):
+                errors.append(f"{login}: invalid login (allowed only alphanumeric and _ or -)")
+                return False
             if not permissions or len(permissions) < 1:
                 errors.append(f"{login}: has no permissions")
                 return False
@@ -296,15 +299,24 @@ class Skipper:
             """Returns a copy of the original registry without data user has no access"""
             with self.skipper.registry_lock:
                 registry = self.skipper.registry.masked_dict() if masked else self.skipper.registry.dict()
-                if user.is_admin():
-                    return registry
-                perms = user.permissions
-                # Select only langs from user permissions
-                registry["minion_configs"] = {k: v for k, v in registry["minion_configs"].items() if k in perms}
-                registry["gdrive_files"] = {k: v for k, v in registry["gdrive_files"].items() if k in perms}
-                del registry["vmix_players"]
-                del registry["active_vmix_player"]
+                return self.adjust_registry_for_user(registry, user)
+
+        @staticmethod
+        def adjust_registry_for_user(registry: dict, user: User) -> dict:
+            """Returns a copy of the original registry without data user has no access"""
+            if user.is_admin():
                 return registry
+            perms = user.permissions
+            # Select only langs from user permissions
+            if "minion_configs" in registry:
+                registry["minion_configs"] = {k: v for k, v in registry["minion_configs"].items() if k in perms}
+            if "gdrive_files" in registry:
+                registry["gdrive_files"] = {k: v for k, v in registry["gdrive_files"].items() if k in perms}
+            if "vmix_players" in registry:
+                del registry["vmix_players"]
+            if "active_vmix_player" in registry:
+                del registry["active_vmix_player"]
+            return registry
 
     class Minion:
         def __init__(self, minion_ip, lang, skipper, ws_port=MINION_WS_PORT):
@@ -539,25 +551,34 @@ class Skipper:
             self.skipper: Skipper = skipper
 
         def send_registry_change(self, registry: dict):
-            self._send_event("on_registry_change", {"registry": registry})
+            """Sends a registry changes to every client who has enough access rights"""
+            for sid, user in self.skipper.security.authorized_users.items():
+                registry = self.skipper.security.adjust_registry_for_user(registry, user)
+                if len(registry.keys()) > 0:
+                    self._send_event("on_registry_change", {"registry": registry}, sid=sid)
 
         def send_log(self, log: Log):
-            self._send_event("on_log", {"log": log.dict()})
+            """Sends log events to all admins"""
+            for sid, user in self.skipper.security.authorized_users.items():
+                if user.is_admin():
+                    self._send_event("on_log", {"log": log.dict()}, sid=sid)
 
         def send_auth_result(self, sid: str, status: bool):
+            """Sends an auth result to user himself"""
             if status:
                 data = {"status": True, "message": "User successfully authorized"}
             else:
                 data = {"status": False, "message": "Login or password is not valid"}
-            self._send_event("on_auth", data, sid, broadcast=False)
+            self._send_event("on_auth", data, sid)
 
-        def _send_event(self, event: str, data: dict, sid: str = None, broadcast=True):
+        def _send_event(self, event: str, data: dict, sid: str = None):
+            """Sends an event to specific client by SessionID (SID) or broadcasts an event it SID didn't specify"""
             try:
                 data = orjson_dumps(data)
-                if broadcast:
-                    self.skipper.sio.emit(event, data, broadcast=broadcast)
-                else:
+                if sid:
                     self.skipper.sio.emit(event, data, to=sid)
+                else:
+                    self.skipper.sio.emit(event, data, broadcast=True)
             except Exception as ex:
                 print(f"Error occurred while sending ws event: {ex}")
 
