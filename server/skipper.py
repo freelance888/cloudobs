@@ -290,10 +290,11 @@ class Skipper:
             except Exception as ex:
                 return ExecutionStatus(False, f"Couldn't set up users sheet config.\nDetails: {ex}")
 
-        def get_user(self, sid: str) -> User | None:
+        def get_user(self, sid: str):
             """Returns a list of user permissions"""
             if sid in self.authorized_users.keys():
                 return self.authorized_users[sid]
+            return None
 
         def copy_registry_for_user(self, user: User, masked=True) -> dict:
             """Returns a copy of the original registry without data user has no access"""
