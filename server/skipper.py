@@ -1450,9 +1450,9 @@ class Skipper:
         self.sio.start_background_task(self.bg_worker.track_gsheet_users_change)
         self.sio.start_background_task(self.bg_worker.start_sending_time)
 
-    def _setup_session_context(self, sid: str, environ: dict) -> SessionContext:
-        login = environ.get("HTTP_LOGIN")
-        password = environ.get("HTTP_PASSWORD")
+    def _setup_session_context(self, sid: str, environ: dict, auth=None) -> SessionContext:
+        login = auth["HTTP_LOGIN"]
+        password = auth["HTTP_PASSWORD"]
         ip = environ["REMOTE_ADDR"] if "REMOTE_ADDR" in environ else "*"
 
         if login and password:
@@ -1469,10 +1469,10 @@ class Skipper:
         user = self.security.get_user(sid)
         return SessionContext(sid=sid, ip=ip, user=user)
 
-    def _on_connect(self, sid, environ: dict):
+    def _on_connect(self, sid, environ: dict, auth):
         if environ is None or not isinstance(environ, dict):
             environ = {}
-        self._sessions[sid] = self._setup_session_context(sid, environ)
+        self._sessions[sid] = self._setup_session_context(sid, environ, auth)
 
         # self.sio.save_session(sid, {'env': environ})
 
