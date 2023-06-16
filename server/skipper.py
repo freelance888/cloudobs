@@ -813,7 +813,7 @@ class Skipper:
                         else details["langs"]  # the code above validates details["langs"]
                     )
                     # fetch users from Google Sheet
-                    status: ExecutionStatus = self.skipper.security.set_sheets(sheet_url, users_sheet_name)
+                    status = self.pull_users_config(sheet_url, users_sheet_name)
                     if not status:
                         return status
                     # pull_obs_config() manages registry lock itself
@@ -1196,6 +1196,12 @@ class Skipper:
                         return status
 
                 return self.skipper.obs_config.pull(langs=langs)
+
+        def pull_users_config(self, sheet_url=None, sheet_name=None) -> ExecutionStatus:
+            if sheet_url and sheet_name:
+                return self.skipper.security.set_sheets(sheet_url, sheet_name)
+            self.skipper.security.sync_from_sheets()
+            return ExecutionStatus(True)
 
         def push_obs_config(self) -> ExecutionStatus:
             return self.skipper.obs_config.push()
