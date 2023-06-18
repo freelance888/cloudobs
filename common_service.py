@@ -86,7 +86,8 @@ from util import WebsocketResponse
 import clipboard as clip
 
 sio = socketio.Client()
-sio.connect('http://sa_main:5010')
+#sio.connect('http://sa_main:5010')
+sio.connect('http://sa_main:5010', auth={"HTTP_LOGIN": "boba", "HTTP_PASSWORD": "loo6Ahp4eu2Xiek"})
 
 registry_changes = []
 def on_registry_change(data):
@@ -105,6 +106,7 @@ command = {
     "details": {
         "sheet_url": "https://docs.google.com/spreadsheets/d/10J2FG-6nKodpXcTVPmNwKGOwGXSxPUWf1MppT7yUgME",
         "sheet_name": "table_4",
+        "users_sheet_name": "Users (sample)",
         #"ip_langs": dict([x.split()[::] for x in clip.paste().split("\n")])
     }
 }

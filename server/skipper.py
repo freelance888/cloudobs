@@ -754,12 +754,12 @@ class Skipper:
             # True - allows the command
             return ExecutionStatus(True)
 
-        def _adjust_user_langs(self, session: SessionContext, langs, command=None, details=None):
+        def _adjust_user_langs(self, session: SessionContext, langs=None, command=None, details=None):
             """
             This function checks if session has permissions to languages specified and returns an adjusted
             list of langs: '*' - if all langs are allowed, ['Lang1', 'Lang2', ...] - if few of langs allowed
             :param session: user session
-            :param langs: langs can be either list of lang codes, '*' or a single language code
+            :param langs: langs can be either list of lang codes, '*', None or a single language code
             :param command: optional
             :param details: optional
             :return:
@@ -772,6 +772,9 @@ class Skipper:
 
             if not session.user:
                 return []
+
+            if not langs:
+                langs = "*"
 
             if session.user.is_admin() or "*" in session.user.langs():  # if everything is allowed for user
                 if "*" in langs:
