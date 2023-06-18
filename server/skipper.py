@@ -129,6 +129,9 @@ class Skipper:
                 if not self.obs_sheets.setup_status:
                     return ExecutionStatus(False, f"OBS sheets has not been set up yet")
 
+                if langs == "*":
+                    langs = None
+
                 minion_configs: Dict[str, MinionSettings] = self.obs_sheets.pull()
 
                 if self.skipper.registry.infrastructure_lock:  # if infrastructure is locked
@@ -295,6 +298,12 @@ class Skipper:
             if sid in self.authorized_users.keys():
                 return self.authorized_users[sid]
             return None
+
+        def get_user_langs(self, sid: str):
+            if sid in self.authorized_users:
+                user: User = self.authorized_users[sid]
+                return user.langs()
+            raise KeyError(f"No such sid in self.authorized_users: {sid}")
 
         def copy_registry_for_user(self, user: User, masked=True) -> dict:
             """Returns a copy of the original registry without data user has no access"""
@@ -696,36 +705,95 @@ class Skipper:
             Checks if the command is allowed given the command, ip, lang and details.
             If returned ExecutionStatus(True) - the command is allowed, otherwise not allowed
             """
-            # if user didn't authorize - disallow access
+            # check if the caller is a vmix player
             is_active_vmix_player = self.skipper.registry.active_vmix_player == session.ip
+
+            if command == "play media" and is_active_vmix_player:
+                return ExecutionStatus(True)
+
+            # if user didn't authorize or is not a vmix player -> deny
             if not is_active_vmix_player and (not session or session.user is None or not session.user.passwd_hash):
                 return ExecutionStatus(False, "User is not authorized")
+
+            # check user's langs
             user_langs = session.user.langs()
-            if "*" not in user_langs and lang not in user_langs:
-                return ExecutionStatus(False, f"Permission denied (language: '{lang}')")
+            if "*" not in user_langs:
+                langs = lang if lang else "*"
+                if "*" not in langs:
+                    if isinstance(langs, str):  # if only one lang is specified
+                        langs = [langs]
+
+                    denied_langs = [lang_ for lang_ in langs if lang_ not in user_langs]
+                    if len(denied_langs) > 0:
+                        return ExecutionStatus(False, f"Permission denied (languages: '{denied_langs}')")
+
+            # if command - is a public command -> allow
             if command in self.skipper.security.public_commands:
                 return ExecutionStatus(True)
+
+            # other commands should be accessible only for admin and vmix player
             if not is_active_vmix_player and "admin" not in session.user.permissions:
                 return ExecutionStatus(False, "Permission denied")
+
             # if the server is sleeping - only allow the following commands
             if self.skipper.registry.server_status == State.sleeping:
-                if command in ("pull config", "get info", "infrastructure unlock", "get logs"):
-                    return ExecutionStatus(True)
-                else:
-                    return ExecutionStatus(False)
+                return ExecutionStatus(command in ("pull config", "get info", "infrastructure unlock", "get logs"))
+
             # if the server is initializing or disposing - only allow 'get info' command
             if self.skipper.registry.server_status in (State.initializing, State.disposing):
-                if command == "get info":
-                    return ExecutionStatus(True)
-                else:
-                    return ExecutionStatus(False, f"Server is '{self.skipper.registry.server_status}'...")
+                return ExecutionStatus(command == "get info")
+
             # check vmix player's ip
-            if self.skipper.registry.active_vmix_player == "*":
+            if self.skipper.registry.active_vmix_player == "*":  # if vmix player is not specified, allow
                 return ExecutionStatus(True)
-            if command in ("play media", "run timing") and session.ip != self.skipper.registry.active_vmix_player:
+
+            # if vmix player is specified, allow these commands only for vmix player
+            if command == "play media" and session.ip != self.skipper.registry.active_vmix_player:
                 return ExecutionStatus(False, f"Command '{command}' is not allowed from {session.ip}")
+
             # True - allows the command
             return ExecutionStatus(True)
+
+        def _adjust_user_langs(self, session: SessionContext, langs, command=None, details=None):
+            """
+            This function checks if session has permissions to languages specified and returns an adjusted
+            list of langs: '*' - if all langs are allowed, ['Lang1', 'Lang2', ...] - if few of langs allowed
+            :param session: user session
+            :param langs: langs can be either list of lang codes, '*' or a single language code
+            :param command: optional
+            :param details: optional
+            :return:
+            """
+            if not session:
+                raise RuntimeError("SecurityWorker::_adjust_user_langs(): Session should not be null")
+
+            if self.skipper.registry.active_vmix_player == session.ip and command == "play media":
+                return "*"
+
+            if not session.user:
+                return []
+
+            if session.user.is_admin() or "*" in session.user.langs():  # if everything is allowed for user
+                if "*" in langs:
+                    return "*"
+
+                if isinstance(langs, str):  # if lang code passed is not a list, if it is a single value
+                    return [langs]
+                return langs
+            else:  # if user is not admin
+                user_langs = session.user.langs()
+                if "*" in langs:  # if all langs are requested, return only accessible ones
+                    return user_langs
+                if isinstance(langs, str):  # if single value is passed
+                    if langs not in user_langs:  # check one
+                        raise ValueError(f"Lang '{langs}' in not allowed for user '{session.user.login}'")
+                    return [langs]
+                else:
+                    # if there is any lang code which is not accessible
+                    denied_langs = [lang for lang in langs if lang not in user_langs]
+                    if denied_langs:
+                        raise ValueError(f"Langs '{denied_langs}' in not allowed for user '{session.user.login}'")
+                    return langs
 
         def _fix_infrastructure_lock(self):
             """
@@ -773,16 +841,16 @@ class Skipper:
             return result
 
         def _exec(self, command, details=None, lang=None, session: SessionContext = None) -> ExecutionStatus:
-            if lang is None:
-                lang = "*"  # langs
+            check_result = self._check_caller(session, command)
+
+            langs = self._adjust_user_langs(langs=lang, session=session, command=command)  # list of langs or '*'
             # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
             minion_configs: List[MinionSettings] = [
                 minion_config
                 for lang_, minion_config in self.skipper.registry.minion_configs.items()
-                if (lang == "*" or lang_ == lang)
+                if (langs == "*" or lang_ in langs)
             ]
 
-            check_result = self._check_caller(session, command)
             if not check_result.status:
                 return check_result
             self._fix_infrastructure_lock()  # if the server is sleeping - infrastructure should not be locked
@@ -848,7 +916,7 @@ class Skipper:
                         "set sidechain settings",
                         "set transition settings",
                 ):
-                    return self.set_info(command=command, details=details, lang=lang)
+                    return self.set_info(command=command, details=details, langs=langs, session=session)
                 elif command == "get logs":
                     count = None
                     try:
@@ -995,7 +1063,7 @@ class Skipper:
                     return self.skipper.timing.remove()
                 else:
                     with self.skipper.infrastructure_lock:
-                        return self._minion_command(command=command, details=details, lang=lang)
+                        return self._minion_command(command=command, details=details, langs=langs, session=session)
 
             except Exception as ex:
                 self.skipper.logger.log_server_error(
@@ -1015,13 +1083,13 @@ class Skipper:
                     f"Error details: {ex}",
                 )
 
-        def set_info(self, command, details, lang=None) -> ExecutionStatus:
-            if lang is None:
-                lang = "*"
+        def set_info(self, command, details, langs=None, session: SessionContext = None) -> ExecutionStatus:
+            langs = self._adjust_user_langs(langs=langs, session=session)  # list of langs or '*'
+
             minion_settings: List[MinionSettings] = [
                 settings
-                for lang_, settings in self.skipper.registry.minion_configs.items()
-                if (lang == "*" or lang_ == lang)
+                for lang, settings in self.skipper.registry.minion_configs.items()
+                if (langs == "*" or lang in langs)
             ]
 
             if command == "set stream settings":
@@ -1114,7 +1182,7 @@ class Skipper:
             else:
                 return ExecutionStatus(False, f"Invalid command '{command}'")
 
-        def _minion_command(self, command, details=None, lang=None) -> ExecutionStatus:
+        def _minion_command(self, command, details=None, langs=None, session: SessionContext = None) -> ExecutionStatus:
             """
             If lang is None -> broadcasts the command across all minions. Note that for specific commands
             lang is not needed. Lang can be either a single lang code or None ('*' - equal to None).
@@ -1126,15 +1194,32 @@ class Skipper:
             }
             """
             try:
-                if lang == "*":
+                langs = self._adjust_user_langs(langs=langs, session=session, command=command)  # list of langs or '*'
+                if langs == "*":
+                    langs = [lang for lang in self.skipper.minions]
+
+                # if langs are specified, and some of them not present in self.minions
+                if [lang for lang in langs if lang not in self.skipper.minions]:
+                    invalid_langs = [lang for lang in langs if lang not in self.skipper.minions]
+                    return ExecutionStatus(
+                        False,
+                        f"Invalid langs '{invalid_langs}'",
+                        serializable_object={
+                            lang: ExecutionStatus(
+                                False, (f"Invalid lang '{lang}'" if lang in invalid_langs
+                                        else f"Please fix invalid langs first")
+                            ).dict()
+                            for lang in langs
+                        },
+                    )
+                else:  # if langs are specified and are present in self.minions
+                    # emit commands
                     ws_responses = [
                         [lang, self.skipper.minions[lang].command(command=command, details=details)]
-                        for lang in self.skipper.minions
+                        for lang in langs
                     ]  # emit commands
                     WebsocketResponse.wait_for([ws_response for _, ws_response in ws_responses])  # wait for responses
-                    # parse websocket results into ExecutionStatus instances and then into dictionaries
-                    # if websocket result was a timeout error, or a minion didn't return anything ->
-                    # ExecutionStatus(False)
+
                     statuses: Dict[str, Dict] = {
                         # parse a status and convert it into a dictionary
                         lang: (
@@ -1150,35 +1235,13 @@ class Skipper:
                     return ExecutionStatus(
                         all([status["result"] for status in statuses.values()]), serializable_object=statuses
                     )
-                elif lang not in self.skipper.minions:  # if lang is specified, and it is not present in self.minions
-                    return ExecutionStatus(
-                        False,
-                        f"Invalid lang '{lang}'",
-                        serializable_object={lang: ExecutionStatus(False, f"Invalid lang '{lang}'").dict()},
-                    )
-                else:  # if lang is specified and is present in self.minions
-                    # emit command
-                    ws_response: WebsocketResponse = self.skipper.minions[lang].command(
-                        command=command, details=details
-                    )
-                    WebsocketResponse.wait_for([ws_response])  # wait for the response
-
-                    if ws_response.result():  # if minion has returned
-                        status: ExecutionStatus = ExecutionStatus.from_json(ws_response.result())
-                        return ExecutionStatus(
-                            status.status, message=status.message, serializable_object={lang: status.dict()}
-                        )
-                    else:  # if minion has not returned or timeout error has thrown
-                        return ExecutionStatus(
-                            False, serializable_object={lang: ExecutionStatus(False, "Minion has not returned").dict()}
-                        )
             except Exception as ex:
                 return ExecutionStatus(
                     False,
                     message=f"Something happened while sending a command.\n"
                             f"Command: '{command}', details: '{details}'.\n"
                             f"Error details: {ex}",
-                    serializable_object={lang: ExecutionStatus(False, "Exception has been thrown").dict()},
+                    serializable_object={"*": ExecutionStatus(False, "Exception has been thrown").dict()},
                 )
 
         def pull_obs_config(self, sheet_url=None, sheet_name=None, langs=None) -> ExecutionStatus:
@@ -1489,8 +1552,9 @@ class Skipper:
 
     def _on_command(self, sid, data):
         try:
-            session = self._sessions[sid]
-            return self.command.exec_raw(data, session=session).json()
+            if sid not in self.security.authorized_users:
+                raise PermissionError("User is not authorized")
+            return self.command.exec_raw(data, session=self._sessions[sid]).json()
         except Exception as ex:
             return ExecutionStatus(False, f"Details: {ex}").json()
 
