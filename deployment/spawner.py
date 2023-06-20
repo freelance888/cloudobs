@@ -152,7 +152,8 @@ class Spawner:
 
     @classmethod
     def from_json(cls, json_dump):
-        spawner = Spawner()
+        raise NotImplementedError()
+        spawner = Spawner(None)
         spawner.ip_dict = IPDict.parse_raw(json_dump)
         # ips = spawner.ssh_context.get_ip()
 
@@ -228,7 +229,7 @@ class Spawner:
         time_start = time.time()
         provision_status = self.check_provision()
         while not all([status for lang, status in provision_status.items()]):
-            time.sleep(10)
+            time.sleep(5)
             if (time.time() - time_start) > timeout:
                 raise TimeoutError("Provision timeout")
             provision_status = self.check_provision()

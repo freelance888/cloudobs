@@ -56,6 +56,8 @@ class Skipper:
                 try:
                     # with self.skipper.registry_lock:
                     self.skipper.registry.server_status = State.initializing
+                    self.skipper.event_sender.send_registry_change({"server_status": State.initializing})
+
                     langs = self.skipper.registry.list_langs()
                     self.spawner.ensure_langs(langs=langs, wait_for_provision=True)  # [... [lang, ip], ...]
                 except Exception as ex:
@@ -1417,7 +1419,7 @@ class Skipper:
         self.infrastructure_lock = RLock()
 
         self.port = port
-        self.sio = socketio.Server(async_mode="threading", cors_allowed_origins="*")
+        self.sio = socketio.Server(async_mode="threading", cors_allowed_origins="*",)
         self.app = Flask(__name__)
         self.app.wsgi_app = socketio.WSGIApp(self.sio, self.app.wsgi_app)
 
