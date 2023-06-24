@@ -574,6 +574,10 @@ class Skipper:
             for sid, user in self.skipper.security.authorized_users.items():
                 if user.is_admin():
                     self._send_event("on_log", {"log": log.dict()}, sid=sid)
+                else:
+                    if log.extra and "command" in log.extra \
+                            and log.extra["command"] in Skipper.SecurityWorker.get_public_commands():
+                        self._send_event("on_log", {"log": log.dict()}, sid=sid)
 
         def send_auth_result(self, sid: str, status: bool):
             """Sends an auth result to user himself"""
@@ -841,14 +845,14 @@ class Skipper:
             }
             :return: ExecutionStatus
             """
-            result = self._exec(command, details, lang, session)
+            langs = self._adjust_user_langs(langs=lang, session=session, command=command)  # list of langs or '*'
+            result = self._exec(command, details, langs, session)
             self.skipper.event_handler.on_command_completed(command, details, lang, result, session)
             return result
 
-        def _exec(self, command, details=None, lang=None, session: SessionContext = None) -> ExecutionStatus:
+        def _exec(self, command, details=None, langs=None, session: SessionContext = None) -> ExecutionStatus:
             check_result = self._check_caller(session, command)
 
-            langs = self._adjust_user_langs(langs=lang, session=session, command=command)  # list of langs or '*'
             # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
             minion_configs: List[MinionSettings] = [
                 minion_config
@@ -1077,7 +1081,7 @@ class Skipper:
                     extra={
                         "command": command,
                         "details": details,
-                        "lang": lang,
+                        "lang": langs,
                         "ip": self.skipper.registry.get_ip_name(session.ip)
                     })
 
@@ -1419,7 +1423,7 @@ class Skipper:
         self.infrastructure_lock = RLock()
 
         self.port = port
-        self.sio = socketio.Server(async_mode="threading", cors_allowed_origins="*",)
+        self.sio = socketio.Server(async_mode="threading", cors_allowed_origins="*", )
         self.app = Flask(__name__)
         self.app.wsgi_app = socketio.WSGIApp(self.sio, self.app.wsgi_app)
 
