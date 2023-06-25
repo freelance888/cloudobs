@@ -87,7 +87,7 @@ import clipboard as clip
 
 sio = socketio.Client()
 #sio.connect('http://sa_main:5010')
-sio.connect('http://localhost:5010', auth={"HTTP_LOGIN": "boba", "HTTP_PASSWORD": "loo6Ahp4eu2Xiek"})
+sio.connect('http://localhost:5010', auth={"HTTP_LOGIN": "boba", "HTTP_PASSWORD": ""})
 
 registry_changes = []
 def on_registry_change(data):
