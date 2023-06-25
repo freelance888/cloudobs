@@ -711,51 +711,38 @@ class Skipper:
             Checks if the command is allowed given the command, ip, lang and details.
             If returned ExecutionStatus(True) - the command is allowed, otherwise not allowed
             """
-            # check if the caller is a vmix player
-            is_active_vmix_player = self.skipper.registry.active_vmix_player == session.ip
+            # if the server is sleeping only allow the following commands
+            server_status = self.skipper.registry.server_status
+            if server_status == State.sleeping and \
+                    command not in ("pull config", "get info", "infrastructure unlock", "get logs"):
+                return ExecutionStatus(False, f"Command {command} is not allowed while server is '{server_status}'")
 
-            if command == "play media" and is_active_vmix_player:
+            # if the server is initializing or disposing - only allow 'get info' command
+            if server_status in (State.initializing, State.disposing) and command != "get info":
+                return ExecutionStatus(False, f"Command {command} is not allowed while server is '{server_status}'")
+
+            if session:
+                is_active_vmix_player = self.skipper.registry.active_vmix_player == session.ip
+                if not is_active_vmix_player and not session.user:
+                    return ExecutionStatus(False, "User is not authorized")
+                is_admin = session.user.is_admin()
+            else:  # if session is None
+                return ExecutionStatus(True)
+
+            if is_admin or (command == "play media" and is_active_vmix_player):
                 return ExecutionStatus(True)
 
             # if user didn't authorize or is not a vmix player -> deny
-            if not is_active_vmix_player and (not session or session.user is None or not session.user.passwd_hash):
+            if not is_active_vmix_player and (session.user is None or not session.user.passwd_hash):
                 return ExecutionStatus(False, "User is not authorized")
-
-            # check user's langs
-            user_langs = session.user.langs()
-            if "*" not in user_langs:
-                langs = lang if lang else "*"
-                if "*" not in langs:
-                    if isinstance(langs, str):  # if only one lang is specified
-                        langs = [langs]
-
-                    denied_langs = [lang_ for lang_ in langs if lang_ not in user_langs]
-                    if len(denied_langs) > 0:
-                        return ExecutionStatus(False, f"Permission denied (languages: '{denied_langs}')")
 
             # if command - is a public command -> allow
             if command in self.skipper.security.public_commands:
                 return ExecutionStatus(True)
 
-            # other commands should be accessible only for admin and vmix player
-            if not is_active_vmix_player and "admin" not in session.user.permissions:
+            # other commands should be accessible only for admin
+            if not is_admin:
                 return ExecutionStatus(False, "Permission denied")
-
-            # if the server is sleeping - only allow the following commands
-            if self.skipper.registry.server_status == State.sleeping:
-                return ExecutionStatus(command in ("pull config", "get info", "infrastructure unlock", "get logs"))
-
-            # if the server is initializing or disposing - only allow 'get info' command
-            if self.skipper.registry.server_status in (State.initializing, State.disposing):
-                return ExecutionStatus(command == "get info")
-
-            # check vmix player's ip
-            if self.skipper.registry.active_vmix_player == "*":  # if vmix player is not specified, allow
-                return ExecutionStatus(True)
-
-            # if vmix player is specified, allow these commands only for vmix player
-            if command == "play media" and session.ip != self.skipper.registry.active_vmix_player:
-                return ExecutionStatus(False, f"Command '{command}' is not allowed from {session.ip}")
 
             # True - allows the command
             return ExecutionStatus(True)
@@ -770,19 +757,28 @@ class Skipper:
             :param details: optional
             :return:
             """
-            if not session:
-                raise RuntimeError("SecurityWorker::_adjust_user_langs(): Session should not be null")
+            if session:
+                is_vmix_player = self.skipper.registry.active_vmix_player == session.ip
+                if not is_vmix_player and not session.user:
+                    return []
+                is_admin = session.user.is_admin()
+                user_langs = session.user.langs()
+                # raise RuntimeError("SecurityWorker::_adjust_user_langs(): Session should not be null")
+            else:  # if session is None
+                is_admin = True
+                is_vmix_player = False
+                user_langs = "*"
 
-            if self.skipper.registry.active_vmix_player == session.ip and command == "play media":
-                return "*"
-
-            if not session.user:
-                return []
+            if is_vmix_player:
+                if command == "play media":
+                    return "*"
+                else:
+                    return []
 
             if not langs:
                 langs = "*"
 
-            if session.user.is_admin() or "*" in session.user.langs():  # if everything is allowed for user
+            if is_admin or "*" in user_langs:  # if everything is allowed for user
                 if "*" in langs:
                     return "*"
 
@@ -790,18 +786,17 @@ class Skipper:
                     return [langs]
                 return langs
             else:  # if user is not admin
-                user_langs = session.user.langs()
                 if "*" in langs:  # if all langs are requested, return only accessible ones
                     return user_langs
                 if isinstance(langs, str):  # if single value is passed
                     if langs not in user_langs:  # check one
                         raise ValueError(f"Lang '{langs}' in not allowed for user '{session.user.login}'")
                     return [langs]
-                else:
+                else:  # multiple langs are passed
                     # if there is any lang code which is not accessible
                     denied_langs = [lang for lang in langs if lang not in user_langs]
                     if denied_langs:
-                        raise ValueError(f"Langs '{denied_langs}' in not allowed for user '{session.user.login}'")
+                        raise ValueError(f"Langs '{denied_langs}' are not allowed for user '{session.user.login}'")
                     return langs
 
         def _fix_infrastructure_lock(self):
@@ -853,6 +848,9 @@ class Skipper:
         def _exec(self, command, details=None, langs=None, session: SessionContext = None) -> ExecutionStatus:
             check_result = self._check_caller(session, command)
 
+            if not check_result.status:
+                return check_result
+
             # prefetch minion_configs for specified langs, for the purpose of not duplicating the code
             minion_configs: List[MinionSettings] = [
                 minion_config
@@ -860,8 +858,6 @@ class Skipper:
                 if (langs == "*" or lang_ in langs)
             ]
 
-            if not check_result.status:
-                return check_result
             self._fix_infrastructure_lock()  # if the server is sleeping - infrastructure should not be locked
 
             try:
