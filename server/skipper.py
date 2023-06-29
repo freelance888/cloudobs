@@ -920,6 +920,8 @@ class Skipper:
                         "set vmix speaker background volume",
                         "set sidechain settings",
                         "set transition settings",
+                        "set teamspeak limiter settings",
+                        "set teamspeak gain settings",
                 ):
                     return self.set_info(command=command, details=details, langs=langs, session=session)
                 elif command == "get logs":
@@ -1171,6 +1173,34 @@ class Skipper:
                             settings.sidechain_settings.output_gain = float(details["output_gain"])
                 except Exception as ex:
                     return ExecutionStatus(False, f"Couldn't parse sidechain settings: {details}")
+                return self.skipper.activate_registry()
+            elif command == "set teamspeak limiter settings":
+                # details: {"threshold": ..., "release_time": ...}
+                # all parameters are numeric
+                if (
+                        "threshold" not in details
+                        and "release_time" not in details
+                ):
+                    return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
+                try:
+                    for settings in minion_settings:
+                        if "threshold" in details:
+                            settings.ts_limiter_settings.threshold = float(details["threshold"])
+                        if "release_time" in details:
+                            settings.ts_limiter_settings.release_time = int(details["release_time"])
+                except Exception as ex:
+                    return ExecutionStatus(False, f"Couldn't parse limiter settings: {details}")
+                return self.skipper.activate_registry()
+            elif command == "set teamspeak gain settings":
+                # details: {"gain": ...}
+                # all parameters are numeric
+                if "gain" not in details:
+                    return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
+                try:
+                    for settings in minion_settings:
+                        settings.ts_gain_settings.gain = float(details["gain"])
+                except Exception as ex:
+                    return ExecutionStatus(False, f"Couldn't parse gain settings: {details}")
                 return self.skipper.activate_registry()
             elif command == "set transition settings":
                 # details: {"transition_point": ...}

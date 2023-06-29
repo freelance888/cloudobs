@@ -24,6 +24,7 @@ MEDIA_DIR = os.path.join(BASE_MEDIA_DIR, "media")
 
 
 class OBSFilter(BaseModel):
+    enabled: bool = True
     filter_type: str
     filter_settings: dict = None
 
@@ -211,6 +212,12 @@ class OBSMonitoring:
                     self.obs.call(obsws.requests.SetSourceFilterSettings(  # synchronise them
                         sourceName=source_name, filterName=filter_name, filterSettings=filter_.filter_settings,
                     ))
+
+            self.obs.call(
+                obsws.requests.SetSourceFilterVisibility(
+                    sourceName=source_name, filterName=filter_name, filterEnabled=filter_.enabled,
+                )
+            )
 
     def _sync_volume(self, source_name):
         input_: OBSInput = self.obs_config.inputs[source_name]
@@ -647,6 +654,23 @@ class OBSController:
             },
             is_muted=False,
             volume=self.minion_settings.ts_volume.value,
+            filters={
+                OBS.TS_LIMITER_FILTER_NAME: OBSFilter(
+                    enabled=self.minion_settings.ts_limiter_settings.enabled,
+                    filter_type="limiter_filter",
+                    filter_settings={
+                        "release_time": self.minion_settings.ts_limiter_settings.release_time,
+                        "threshold": self.minion_settings.ts_limiter_settings.threshold,
+                    }
+                ),
+                OBS.TS_GAIN_FILTER_NAME: OBSFilter(
+                    enabled=self.minion_settings.ts_gain_settings.enabled,
+                    filter_type="gain_filter",
+                    filter_settings={
+                        "db": self.minion_settings.ts_gain_settings.gain,
+                    }
+                )
+            }
         )
 
         # sync main source

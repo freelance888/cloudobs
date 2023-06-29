@@ -213,6 +213,63 @@
 }
 ```
 ------------------------------------------------------------------------------
+###  - `set teamspeak limiter settings`
+ - **Description:** Sets sidechain settings.
+ - **Parameters:**
+   - `enabled` - true/false.
+   - `threshold` - target threshold.
+   - `release_time` - target release time.
+   - `lang` - use this parameter to specify a language. By default,
+     all languages are affected (optional parameter).
+ - **Returns:**
+```json
+{
+  "result": true/false,
+  "details": "... message ...",
+  "serializable_object": null
+}
+```
+ - **Notes:**
+   - You may specify only those parameters you want to change (not all).
+ - **Command example (json):**
+```json
+{
+  "command": "set teamspeak limiter settings",
+  "details": {
+    "enabled": true, "threshold": ..., "release_time": ...
+  },
+  "lang": "Rus"
+}
+```
+------------------------------------------------------------------------------
+###  - `set teamspeak gain settings`
+ - **Description:** Sets sidechain settings.
+ - **Parameters:**
+   - `enabled` - true/false.
+   - `gain` - target gain in decibels.
+   - `lang` - use this parameter to specify a language. By default,
+     all languages are affected (optional parameter).
+ - **Returns:**
+```json
+{
+  "result": true/false,
+  "details": "... message ...",
+  "serializable_object": null
+}
+```
+ - **Notes:**
+   - You may specify only those parameters you want to change (not all).
+ - **Command example (json):**
+```json
+{
+  "command": "set teamspeak gain settings",
+  "details": {
+    "enabled": true, "gain": ...
+  },
+  "lang": "Rus"
+}
+```
+------------------------------------------------------------------------------
 ###  - `set source volume`
  - **Description:** Sets source volume.
  - **Parameters:**
@@ -264,6 +321,7 @@
 ###  - `set sidechain settings`
  - **Description:** Sets sidechain settings.
  - **Parameters:**
+   - `enabled` - true/false.
    - `ratio` - target ratio.
    - `release_time` - target release time.
    - `threshold` - target threshold.
@@ -285,7 +343,7 @@
 {
   "command": "set sidechain settings",
   "details": {
-    "ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...
+    "enabled": true, "ratio": ..., "release_time": ..., "threshold": ..., "output_gain": ...
   },
   "lang": "Rus"
 }

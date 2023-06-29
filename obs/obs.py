@@ -22,6 +22,8 @@ class OBS:
     TEAMSPEAK_SOURCE_NAME = "ts_input"
     TRANSITION_INPUT_NAME = "transition"
     COMPRESSOR_FILTER_NAME = "sidechain"
+    TS_LIMITER_FILTER_NAME = "ts_limiter"
+    TS_GAIN_FILTER_NAME = "ts_gain"
     MAIN_SCENE_NAME = "main"
     PLAYBACK_MODE_FORCE = "force"  # stop any media being played right now, and play media specified
     PLAYBACK_MODE_CHECK_ANY = "check_any"  # if any video is being played, skip
