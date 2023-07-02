@@ -1159,6 +1159,7 @@ class Skipper:
                         and "release_time" not in details
                         and "threshold" not in details
                         and "output_gain" not in details
+                        and "enabled" not in details
                 ):
                     return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
                 try:
@@ -1171,6 +1172,8 @@ class Skipper:
                             settings.sidechain_settings.threshold = float(details["threshold"])
                         if "output_gain" in details:
                             settings.sidechain_settings.output_gain = float(details["output_gain"])
+                        if "enabled" in details:
+                            settings.sidechain_settings.enabled = bool(details["enabled"])
                 except Exception as ex:
                     return ExecutionStatus(False, f"Couldn't parse sidechain settings: {details}")
                 return self.skipper.activate_registry()
@@ -1180,6 +1183,7 @@ class Skipper:
                 if (
                         "threshold" not in details
                         and "release_time" not in details
+                        and "enabled" not in details
                 ):
                     return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
                 try:
@@ -1188,17 +1192,22 @@ class Skipper:
                             settings.ts_limiter_settings.threshold = float(details["threshold"])
                         if "release_time" in details:
                             settings.ts_limiter_settings.release_time = int(details["release_time"])
+                        if "enabled" in details:
+                            settings.ts_limiter_settings.enabled = bool(details["enabled"])
                 except Exception as ex:
                     return ExecutionStatus(False, f"Couldn't parse limiter settings: {details}")
                 return self.skipper.activate_registry()
             elif command == "set teamspeak gain settings":
                 # details: {"gain": ...}
                 # all parameters are numeric
-                if "gain" not in details:
+                if "gain" not in details and "enabled" not in details:
                     return ExecutionStatus(False, f"Invalid details provided for '{command}': {details}")
                 try:
                     for settings in minion_settings:
-                        settings.ts_gain_settings.gain = float(details["gain"])
+                        if "gain" in details:
+                            settings.ts_gain_settings.gain = float(details["gain"])
+                        if "enabled" in details:
+                            settings.ts_gain_settings.enabled = bool(details["enabled"])
                 except Exception as ex:
                     return ExecutionStatus(False, f"Couldn't parse gain settings: {details}")
                 return self.skipper.activate_registry()
