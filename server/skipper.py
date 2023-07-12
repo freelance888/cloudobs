@@ -201,8 +201,8 @@ class Skipper:
 
         def logout(self, sid: str):
             """Deletes user from authorized"""
-            if sid in self.authorized_users.keys():
-                del self.authorized_users[sid]
+            if sid in self.authorized_users:
+                self.authorized_users.pop(sid)
 
         def sync_from_sheets(self):
             """Syncs users with Google Sheet"""
@@ -325,9 +325,9 @@ class Skipper:
             if "gdrive_files" in registry:
                 registry["gdrive_files"] = {k: v for k, v in registry["gdrive_files"].items() if k in perms}
             if "vmix_players" in registry:
-                del registry["vmix_players"]
+                registry.pop("vmix_players")
             if "active_vmix_player" in registry:
-                del registry["active_vmix_player"]
+                registry.pop("active_vmix_player")
             return registry
 
     class Minion:

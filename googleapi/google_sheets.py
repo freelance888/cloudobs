@@ -4,6 +4,7 @@ import os
 import re
 from datetime import timedelta, datetime
 from typing import Dict
+from copy import deepcopy
 
 import pandas as pd
 import pygsheets
