@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta
 from threading import RLock, Thread
 from typing import List, Dict
+from copy import deepcopy
 
 import socketio
 from flask import Flask, request
@@ -316,6 +317,7 @@ class Skipper:
         @staticmethod
         def adjust_registry_for_user(registry: dict, user: User) -> dict:
             """Returns a copy of the original registry without data user has no access"""
+            registry = deepcopy(registry)
             if user.is_admin():
                 return registry
             perms = user.permissions
