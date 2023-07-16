@@ -655,6 +655,13 @@ class OBSController:
             is_muted=False,
             volume=self.minion_settings.ts_volume.value,
             filters={
+                OBS.TS_GAIN_FILTER_NAME: OBSFilter(
+                    enabled=self.minion_settings.ts_gain_settings.enabled,
+                    filter_type="gain_filter",
+                    filter_settings={
+                        "db": self.minion_settings.ts_gain_settings.gain,
+                    }
+                ),
                 OBS.TS_LIMITER_FILTER_NAME: OBSFilter(
                     enabled=self.minion_settings.ts_limiter_settings.enabled,
                     filter_type="limiter_filter",
@@ -663,13 +670,6 @@ class OBSController:
                         "threshold": self.minion_settings.ts_limiter_settings.threshold,
                     }
                 ),
-                OBS.TS_GAIN_FILTER_NAME: OBSFilter(
-                    enabled=self.minion_settings.ts_gain_settings.enabled,
-                    filter_type="gain_filter",
-                    filter_settings={
-                        "db": self.minion_settings.ts_gain_settings.gain,
-                    }
-                )
             }
         )
 
