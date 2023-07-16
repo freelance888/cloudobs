@@ -183,6 +183,8 @@ class Skipper:
                 "set stream settings",
                 "set teamspeak offset",
                 "set teamspeak volume",
+                "set teamspeak limiter settings",
+                "set teamspeak gain settings",
                 "set source volume",
                 "set vmix speaker background volume",
                 "set sidechain settings",
@@ -576,10 +578,10 @@ class Skipper:
             for sid, user in self.skipper.security.authorized_users.items():
                 if user.is_admin():
                     self._send_event("on_log", {"log": log.dict()}, sid=sid)
-                else:
-                    if log.extra and "command" in log.extra \
-                            and log.extra["command"] in Skipper.SecurityWorker.get_public_commands():
-                        self._send_event("on_log", {"log": log.dict()}, sid=sid)
+                # else:
+                #     if log.extra and "command" in log.extra \
+                #             and log.extra["command"] in Skipper.SecurityWorker.get_public_commands():
+                #         self._send_event("on_log", {"log": log.dict()}, sid=sid)
 
         def send_auth_result(self, sid: str, status: bool):
             """Sends an auth result to user himself"""
@@ -724,7 +726,7 @@ class Skipper:
                 return ExecutionStatus(False, f"Command {command} is not allowed while server is '{server_status}'")
 
             if session:
-                is_active_vmix_player = self.skipper.registry.active_vmix_player == session.ip
+                is_active_vmix_player = self.skipper.registry.active_vmix_player in ('*', session.ip)
                 if not is_active_vmix_player and not session.user:
                     return ExecutionStatus(False, "User is not authorized")
                 is_admin = session.user.is_admin()
