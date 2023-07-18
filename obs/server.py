@@ -606,6 +606,9 @@ class OBSController:
         if not self._check_initialization():
             return ExecutionStatus(status=False, message="Couldn't initialize the server")
 
+        if self.obs_monitoring.obs_config.playing_media_name:
+            return ExecutionStatus(False, "Refreshing media is not allowed while playing video")
+
         status: ExecutionStatus = ExecutionStatus()
         try:
             self.obs_instance.add_or_replace_stream(
