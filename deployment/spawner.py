@@ -152,8 +152,7 @@ class Spawner:
 
     @classmethod
     def from_json(cls, json_dump):
-        raise NotImplementedError()
-        spawner = Spawner(None)
+        spawner = Spawner()
         spawner.ip_dict = IPDict.parse_raw(json_dump)
         # ips = spawner.ssh_context.get_ip()
 
