@@ -61,8 +61,8 @@ class User:
 class SessionContext:
     def __init__(self, **kwargs):
         self.sid: str = kwargs["sid"] if "sid" in kwargs else None
-        self.ip: str = kwargs["ip"]
-        self.user: User = kwargs["user"]
+        self.ip: str = kwargs["ip"] if "ip" in kwargs else None
+        self.user: User = kwargs["user"] if "user" in kwargs else None
 
 
 class OBSCloudModel(BaseModel):
