@@ -60,7 +60,7 @@ class User:
 
 class SessionContext:
     def __init__(self, **kwargs):
-        self.sid: str = kwargs["sid"]
+        self.sid: str = kwargs["sid"] if "sid" in kwargs else None
         self.ip: str = kwargs["ip"]
         self.user: User = kwargs["user"]
 
