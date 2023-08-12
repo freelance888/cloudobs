@@ -763,7 +763,7 @@ class Skipper:
             :return:
             """
             if session:
-                is_vmix_player = self.skipper.registry.active_vmix_player == session.ip
+                is_vmix_player = self.skipper.registry.active_vmix_player in (session.ip, '*')
                 if not is_vmix_player and not session.user:
                     return []
                 is_admin = session.user.is_admin() if session.user else False
