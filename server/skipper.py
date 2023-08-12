@@ -729,7 +729,8 @@ class Skipper:
                 is_active_vmix_player = self.skipper.registry.active_vmix_player in ('*', session.ip)
                 if not is_active_vmix_player and not session.user:
                     return ExecutionStatus(False, "User is not authorized")
-                is_admin = session.user.is_admin()
+
+                is_admin = session.user.is_admin() if session.user else False
             else:  # if session is None
                 return ExecutionStatus(True)
 
@@ -765,7 +766,7 @@ class Skipper:
                 is_vmix_player = self.skipper.registry.active_vmix_player == session.ip
                 if not is_vmix_player and not session.user:
                     return []
-                is_admin = session.user.is_admin()
+                is_admin = session.user.is_admin() if session.user else False
                 user_langs = session.user.langs()
                 # raise RuntimeError("SecurityWorker::_adjust_user_langs(): Session should not be null")
             else:  # if session is None
