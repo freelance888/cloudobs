@@ -774,14 +774,14 @@ class Skipper:
                 is_vmix_player = False
                 user_langs = "*"
 
-            if is_vmix_player:
-                if command == "play media":
-                    return "*"
-                else:
-                    return []
-
             if not langs:
                 langs = "*"
+
+            if command == "play media":
+                if is_vmix_player:
+                    return langs
+                else:
+                    return []
 
             if is_admin or "*" in user_langs:  # if everything is allowed for user
                 if "*" in langs:
@@ -1373,7 +1373,7 @@ class Skipper:
             return self.skipper.command.exec(
                 command=command,
                 details=details,
-                session=SessionContext(ip=request.remote_addr)
+                session=SessionContext(ip=request.remote_addr, user=User.vmix_player())
             ).to_http_status()
 
     class BGWorker:

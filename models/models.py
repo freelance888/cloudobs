@@ -47,6 +47,17 @@ class User:
             permissions=["admin"],
         )
 
+    @staticmethod
+    def vmix_player():
+        master_login = "vmix player"
+        master_passwd = "vmix player"
+        return User(
+            login=master_login,
+            passwd=passwd_placeholder,
+            passwd_hash=hash_passwd(master_passwd),
+            permissions=[],
+        )
+
     def is_admin(self) -> bool:
         return "admin" in self.permissions if self and self.permissions else False
 
