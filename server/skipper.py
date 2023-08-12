@@ -778,7 +778,7 @@ class Skipper:
                 langs = "*"
 
             if command == "play media":
-                if is_vmix_player:
+                if is_vmix_player or is_admin:
                     return langs
                 else:
                     return []
