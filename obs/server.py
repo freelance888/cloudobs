@@ -3,6 +3,7 @@ import os
 import re
 import json
 import time
+from datetime import datetime, timedelta
 
 import obswebsocket as obsws
 import obswebsocket.requests
@@ -48,8 +49,11 @@ class OBSConfig(BaseModel):
         )
     }
     scene: str = "main"
+
     playing_media_name: str = None
     playing_media_is_vs: bool = False
+    playing_media_ts: float = None  # seconds: time.time()
+    playing_media_duration: float = None  # seconds
 
 
 class OBSMonitoring:
@@ -77,6 +81,7 @@ class OBSMonitoring:
             self._check_connection()
             self._sync_scene()
             self._sync_inputs()
+            self._sync_playing_media()
 
     def _check_configs(self):
         if OBS.MAIN_STREAM_SOURCE_NAME in self.obs_config.inputs and \
@@ -239,6 +244,12 @@ class OBSMonitoring:
         self.obs.call(obsws.requests.SetAudioMonitorType(sourceName=source_name,
                                                          monitorType=input_.monitor_type))
 
+    def _sync_playing_media(self):
+        if self.obs_config and self.obs_config.playing_media_name and not self._source_exists(OBS.MAIN_MEDIA_NAME):
+            self.obs._run_media(self.obs_config.playing_media_name,
+                                OBS.MAIN_MEDIA_NAME,
+                                timestamp=time.time() - self.obs_config.playing_media_ts)
+
     def _source_exists(self, source_name):
         """
         Checks if the item with source name `source_name` exists
@@ -316,27 +327,20 @@ class OBSMonitoring:
                 return status
 
         try:
-            def on_start(filename):
+            def on_start(filename, duration):
                 self.obs_config.playing_media_name = filename
+                self.obs_config.playing_media_ts = time.time()
+                self.obs_config.playing_media_duration = duration
+
                 if re.match(r"^[\d\.]+_vs_", os.path.basename(filename)):  # if the file is vmix speaker
                     # do not mute original stream
                     self.obs_config.playing_media_is_vs = True
-                    # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
-                    #     self.obs_controller.minion_settings.vmix_speaker_background_volume.value
-                    # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
                 else:
                     self.obs_config.playing_media_is_vs = False
-                    # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = True
-                # self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = True
 
                 self.sync()
 
             def on_finish():
-                # self.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
-                # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
-                # self.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].volume = \
-                #     self.obs_controller.minion_settings.source_volume.value
-
                 self.obs_config.playing_media_name = None
                 self.obs_config.playing_media_is_vs = False
 
@@ -499,94 +503,12 @@ class OBSController:
         return self.obs_monitoring.run_media(
             name=name, media_dir=self.media_dir, search_by_num=search_by_num, mode=mode
         )
-        # if not self._check_initialization():
-        #     return ExecutionStatus(status=False, message="Couldn't initialize the server")
-        #
-        # if search_by_num is None:
-        #     search_by_num = True
-        # if mode is None:
-        #     mode = OBS.PLAYBACK_MODE_FORCE
-        # if source_name is None:
-        #     source_name = OBS.MAIN_MEDIA_NAME
-        #
-        # if mode not in (OBS.PLAYBACK_MODE_FORCE, OBS.PLAYBACK_MODE_CHECK_ANY, OBS.PLAYBACK_MODE_CHECK_SAME):
-        #     return ExecutionStatus(status=False, message="invalid `mode`")
-        #
-        # status = ExecutionStatus(status=True)
-        #
-        # media_dir = self.media_dir
-        #
-        # # search for the file
-        # if search_by_num:
-        #     # extract file number
-        #     file_num = re.search(r"^[\d\.]+.", name)
-        #     if not file_num:  # if the pattern is incorrect (name doesn't start with numbers)
-        #         status.append_error(
-        #             f"Server::run_media(): while `use_file_num` is set, "
-        #             f"`name` doesn't start with a number. name {name}"
-        #         )
-        #         return status
-        #     else:
-        #         file_num = file_num.group()
-        #
-        #         files = glob.glob(os.path.join(media_dir, f"{file_num}*"))  # find those files
-        #         if len(files) == 0:  # if no media found with name specified
-        #             status.append_warning(f"Server::run_media(): no media found, name {name}")
-        #             return status
-        #         else:
-        #             path = files[0]
-        # else:
-        #     path = os.path.join(media_dir, name)
-        #     if not os.path.isfile(path):
-        #         status.append_warning(f"Server::run_media(): no media found with name specified, name {name}")
-        #         return status
-        #
-        # try:
-        #
-        #     def on_start():
-        #         self.obs_monitoring.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = True
-        #         self.obs_monitoring.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = True
-        #         self.obs_monitoring.sync()
-        #         # self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=True)
-        #         # self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=True)
-        #
-        #     def on_finish():
-        #         self.obs_monitoring.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
-        #         self.obs_monitoring.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
-        #         self.obs_monitoring.sync()
-        #         # self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=False)
-        #         # self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=False)
-        #
-        #     self.obs_instance.run_media(
-        #         path, mode=mode, source_name=source_name, on_start=on_start, on_error=on_finish, on_finish=on_finish
-        #     )
-        # except BaseException as ex:
-        #     status.append_error(f"Server::run_media(): couldn't play media. Details: {ex}")
-        #
-        # return status
 
     def stop_media(self) -> ExecutionStatus:
         """
         :return:
         """
         return self.obs_monitoring.stop_media()
-        # if not self._check_initialization():
-        #     return ExecutionStatus(status=False, message="Couldn't initialize the server")
-        #
-        # status = ExecutionStatus(status=True)
-        #
-        # try:
-        #     self.obs_monitoring.obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME].is_muted = False
-        #     self.obs_monitoring.obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME].is_muted = False
-        #     self.obs_monitoring.sync()
-        #
-        #     self.obs_instance.stop_media()
-        #     # self.obs_instance.set_mute(source_name=OBS.TEAMSPEAK_SOURCE_NAME, mute=False)
-        #     # self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME, mute=False)
-        # except BaseException as ex:
-        #     status.append_error(f"Server::stop_media(): couldn't stop media. Details: {ex}")
-        #
-        # return status
 
     def set_media_dir(self, media_dir) -> ExecutionStatus:
         """
