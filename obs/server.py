@@ -249,7 +249,7 @@ class OBSMonitoring:
             print(f"Recreating playing media: {self.obs_config.playing_media_name}")
             self.obs_wrapper._run_media(self.obs_config.playing_media_name,
                              OBS.MAIN_MEDIA_NAME,
-                             timestamp=time.time() - self.obs_config.playing_media_ts)
+                             timestamp=(time.time() - self.obs_config.playing_media_ts) * 1000)
 
     def _source_exists(self, source_name):
         """
