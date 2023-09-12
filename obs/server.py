@@ -246,6 +246,7 @@ class OBSMonitoring:
 
     def _sync_playing_media(self):
         if self.obs_config and self.obs_config.playing_media_name and not self._source_exists(OBS.MAIN_MEDIA_NAME):
+            print(f"Recreating playing media: {self.obs_config.playing_media_name}")
             self.obs._run_media(self.obs_config.playing_media_name,
                                 OBS.MAIN_MEDIA_NAME,
                                 timestamp=time.time() - self.obs_config.playing_media_ts)
