@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, PrivateAttr
 from typing import List, Dict
 import threading
+from threading import RLock
 
 from obs import OBS
 from util import ExecutionStatus
@@ -54,6 +55,8 @@ class OBSConfig(BaseModel):
     playing_media_is_vs: bool = False
     playing_media_ts: float = None  # seconds: time.time()
     playing_media_duration: float = None  # seconds
+
+    media_lock: RLock = RLock()
 
 
 class OBSMonitoring:
@@ -245,11 +248,11 @@ class OBSMonitoring:
                                                          monitorType=input_.monitor_type))
 
     def _sync_playing_media(self):
-        if self.obs_config and self.obs_config.playing_media_name and not self._source_exists(OBS.MAIN_MEDIA_NAME):
-            print(f"Recreating playing media: {self.obs_config.playing_media_name}")
-            self.obs_wrapper._run_media(self.obs_config.playing_media_name,
-                             OBS.MAIN_MEDIA_NAME,
-                             timestamp=(time.time() - self.obs_config.playing_media_ts) * 1000)
+        with self.obs_config.media_lock:
+            if self.obs_config and self.obs_config.playing_media_name and not self._source_exists(OBS.MAIN_MEDIA_NAME):
+                self.obs_wrapper._run_media(self.obs_config.playing_media_name,
+                                 OBS.MAIN_MEDIA_NAME,
+                                 timestamp=(time.time() - self.obs_config.playing_media_ts) * 1000)
 
     def _source_exists(self, source_name):
         """
@@ -329,21 +332,23 @@ class OBSMonitoring:
 
         try:
             def on_start(filename, duration):
-                self.obs_config.playing_media_name = filename
-                self.obs_config.playing_media_ts = time.time()
-                self.obs_config.playing_media_duration = duration
+                with self.obs_config.media_lock:
+                    self.obs_config.playing_media_name = filename
+                    self.obs_config.playing_media_ts = time.time()
+                    self.obs_config.playing_media_duration = duration
 
-                if re.match(r"^[\d\.]+_vs_", os.path.basename(filename)):  # if the file is vmix speaker
-                    # do not mute original stream
-                    self.obs_config.playing_media_is_vs = True
-                else:
-                    self.obs_config.playing_media_is_vs = False
+                    if re.match(r"^[\d\.]+_vs_", os.path.basename(filename)):  # if the file is vmix speaker
+                        # do not mute original stream
+                        self.obs_config.playing_media_is_vs = True
+                    else:
+                        self.obs_config.playing_media_is_vs = False
 
                 self.sync()
 
             def on_finish():
-                self.obs_config.playing_media_name = None
-                self.obs_config.playing_media_is_vs = False
+                with self.obs_config.media_lock:
+                    self.obs_config.playing_media_name = None
+                    self.obs_config.playing_media_is_vs = False
 
                 self.sync()
 
