@@ -9,14 +9,16 @@ import obswebsocket as obsws
 import obswebsocket.requests
 from dotenv import load_dotenv
 from pydantic import BaseModel, PrivateAttr
+from typing import ClassVar
 from typing import List, Dict
 import threading
-from threading import RLock
 
 from obs import OBS
+from threading import RLock
 from util import ExecutionStatus
 from models import MinionSettings
 from util import CallbackThread
+
 
 load_dotenv()
 BASE_MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -56,7 +58,7 @@ class OBSConfig(BaseModel):
     playing_media_ts: float = None  # seconds: time.time()
     playing_media_duration: float = None  # seconds
 
-    media_lock: RLock = RLock()
+    media_lock: ClassVar[RLock] = RLock()
 
 
 class OBSMonitoring:
