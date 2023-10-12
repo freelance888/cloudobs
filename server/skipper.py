@@ -1472,18 +1472,18 @@ class Skipper:
         self._sessions: dict[str, SessionContext] = {}
         self._lock = RLock()
 
-    def __getattr__(self, item):
-        if item == "_lock":
-            return super(Skipper, self).__getattr__(item)
-        with self._lock:
-            return super(Skipper, self).__getattr__(item)
-
-    def __setattr__(self, key, value):
-        if key in ("_lock",):
-            super(Skipper, self).__setattr__(key, value)
-        else:
-            with self._lock:
-                super(Skipper, self).__setattr__(key, value)
+    # def __getattr__(self, item):
+    #     if item == "_lock":
+    #         return super(Skipper, self).__getattr__(item)
+    #     with self._lock:
+    #         return super(Skipper, self).__getattr__(item)
+    #
+    # def __setattr__(self, key, value):
+    #     if key in ("_lock",):
+    #         super(Skipper, self).__setattr__(key, value)
+    #     else:
+    #         with self._lock:
+    #             super(Skipper, self).__setattr__(key, value)
 
     def activate_registry(self) -> ExecutionStatus:
         with self.registry_lock:
