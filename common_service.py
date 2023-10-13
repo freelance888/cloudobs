@@ -121,7 +121,8 @@ command = {
 }
 sio.emit(event="command", data=json.dumps(command), callback=ws_response.callback)
 time.sleep(2)
-json.loads(json.loads(ws_response.result())["serializable_object"])
+t = json.loads(json.loads(ws_response.result())["serializable_object"])
+t['registry']['minion_configs']
 
 # ----- play media
 ws_response = WebsocketResponse()

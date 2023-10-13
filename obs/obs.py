@@ -109,48 +109,7 @@ class OBS:
         :param scene_name: optional
         :return: None if ok, otherwise throws RuntimeError
         """
-        # if not scene_name:
-        #     scene_name = OBS.MAIN_SCENE_NAME
-
-        # source_settings = {
-        #     "buffering_mb": 12,
-        #     "input": source_url,
-        #     "is_local_file": False,
-        #     "clear_on_media_end": False,
-        # }
-        # delete a source if it already exists
         self.delete_source_if_exist(source_name=stream_name)
-
-        # request = obs.requests.CreateSource(
-        #     sourceName=stream_name,
-        #     sourceKind="ffmpeg_source",
-        #     sceneName=scene_name,
-        #     sourceSettings=source_settings,
-        # )
-        # response = self.client.call(request)
-        # if not response.status:
-        #     raise RuntimeError(
-        #         f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
-        #     )
-
-        # response = self.client.call(
-        #     obs.requests.SetSourceSettings(
-        #         stream_name,
-        #         source_settings,
-        #     )
-        # )
-        # if not response.status:
-        #     raise RuntimeError(
-        #         f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
-        #     )
-
-        # request = obs.requests.SetAudioMonitorType(sourceName=stream_name, monitorType="none")
-        # response = self.client.call(request)
-
-        # if not response.status:
-        #     raise RuntimeError(
-        #         f"OBS::add_or_replace_stream(): " f"datain: {response.datain}, dataout: {response.dataout}"
-        #     )
 
     def run_media(self, path, mode=None, source_name=None, on_start=None, on_error=None, on_finish=None):
         """
@@ -191,7 +150,7 @@ class OBS:
                 self.media_cb_thread.append_callback(media_end_foo, (duration / 1000) + 1, cb_type=source_name)
 
                 if on_start is not None and callable(on_start):
-                    on_start(filename)
+                    on_start(filename, (duration / 1000) + 1)
             except Exception as ex:
                 self.delete_source_if_exist(source_name)
                 self._current_media_played = None
@@ -318,7 +277,7 @@ class OBS:
     # def set_ts_mute(self, mute):
     #     self.set_mute(OBS.TEAMSPEAK_SOURCE_NAME, mute)
 
-    def _run_media(self, path, source_name):
+    def _run_media(self, path, source_name, timestamp=0):
         scene_name = self.obsws_get_current_scene_name()
         self.delete_source_if_exist(source_name, scene_name)
 
@@ -333,7 +292,7 @@ class OBS:
         if not response.status:
             raise RuntimeError(f"OBS::_run_media(): datain: {response.datain}, dataout: {response.dataout}")
 
-        response = self.client.call(obs.requests.SetMediaTime(sourceName=source_name, timestamp=0))
+        response = self.client.call(obs.requests.SetMediaTime(sourceName=source_name, timestamp=timestamp))
         if not response.status:
             raise RuntimeError(f"OBS::_run_media(): datain: {response.datain}, dataout: {response.dataout}")
 

@@ -55,8 +55,8 @@ class Skipper:
 
             with self.skipper.infrastructure_lock:
                 try:
-                    # with self.skipper.registry_lock:
-                    self.skipper.registry.server_status = State.initializing
+                    with self.skipper.registry_lock:
+                        self.skipper.registry.server_status = State.initializing
                     self.skipper.event_sender.send_registry_change({"server_status": State.initializing})
 
                     langs = self.skipper.registry.list_langs()
@@ -1470,6 +1470,20 @@ class Skipper:
         self.http_api: Skipper.HTTPApi = Skipper.HTTPApi(self)
 
         self._sessions: dict[str, SessionContext] = {}
+        self._lock = RLock()
+
+    # def __getattr__(self, item):
+    #     if item == "_lock":
+    #         return super(Skipper, self).__getattr__(item)
+    #     with self._lock:
+    #         return super(Skipper, self).__getattr__(item)
+    #
+    # def __setattr__(self, key, value):
+    #     if key in ("_lock",):
+    #         super(Skipper, self).__setattr__(key, value)
+    #     else:
+    #         with self._lock:
+    #             super(Skipper, self).__setattr__(key, value)
 
     def activate_registry(self) -> ExecutionStatus:
         with self.registry_lock:
