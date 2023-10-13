@@ -21,10 +21,31 @@ from util import ExecutionStatus, WebsocketResponse, CallbackThread, hash_passwd
 
 MINION_WS_PORT = 6000
 
+class BaseObject:
+    pass
 
-class Skipper:
-    class Infrastructure:
+class LockableObject(BaseObject):
+    def __init__(self):
+        self._lock = RLock()
+
+    def __getattr__(self, item):
+        if item == "_lock":
+            return super(BaseObject, self).__getattr__(item)
+        with self._lock:
+            return super(BaseObject, self).__getattr__(item)
+
+    def __setattr__(self, key, value):
+        if key in ("_lock",):
+            super(BaseObject, self).__setattr__(key, value)
+        else:
+            with self._lock:
+                super(BaseObject, self).__setattr__(key, value)
+
+
+class Skipper(LockableObject):
+    class Infrastructure(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.Infrastructure, self).__init__()
             self.spawner: Spawner = Spawner()
             self.skipper = skipper
 
@@ -111,8 +132,9 @@ class Skipper:
         def json(self):
             return self.spawner.json()
 
-    class OBSSheets:
+    class OBSSheets(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.OBSSheets, self).__init__()
             self.obs_sheets = OBSGoogleSheets()
             self.skipper = skipper
 
@@ -166,14 +188,16 @@ class Skipper:
             except Exception as ex:
                 return ExecutionStatus(False, f"Something happened while pushing obs_config info. Details: {ex}")
 
-    class SecurityWorker:
+    class SecurityWorker(LockableObject):
         def __init__(self, skipper: "Skipper"):
+            super(Skipper.SecurityWorker, self).__init__()
             self.users_sheet = UsersGoogleSheets()
             master_user = User.master()
             self.users: dict[str, User] = {master_user.login: master_user}
             self.authorized_users: dict[str, User] = {}
             self.skipper = skipper
             self.public_commands = Skipper.SecurityWorker.get_public_commands()
+            self.security_lock = RLock()
 
         @staticmethod
         def get_public_commands() -> set[str]:
@@ -214,39 +238,40 @@ class Skipper:
             errors = []
             try:
                 sheet_data = self.users_sheet.fetch_all()
-                prev_users = self.users
-                # Reset users list
-                master_user = User.master()
-                self.users = {master_user.login: master_user}
-                for i in range(len(sheet_data)):
-                    row_data = sheet_data[i]
-                    col_index = row_data["col"]
-                    login = row_data["login"]
-                    passwd = row_data["passwd"]
-                    passwd_hash = row_data["hash"]
-                    permissions = row_data["permissions"]
-                    if login.strip() == "":
-                        continue
-                    # Get cached user by login equality
-                    if not self._validate_user(errors, login, permissions):
-                        continue
-                    cur_user = self._sync_cur_user(login, passwd_hash, permissions, prev_users)
+                with self.security_lock:
+                    prev_users = self.users
+                    # Reset users list
+                    master_user = User.master()
+                    self.users = {master_user.login: master_user}
+                    for i in range(len(sheet_data)):
+                        row_data = sheet_data[i]
+                        col_index = row_data["col"]
+                        login = row_data["login"]
+                        passwd = row_data["passwd"]
+                        passwd_hash = row_data["hash"]
+                        permissions = row_data["permissions"]
+                        if login.strip() == "":
+                            continue
+                        # Get cached user by login equality
+                        if not self._validate_user(errors, login, permissions):
+                            continue
+                        cur_user = self._sync_cur_user(login, passwd_hash, permissions, prev_users)
 
-                    # Disallow to change manually hash if password is a placeholder
-                    if passwd == passwd_placeholder:
-                        if cur_user and passwd_hash != cur_user.passwd_hash:
-                            self.users_sheet.set_passwd(col_index, passwd_placeholder, cur_user.passwd_hash)
-                    # If password is empty - reset hash
-                    elif passwd.strip() == "":
-                        errors.append(f"{login}: has no password")
-                        if passwd_hash.strip() != "":
-                            self.users_sheet.reset_passwd_hash(col_index)
-                    # Update password and hash
-                    else:
-                        passwd_hash = hash_passwd(passwd)
-                        if passwd != passwd_placeholder or passwd_hash != cur_user.passwd_hash:
-                            cur_user.passwd_hash = passwd_hash
-                            self.users_sheet.set_passwd(col_index, passwd_placeholder, passwd_hash)
+                        # Disallow to change manually hash if password is a placeholder
+                        if passwd == passwd_placeholder:
+                            if cur_user and passwd_hash != cur_user.passwd_hash:
+                                self.users_sheet.set_passwd(col_index, passwd_placeholder, cur_user.passwd_hash)
+                        # If password is empty - reset hash
+                        elif passwd.strip() == "":
+                            errors.append(f"{login}: has no password")
+                            if passwd_hash.strip() != "":
+                                self.users_sheet.reset_passwd_hash(col_index)
+                        # Update password and hash
+                        else:
+                            passwd_hash = hash_passwd(passwd)
+                            if passwd != passwd_placeholder or passwd_hash != cur_user.passwd_hash:
+                                cur_user.passwd_hash = passwd_hash
+                                self.users_sheet.set_passwd(col_index, passwd_placeholder, passwd_hash)
             except Exception as e:
                 errors.append(str(e))
             # TODO: DEBUG ONLY
@@ -264,33 +289,36 @@ class Skipper:
             if not permissions or len(permissions) < 1:
                 errors.append(f"{login}: has no permissions")
                 return False
-            if login in self.users:
-                errors.append(f"{login}: duplicated login")
-                return False
+            with self.security_lock:
+                if login in self.users:
+                    errors.append(f"{login}: duplicated login")
+                    return False
             return True
 
         def _sync_cur_user(self, login, passwd_hash, permissions, prev_users):
-            if login in prev_users:
-                cur_user = prev_users[login]
-                cur_user.permissions = permissions
-                self.users.update({cur_user.login: cur_user})
-                return cur_user
-            elif login.strip() != "":
-                cur_user = User(
-                    login=login,
-                    passwd=passwd_placeholder,
-                    passwd_hash=passwd_hash,
-                    permissions=permissions,
-                )
-                self.users.update({cur_user.login: cur_user})
-                return cur_user
+            with self.security_lock:
+                if login in prev_users:
+                    cur_user = prev_users[login]
+                    cur_user.permissions = permissions
+                    self.users.update({cur_user.login: cur_user})
+                    return cur_user
+                elif login.strip() != "":
+                    cur_user = User(
+                        login=login,
+                        passwd=passwd_placeholder,
+                        passwd_hash=passwd_hash,
+                        permissions=permissions,
+                    )
+                    self.users.update({cur_user.login: cur_user})
+                    return cur_user
             return None
 
         def set_sheets(self, sheet_url: str, sheet_name: str) -> ExecutionStatus:
             """Binds users with Google Sheet table"""
             try:
                 with self.skipper.registry_lock:
-                    self.users_sheet.set_sheet(sheet_url, sheet_name)
+                    with self.security_lock:
+                        self.users_sheet.set_sheet(sheet_url, sheet_name)
                     self.skipper.registry.users_sheet_url = sheet_url
                     self.skipper.registry.users_sheet_name = sheet_name
                 self.sync_from_sheets()
@@ -300,14 +328,16 @@ class Skipper:
 
         def get_user(self, sid: str):
             """Returns a list of user permissions"""
-            if sid in self.authorized_users.keys():
-                return self.authorized_users[sid]
+            with self.security_lock:
+                if sid in self.authorized_users.keys():
+                    return self.authorized_users[sid]
             return None
 
         def get_user_langs(self, sid: str):
-            if sid in self.authorized_users:
-                user: User = self.authorized_users[sid]
-                return user.langs()
+            with self.security_lock:
+                if sid in self.authorized_users:
+                    user: User = self.authorized_users[sid]
+                    return user.langs()
             raise KeyError(f"No such sid in self.authorized_users: {sid}")
 
         def copy_registry_for_user(self, user: User, masked=True) -> dict:
@@ -334,8 +364,9 @@ class Skipper:
                 registry.pop("active_vmix_player")
             return registry
 
-    class Minion:
+    class Minion(LockableObject):
         def __init__(self, minion_ip, lang, skipper, ws_port=MINION_WS_PORT):
+            super(Skipper.Minion, self).__init__()
             self.minion_ip = minion_ip
             self.ws_port = ws_port
             self.lang = lang
@@ -394,8 +425,9 @@ class Skipper:
             return Skipper.Minion(minion_ip=data["minion_ip"], ws_port=data["ws_port"],
                                   lang=data["lang"], skipper=skipper)
 
-    class Timing:
+    class Timing(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.Timing, self).__init__()
             self.sheets = TimingGoogleSheets()
             self.skipper = skipper
             self.cb_thread = CallbackThread()
@@ -521,8 +553,9 @@ class Skipper:
             self.skipper.registry.timing_list = []
             return status
 
-    class EventHandler:
+    class EventHandler(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.EventHandler, self).__init__()
             self.skipper: Skipper = skipper
             self.event_handlers = []
 
@@ -562,8 +595,9 @@ class Skipper:
                     except Exception as ex:
                         pass
 
-    class EventSender:
+    class EventSender(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.EventSender, self).__init__()
             self.skipper: Skipper = skipper
 
         def send_registry_change(self, registry: dict):
@@ -602,8 +636,9 @@ class Skipper:
             except Exception as ex:
                 print(f"Error occurred while sending ws event: {ex}")
 
-    class Logger:
+    class Logger(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.Logger, self).__init__()
             self.skipper: Skipper = skipper
             self.logs: LogsStorage = LogsStorage()
 
@@ -670,7 +705,7 @@ class Skipper:
             self.logs.append(log)
             self.skipper.event_sender.send_log(log)
 
-    class Command:
+    class Command(LockableObject):
         """
         Command structure for a Skipper:
         {
@@ -693,6 +728,7 @@ class Skipper:
         """
 
         def __init__(self, skipper):
+            super(Skipper.Command, self).__init__()
             self.skipper: Skipper = skipper
 
         @classmethod
@@ -1352,8 +1388,9 @@ class Skipper:
             else:
                 raise RuntimeError("This block of code should not be executed")
 
-    class HTTPApi:
+    class HTTPApi(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.HTTPApi, self).__init__()
             self.skipper: Skipper = skipper
 
             self.skipper.app.add_url_rule("/media/play", view_func=self._http_api_play_media, methods=["POST"])
@@ -1376,8 +1413,9 @@ class Skipper:
                 session=SessionContext(ip=request.remote_addr, user=User.vmix_player())
             ).to_http_status()
 
-    class BGWorker:
+    class BGWorker(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.BGWorker, self).__init__()
             self.skipper: Skipper = skipper
             self._last_registry_state = self.skipper.registry.masked_json()
             self._last_registry_dict = self.skipper.registry.dict()
@@ -1447,6 +1485,7 @@ class Skipper:
             return diff
 
     def __init__(self, port=None):
+        super(Skipper, self).__init__()
         self.event_sender: Skipper.EventSender = Skipper.EventSender(self)
         self.event_handler: Skipper.EventHandler = Skipper.EventHandler(self)
         self.logger: Skipper.Logger = Skipper.Logger(self)
