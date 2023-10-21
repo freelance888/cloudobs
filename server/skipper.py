@@ -221,24 +221,27 @@ class Skipper(LockableObject):
 
         def authorize(self, sid: str, login: str, passwd: str) -> bool:
             """Checks if user is authorized"""
-            if login in self.users and self.users[login].passwd_hash == hash_passwd(passwd):
-                self.authorized_users.update({sid: self.users[login]})
-                return True
-            return False
+            with self.security_lock:
+                if login in self.users and self.users[login].passwd_hash == hash_passwd(passwd):
+                    self.authorized_users.update({sid: self.users[login]})
+                    return True
+                return False
 
         def logout(self, sid: str):
             """Deletes user from authorized"""
-            if sid in self.authorized_users:
-                self.authorized_users.pop(sid)
+            with self.security_lock:
+                if sid in self.authorized_users:
+                    self.authorized_users.pop(sid)
 
         def sync_from_sheets(self):
             """Syncs users with Google Sheet"""
-            if not self.users_sheet.setup_status:
-                return
+            with self.security_lock:
+                if not self.users_sheet.setup_status:
+                    return
             errors = []
             try:
-                sheet_data = self.users_sheet.fetch_all()
                 with self.security_lock:
+                    sheet_data = self.users_sheet.fetch_all()
                     prev_users = self.users
                     # Reset users list
                     master_user = User.master()
