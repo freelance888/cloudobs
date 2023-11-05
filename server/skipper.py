@@ -18,6 +18,7 @@ from models import (MinionSettings, VmixPlayer, Registry, State, TimingEntry,
 from models.logging import LogsStorage, Log, LogLevel
 from obs import OBS
 from util import ExecutionStatus, WebsocketResponse, CallbackThread, hash_passwd
+import traceback
 
 MINION_WS_PORT = 6000
 
@@ -176,7 +177,8 @@ class Skipper(LockableObject):
                     self.skipper.registry.update_minion(lang, minion_configs[lang])
                 return ExecutionStatus(True)
             except Exception as ex:
-                return ExecutionStatus(False, str(ex))
+                return ExecutionStatus(False, f"Couldn't pull OBS sheets. Details: {ex}, "
+                                              f"{traceback.format_exc()}")
 
         def push(self) -> ExecutionStatus:
             # with self.skipper.registry_lock:
@@ -327,7 +329,8 @@ class Skipper(LockableObject):
                 self.sync_from_sheets()
                 return ExecutionStatus(True)
             except Exception as ex:
-                return ExecutionStatus(False, f"Couldn't set up users sheet config.\nDetails: {ex}")
+                return ExecutionStatus(False, f"Couldn't set up users sheet config.\nDetails: {ex}, "
+                                              f"{traceback.format_exc()}")
 
         def get_user(self, sid: str):
             """Returns a list of user permissions"""
