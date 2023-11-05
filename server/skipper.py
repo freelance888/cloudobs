@@ -3,7 +3,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta
-from threading import RLock, Thread
+from threading import RLock, Thread, Lock
 from typing import List, Dict
 from copy import deepcopy
 
@@ -138,27 +138,29 @@ class Skipper(LockableObject):
             super(Skipper.OBSSheets, self).__init__()
             self.obs_sheets = OBSGoogleSheets()
             self.skipper = skipper
+            self._lock = Lock()
 
         def setup(self, sheet_url, sheet_name) -> ExecutionStatus:
-            # with self.skipper.registry_lock:
-            try:
-                self.obs_sheets.set_sheet(sheet_url, sheet_name)
-                self.skipper.registry.obs_sheet_url = sheet_url
-                self.skipper.registry.obs_sheet_name = sheet_name
-                return ExecutionStatus(True)
-            except Exception as ex:
-                return ExecutionStatus(False, f"Couldn't set up obs sheet config.\nDetails: {ex}")
+            with self._lock:
+                try:
+                    self.obs_sheets.set_sheet(sheet_url, sheet_name)
+                    self.skipper.registry.obs_sheet_url = sheet_url
+                    self.skipper.registry.obs_sheet_name = sheet_name
+                    return ExecutionStatus(True)
+                except Exception as ex:
+                    return ExecutionStatus(False, f"Couldn't set up obs sheet config.\nDetails: {ex}")
 
         def pull(self, langs: List[str] = None) -> ExecutionStatus:
             # with self.skipper.registry_lock:
             try:
-                if not self.obs_sheets.setup_status:
-                    return ExecutionStatus(False, f"OBS sheets has not been set up yet")
+                with self._lock:
+                    if not self.obs_sheets.setup_status:
+                        return ExecutionStatus(False, f"OBS sheets has not been set up yet")
 
-                if langs == "*":
-                    langs = None
+                    if langs == "*":
+                        langs = None
 
-                minion_configs: Dict[str, MinionSettings] = self.obs_sheets.pull()
+                    minion_configs: Dict[str, MinionSettings] = self.obs_sheets.pull()
 
                 if self.skipper.registry.infrastructure_lock:  # if infrastructure is locked
                     registry_langs = list(self.skipper.registry.minion_configs.keys())
@@ -183,9 +185,10 @@ class Skipper(LockableObject):
         def push(self) -> ExecutionStatus:
             # with self.skipper.registry_lock:
             try:
-                if not self.obs_sheets.setup_status:
-                    return ExecutionStatus(False, f"setup_status of obs_sheets is False")
-                self.obs_sheets.push(self.skipper.registry.minion_configs)
+                with self._lock:
+                    if not self.obs_sheets.setup_status:
+                        return ExecutionStatus(False, f"setup_status of obs_sheets is False")
+                    self.obs_sheets.push(self.skipper.registry.minion_configs)
                 return ExecutionStatus(True)
             except Exception as ex:
                 return ExecutionStatus(False, f"Something happened while pushing obs_config info. Details: {ex}")
@@ -199,7 +202,7 @@ class Skipper(LockableObject):
             self.authorized_users: dict[str, User] = {}
             self.skipper = skipper
             self.public_commands = Skipper.SecurityWorker.get_public_commands()
-            self.security_lock = RLock()
+            self._security_lock = Lock()
 
         @staticmethod
         def get_public_commands() -> set[str]:
@@ -221,71 +224,72 @@ class Skipper(LockableObject):
                 "get logs",
             }
 
-        def authorize(self, sid: str, login: str, passwd: str) -> bool:
+        def authorize(self, sid: str, login: str, passwd: str) -> bool:  # pulic interface
             """Checks if user is authorized"""
-            with self.security_lock:
+            with self._security_lock:
                 if login in self.users and self.users[login].passwd_hash == hash_passwd(passwd):
                     self.authorized_users.update({sid: self.users[login]})
                     return True
                 return False
 
-        def logout(self, sid: str):
+        def logout(self, sid: str):  # pulic interface
             """Deletes user from authorized"""
-            with self.security_lock:
+            with self._security_lock:
                 if sid in self.authorized_users:
                     self.authorized_users.pop(sid)
 
-        def sync_from_sheets(self):
-            """Syncs users with Google Sheet"""
-            with self.security_lock:
-                if not self.users_sheet.setup_status:
-                    return
+        def _sync_from_sheets(self):
+            if not self.users_sheet.setup_status:
+                return
             errors = []
             try:
-                with self.security_lock:
-                    sheet_data = self.users_sheet.fetch_all()
-                    prev_users = self.users
-                    # Reset users list
-                    master_user = User.master()
-                    self.users = {master_user.login: master_user}
-                    for i in range(len(sheet_data)):
-                        row_data = sheet_data[i]
-                        col_index = row_data["col"]
-                        login = row_data["login"]
-                        passwd = row_data["passwd"]
-                        passwd_hash = row_data["hash"]
-                        permissions = row_data["permissions"]
-                        if login.strip() == "":
-                            continue
-                        # Get cached user by login equality
-                        if not self._validate_user(errors, login, permissions):
-                            continue
-                        cur_user = self._sync_cur_user(login, passwd_hash, permissions, prev_users)
+                sheet_data = self.users_sheet.fetch_all()
+                prev_users = self.users
+                # Reset users list
+                master_user = User.master()
+                self.users = {master_user.login: master_user}
+                for i in range(len(sheet_data)):
+                    row_data = sheet_data[i]
+                    col_index = row_data["col"]
+                    login = row_data["login"]
+                    passwd = row_data["passwd"]
+                    passwd_hash = row_data["hash"]
+                    permissions = row_data["permissions"]
+                    if login.strip() == "":
+                        continue
+                    # Get cached user by login equality
+                    if not self._validate_user(errors, login, permissions):
+                        continue
+                    cur_user = self._sync_cur_user(login, passwd_hash, permissions, prev_users)
 
-                        # Disallow to change manually hash if password is a placeholder
-                        if passwd == passwd_placeholder:
-                            if cur_user and passwd_hash != cur_user.passwd_hash:
-                                self.users_sheet.set_passwd(col_index, passwd_placeholder, cur_user.passwd_hash)
-                        # If password is empty - reset hash
-                        elif passwd.strip() == "":
-                            errors.append(f"{login}: has no password")
-                            if passwd_hash.strip() != "":
-                                self.users_sheet.reset_passwd_hash(col_index)
-                        # Update password and hash
-                        else:
-                            passwd_hash = hash_passwd(passwd)
-                            if passwd != passwd_placeholder or passwd_hash != cur_user.passwd_hash:
-                                cur_user.passwd_hash = passwd_hash
-                                self.users_sheet.set_passwd(col_index, passwd_placeholder, passwd_hash)
+                    # Disallow to change manually hash if password is a placeholder
+                    if passwd == passwd_placeholder:
+                        if cur_user and passwd_hash != cur_user.passwd_hash:
+                            self.users_sheet.set_passwd(col_index, passwd_placeholder, cur_user.passwd_hash)
+                    # If password is empty - reset hash
+                    elif passwd.strip() == "":
+                        errors.append(f"{login}: has no password")
+                        if passwd_hash.strip() != "":
+                            self.users_sheet.reset_passwd_hash(col_index)
+                    # Update password and hash
+                    else:
+                        passwd_hash = hash_passwd(passwd)
+                        if passwd != passwd_placeholder or passwd_hash != cur_user.passwd_hash:
+                            cur_user.passwd_hash = passwd_hash
+                            self.users_sheet.set_passwd(col_index, passwd_placeholder, passwd_hash)
             except Exception as e:
                 errors.append(str(e))
-            # TODO: DEBUG ONLY
-            # print('users:', " ".join([str(u) for u in self.users]))
+
             if len(errors) == 0:
                 message = "Success"
             else:
                 message = "\n".join(errors)
             self.users_sheet.set_sync_status(message)
+
+        def sync_from_sheets(self):  # pulic interface
+            """Syncs users with Google Sheet"""
+            with self._security_lock:
+                self._sync_from_sheets()
 
         def _validate_user(self, errors, login, permissions):
             if not re.match(r"^(?=.{2,50}$)(?:[a-zA-Z\d]+(?:(?:-|_)[a-zA-Z\d])*)+$", login):
@@ -294,66 +298,67 @@ class Skipper(LockableObject):
             if not permissions or len(permissions) < 1:
                 errors.append(f"{login}: has no permissions")
                 return False
-            with self.security_lock:
-                if login in self.users:
-                    errors.append(f"{login}: duplicated login")
-                    return False
+            if login in self.users:
+                errors.append(f"{login}: duplicated login")
+                return False
             return True
 
         def _sync_cur_user(self, login, passwd_hash, permissions, prev_users):
-            with self.security_lock:
-                if login in prev_users:
-                    cur_user = prev_users[login]
-                    cur_user.permissions = permissions
-                    self.users.update({cur_user.login: cur_user})
-                    return cur_user
-                elif login.strip() != "":
-                    cur_user = User(
-                        login=login,
-                        passwd=passwd_placeholder,
-                        passwd_hash=passwd_hash,
-                        permissions=permissions,
-                    )
-                    self.users.update({cur_user.login: cur_user})
-                    return cur_user
+            if login in prev_users:
+                cur_user = prev_users[login]
+                cur_user.permissions = permissions
+                self.users.update({cur_user.login: cur_user})
+                return cur_user
+            elif login.strip() != "":
+                cur_user = User(
+                    login=login,
+                    passwd=passwd_placeholder,
+                    passwd_hash=passwd_hash,
+                    permissions=permissions,
+                )
+                self.users.update({cur_user.login: cur_user})
+                return cur_user
             return None
 
-        def set_sheets(self, sheet_url: str, sheet_name: str) -> ExecutionStatus:
+        def set_sheets(self, sheet_url: str, sheet_name: str) -> ExecutionStatus:  # pulic interface
             """Binds users with Google Sheet table"""
             try:
                 with self.skipper.registry_lock:
-                    with self.security_lock:
+                    with self._security_lock:
                         self.users_sheet.set_sheet(sheet_url, sheet_name)
                     self.skipper.registry.users_sheet_url = sheet_url
                     self.skipper.registry.users_sheet_name = sheet_name
-                self.sync_from_sheets()
+
+                with self._security_lock:
+                    self._sync_from_sheets()
                 return ExecutionStatus(True)
             except Exception as ex:
-                return ExecutionStatus(False, f"Couldn't set up users sheet config.\nDetails: {ex}, "
+                return ExecutionStatus(False, f"Couldn't set up users sheet config.\nDetails: "
+                                              f"{ex}, "
                                               f"{traceback.format_exc()}")
 
-        def get_user(self, sid: str):
+        def get_user(self, sid: str):  # pulic interface
             """Returns a list of user permissions"""
-            with self.security_lock:
+            with self._security_lock:
                 if sid in self.authorized_users.keys():
                     return self.authorized_users[sid]
             return None
 
-        def get_user_langs(self, sid: str):
-            with self.security_lock:
+        def get_user_langs(self, sid: str):  # pulic interface
+            with self._security_lock:
                 if sid in self.authorized_users:
                     user: User = self.authorized_users[sid]
                     return user.langs()
             raise KeyError(f"No such sid in self.authorized_users: {sid}")
 
-        def copy_registry_for_user(self, user: User, masked=True) -> dict:
+        def copy_registry_for_user(self, user: User, masked=True) -> dict:  # pulic interface
             """Returns a copy of the original registry without data user has no access"""
             with self.skipper.registry_lock:
                 registry = self.skipper.registry.masked_dict() if masked else self.skipper.registry.dict()
                 return self.adjust_registry_for_user(registry, user)
 
         @staticmethod
-        def adjust_registry_for_user(registry: dict, user: User) -> dict:
+        def adjust_registry_for_user(registry: dict, user: User) -> dict:  # pulic interface
             """Returns a copy of the original registry without data user has no access"""
             registry = deepcopy(registry)
             if user.is_admin():
@@ -736,6 +741,7 @@ class Skipper(LockableObject):
         def __init__(self, skipper):
             super(Skipper.Command, self).__init__()
             self.skipper: Skipper = skipper
+            self.pull_sheet_lock = Lock()
 
         @classmethod
         def valid(cls, command: str):
@@ -909,44 +915,46 @@ class Skipper(LockableObject):
 
             try:
                 if command == "pull config":
-                    # details:
-                    # note that all the parameters are optional
-                    # {
-                    #   "sheet_url": "url",
-                    #   "sheet_name": "name",
-                    #   "langs": ["lang1", "lang2", ...],
-                    #   "ip_langs": {... "ip": "lang", ...}
-                    # }
-                    sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
-                    sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
-                    users_sheet_name = None if not details or "users_sheet_name" not in details \
-                        else details["users_sheet_name"]
-                    # check if details is not None and has "langs" and details["lang"] is a list of strings
-                    langs = (
-                        None  # None - means all langs
-                        if (
-                                (not details)
-                                or ("langs" not in details)
-                                or (not isinstance(details["langs"], list))
-                                or (not all([isinstance(obj, str) for obj in details["langs"]]))
+                    with self.pull_sheet_lock:
+                        # details:
+                        # note that all the parameters are optional
+                        # {
+                        #   "sheet_url": "url",
+                        #   "sheet_name": "name",
+                        #   "langs": ["lang1", "lang2", ...],
+                        #   "ip_langs": {... "ip": "lang", ...}
+                        # }
+                        sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
+                        sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
+                        users_sheet_name = None if not details or "users_sheet_name" not in details \
+                            else details["users_sheet_name"]
+                        # check if details is not None and has "langs" and details["lang"] is a list of strings
+                        langs = (
+                            None  # None - means all langs
+                            if (
+                                    (not details)
+                                    or ("langs" not in details)
+                                    or (not isinstance(details["langs"], list))
+                                    or (not all([isinstance(obj, str) for obj in details["langs"]]))
+                            )
+                            else details["langs"]  # the code above validates details["langs"]
                         )
-                        else details["langs"]  # the code above validates details["langs"]
-                    )
-                    # fetch users from Google Sheet
-                    status = self.pull_users_config(sheet_url, users_sheet_name)
-                    if not status:
-                        return status
-                    # pull_obs_config() manages registry lock itself
-                    status = self.pull_obs_config(sheet_url, sheet_name, langs)
-                    if not status:
-                        return status
-
-                    # if "ip_langs" has been specified - set infrastructure's ip_langs and lock environment
-                    if "ip_langs" in details and details["ip_langs"] and not self.skipper.registry.infrastructure_lock:
-                        status: ExecutionStatus = self.skipper.infrastructure.set_ip_langs(details["ip_langs"])
+                        # fetch users from Google Sheet
+                        status = self.pull_users_config(sheet_url, users_sheet_name)
                         if not status:
                             return status
-                    return self.skipper.activate_registry()
+                        # pull_obs_config() manages registry lock itself
+                        status = self.pull_obs_config(sheet_url, sheet_name, langs)
+                        if not status:
+                            return status
+
+                        # if "ip_langs" has been specified - set infrastructure's ip_langs and lock environment
+                        if "ip_langs" in details and details["ip_langs"] and \
+                                not self.skipper.registry.infrastructure_lock:
+                            status: ExecutionStatus = self.skipper.infrastructure.set_ip_langs(details["ip_langs"])
+                            if not status:
+                                return status
+                        return self.skipper.activate_registry()
                 elif command == "dispose":
                     return self.delete_minions()
                 elif command == "get info":
