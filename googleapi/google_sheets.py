@@ -55,7 +55,7 @@ class OBSGoogleSheets:
 
             if gdrive_folder_url:  # validate gdrive_folder_url format
                 url = re.search(r"\/folders\/(?P<id>[a-zA-Z0-9\_\-]+)", gdrive_folder_url)
-                if len(url.groups()) != 1:
+                if not url or len(url.groups()) != 1:
                     raise ValueError(f"Invalid link: {gdrive_folder_url}")
                 gdrive_folder_id = url.group("id")
             else:

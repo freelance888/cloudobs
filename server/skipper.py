@@ -3,7 +3,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta
-from threading import RLock, Thread
+from threading import RLock, Thread, Lock
 from typing import List, Dict
 from copy import deepcopy
 
@@ -18,13 +18,35 @@ from models import (MinionSettings, VmixPlayer, Registry, State, TimingEntry,
 from models.logging import LogsStorage, Log, LogLevel
 from obs import OBS
 from util import ExecutionStatus, WebsocketResponse, CallbackThread, hash_passwd
+import traceback
 
 MINION_WS_PORT = 6000
 
+class BaseObject:
+    pass
 
-class Skipper:
-    class Infrastructure:
+class LockableObject(BaseObject):
+    def __init__(self):
+        self._lock = RLock()
+
+    def __getattr__(self, item):
+        if item == "_lock":
+            return super(BaseObject, self).__getattr__(item)
+        with self._lock:
+            return super(BaseObject, self).__getattr__(item)
+
+    def __setattr__(self, key, value):
+        if key in ("_lock",):
+            super(BaseObject, self).__setattr__(key, value)
+        else:
+            with self._lock:
+                super(BaseObject, self).__setattr__(key, value)
+
+
+class Skipper(LockableObject):
+    class Infrastructure(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.Infrastructure, self).__init__()
             self.spawner: Spawner = Spawner()
             self.skipper = skipper
 
@@ -111,31 +133,34 @@ class Skipper:
         def json(self):
             return self.spawner.json()
 
-    class OBSSheets:
+    class OBSSheets(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.OBSSheets, self).__init__()
             self.obs_sheets = OBSGoogleSheets()
             self.skipper = skipper
+            self._lock = Lock()
 
         def setup(self, sheet_url, sheet_name) -> ExecutionStatus:
-            # with self.skipper.registry_lock:
-            try:
-                self.obs_sheets.set_sheet(sheet_url, sheet_name)
-                self.skipper.registry.obs_sheet_url = sheet_url
-                self.skipper.registry.obs_sheet_name = sheet_name
-                return ExecutionStatus(True)
-            except Exception as ex:
-                return ExecutionStatus(False, f"Couldn't set up obs sheet config.\nDetails: {ex}")
+            with self._lock:
+                try:
+                    self.obs_sheets.set_sheet(sheet_url, sheet_name)
+                    self.skipper.registry.obs_sheet_url = sheet_url
+                    self.skipper.registry.obs_sheet_name = sheet_name
+                    return ExecutionStatus(True)
+                except Exception as ex:
+                    return ExecutionStatus(False, f"Couldn't set up obs sheet config.\nDetails: {ex}")
 
         def pull(self, langs: List[str] = None) -> ExecutionStatus:
             # with self.skipper.registry_lock:
             try:
-                if not self.obs_sheets.setup_status:
-                    return ExecutionStatus(False, f"OBS sheets has not been set up yet")
+                with self._lock:
+                    if not self.obs_sheets.setup_status:
+                        return ExecutionStatus(False, f"OBS sheets has not been set up yet")
 
-                if langs == "*":
-                    langs = None
+                    if langs == "*":
+                        langs = None
 
-                minion_configs: Dict[str, MinionSettings] = self.obs_sheets.pull()
+                    minion_configs: Dict[str, MinionSettings] = self.obs_sheets.pull()
 
                 if self.skipper.registry.infrastructure_lock:  # if infrastructure is locked
                     registry_langs = list(self.skipper.registry.minion_configs.keys())
@@ -154,26 +179,30 @@ class Skipper:
                     self.skipper.registry.update_minion(lang, minion_configs[lang])
                 return ExecutionStatus(True)
             except Exception as ex:
-                return ExecutionStatus(False, str(ex))
+                return ExecutionStatus(False, f"Couldn't pull OBS sheets. Details: {ex}, "
+                                              f"{traceback.format_exc()}")
 
         def push(self) -> ExecutionStatus:
             # with self.skipper.registry_lock:
             try:
-                if not self.obs_sheets.setup_status:
-                    return ExecutionStatus(False, f"setup_status of obs_sheets is False")
-                self.obs_sheets.push(self.skipper.registry.minion_configs)
+                with self._lock:
+                    if not self.obs_sheets.setup_status:
+                        return ExecutionStatus(False, f"setup_status of obs_sheets is False")
+                    self.obs_sheets.push(self.skipper.registry.minion_configs)
                 return ExecutionStatus(True)
             except Exception as ex:
                 return ExecutionStatus(False, f"Something happened while pushing obs_config info. Details: {ex}")
 
-    class SecurityWorker:
+    class SecurityWorker(LockableObject):
         def __init__(self, skipper: "Skipper"):
+            super(Skipper.SecurityWorker, self).__init__()
             self.users_sheet = UsersGoogleSheets()
             master_user = User.master()
             self.users: dict[str, User] = {master_user.login: master_user}
             self.authorized_users: dict[str, User] = {}
             self.skipper = skipper
             self.public_commands = Skipper.SecurityWorker.get_public_commands()
+            self._security_lock = Lock()
 
         @staticmethod
         def get_public_commands() -> set[str]:
@@ -195,20 +224,21 @@ class Skipper:
                 "get logs",
             }
 
-        def authorize(self, sid: str, login: str, passwd: str) -> bool:
+        def authorize(self, sid: str, login: str, passwd: str) -> bool:  # pulic interface
             """Checks if user is authorized"""
-            if login in self.users and self.users[login].passwd_hash == hash_passwd(passwd):
-                self.authorized_users.update({sid: self.users[login]})
-                return True
-            return False
+            with self._security_lock:
+                if login in self.users and self.users[login].passwd_hash == hash_passwd(passwd):
+                    self.authorized_users.update({sid: self.users[login]})
+                    return True
+                return False
 
-        def logout(self, sid: str):
+        def logout(self, sid: str):  # pulic interface
             """Deletes user from authorized"""
-            if sid in self.authorized_users:
-                self.authorized_users.pop(sid)
+            with self._security_lock:
+                if sid in self.authorized_users:
+                    self.authorized_users.pop(sid)
 
-        def sync_from_sheets(self):
-            """Syncs users with Google Sheet"""
+        def _sync_from_sheets(self):
             if not self.users_sheet.setup_status:
                 return
             errors = []
@@ -249,13 +279,17 @@ class Skipper:
                             self.users_sheet.set_passwd(col_index, passwd_placeholder, passwd_hash)
             except Exception as e:
                 errors.append(str(e))
-            # TODO: DEBUG ONLY
-            # print('users:', " ".join([str(u) for u in self.users]))
+
             if len(errors) == 0:
                 message = "Success"
             else:
                 message = "\n".join(errors)
             self.users_sheet.set_sync_status(message)
+
+        def sync_from_sheets(self):  # pulic interface
+            """Syncs users with Google Sheet"""
+            with self._security_lock:
+                self._sync_from_sheets()
 
         def _validate_user(self, errors, login, permissions):
             if not re.match(r"^(?=.{2,50}$)(?:[a-zA-Z\d]+(?:(?:-|_)[a-zA-Z\d])*)+$", login):
@@ -286,38 +320,45 @@ class Skipper:
                 return cur_user
             return None
 
-        def set_sheets(self, sheet_url: str, sheet_name: str) -> ExecutionStatus:
+        def set_sheets(self, sheet_url: str, sheet_name: str) -> ExecutionStatus:  # pulic interface
             """Binds users with Google Sheet table"""
             try:
                 with self.skipper.registry_lock:
-                    self.users_sheet.set_sheet(sheet_url, sheet_name)
+                    with self._security_lock:
+                        self.users_sheet.set_sheet(sheet_url, sheet_name)
                     self.skipper.registry.users_sheet_url = sheet_url
                     self.skipper.registry.users_sheet_name = sheet_name
-                self.sync_from_sheets()
+
+                with self._security_lock:
+                    self._sync_from_sheets()
                 return ExecutionStatus(True)
             except Exception as ex:
-                return ExecutionStatus(False, f"Couldn't set up users sheet config.\nDetails: {ex}")
+                return ExecutionStatus(False, f"Couldn't set up users sheet config.\nDetails: "
+                                              f"{ex}, "
+                                              f"{traceback.format_exc()}")
 
-        def get_user(self, sid: str):
+        def get_user(self, sid: str):  # pulic interface
             """Returns a list of user permissions"""
-            if sid in self.authorized_users.keys():
-                return self.authorized_users[sid]
+            with self._security_lock:
+                if sid in self.authorized_users.keys():
+                    return self.authorized_users[sid]
             return None
 
-        def get_user_langs(self, sid: str):
-            if sid in self.authorized_users:
-                user: User = self.authorized_users[sid]
-                return user.langs()
+        def get_user_langs(self, sid: str):  # pulic interface
+            with self._security_lock:
+                if sid in self.authorized_users:
+                    user: User = self.authorized_users[sid]
+                    return user.langs()
             raise KeyError(f"No such sid in self.authorized_users: {sid}")
 
-        def copy_registry_for_user(self, user: User, masked=True) -> dict:
+        def copy_registry_for_user(self, user: User, masked=True) -> dict:  # pulic interface
             """Returns a copy of the original registry without data user has no access"""
             with self.skipper.registry_lock:
                 registry = self.skipper.registry.masked_dict() if masked else self.skipper.registry.dict()
                 return self.adjust_registry_for_user(registry, user)
 
         @staticmethod
-        def adjust_registry_for_user(registry: dict, user: User) -> dict:
+        def adjust_registry_for_user(registry: dict, user: User) -> dict:  # pulic interface
             """Returns a copy of the original registry without data user has no access"""
             registry = deepcopy(registry)
             if user.is_admin():
@@ -334,8 +375,9 @@ class Skipper:
                 registry.pop("active_vmix_player")
             return registry
 
-    class Minion:
+    class Minion(LockableObject):
         def __init__(self, minion_ip, lang, skipper, ws_port=MINION_WS_PORT):
+            super(Skipper.Minion, self).__init__()
             self.minion_ip = minion_ip
             self.ws_port = ws_port
             self.lang = lang
@@ -394,8 +436,9 @@ class Skipper:
             return Skipper.Minion(minion_ip=data["minion_ip"], ws_port=data["ws_port"],
                                   lang=data["lang"], skipper=skipper)
 
-    class Timing:
+    class Timing(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.Timing, self).__init__()
             self.sheets = TimingGoogleSheets()
             self.skipper = skipper
             self.cb_thread = CallbackThread()
@@ -521,8 +564,9 @@ class Skipper:
             self.skipper.registry.timing_list = []
             return status
 
-    class EventHandler:
+    class EventHandler(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.EventHandler, self).__init__()
             self.skipper: Skipper = skipper
             self.event_handlers = []
 
@@ -562,8 +606,9 @@ class Skipper:
                     except Exception as ex:
                         pass
 
-    class EventSender:
+    class EventSender(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.EventSender, self).__init__()
             self.skipper: Skipper = skipper
 
         def send_registry_change(self, registry: dict):
@@ -602,8 +647,9 @@ class Skipper:
             except Exception as ex:
                 print(f"Error occurred while sending ws event: {ex}")
 
-    class Logger:
+    class Logger(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.Logger, self).__init__()
             self.skipper: Skipper = skipper
             self.logs: LogsStorage = LogsStorage()
 
@@ -670,7 +716,7 @@ class Skipper:
             self.logs.append(log)
             self.skipper.event_sender.send_log(log)
 
-    class Command:
+    class Command(LockableObject):
         """
         Command structure for a Skipper:
         {
@@ -693,7 +739,9 @@ class Skipper:
         """
 
         def __init__(self, skipper):
+            super(Skipper.Command, self).__init__()
             self.skipper: Skipper = skipper
+            self.pull_sheet_lock = Lock()
 
         @classmethod
         def valid(cls, command: str):
@@ -867,44 +915,46 @@ class Skipper:
 
             try:
                 if command == "pull config":
-                    # details:
-                    # note that all the parameters are optional
-                    # {
-                    #   "sheet_url": "url",
-                    #   "sheet_name": "name",
-                    #   "langs": ["lang1", "lang2", ...],
-                    #   "ip_langs": {... "ip": "lang", ...}
-                    # }
-                    sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
-                    sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
-                    users_sheet_name = None if not details or "users_sheet_name" not in details \
-                        else details["users_sheet_name"]
-                    # check if details is not None and has "langs" and details["lang"] is a list of strings
-                    langs = (
-                        None  # None - means all langs
-                        if (
-                                (not details)
-                                or ("langs" not in details)
-                                or (not isinstance(details["langs"], list))
-                                or (not all([isinstance(obj, str) for obj in details["langs"]]))
+                    with self.pull_sheet_lock:
+                        # details:
+                        # note that all the parameters are optional
+                        # {
+                        #   "sheet_url": "url",
+                        #   "sheet_name": "name",
+                        #   "langs": ["lang1", "lang2", ...],
+                        #   "ip_langs": {... "ip": "lang", ...}
+                        # }
+                        sheet_url = None if not details or "sheet_url" not in details else details["sheet_url"]
+                        sheet_name = None if not details or "sheet_name" not in details else details["sheet_name"]
+                        users_sheet_name = None if not details or "users_sheet_name" not in details \
+                            else details["users_sheet_name"]
+                        # check if details is not None and has "langs" and details["lang"] is a list of strings
+                        langs = (
+                            None  # None - means all langs
+                            if (
+                                    (not details)
+                                    or ("langs" not in details)
+                                    or (not isinstance(details["langs"], list))
+                                    or (not all([isinstance(obj, str) for obj in details["langs"]]))
+                            )
+                            else details["langs"]  # the code above validates details["langs"]
                         )
-                        else details["langs"]  # the code above validates details["langs"]
-                    )
-                    # fetch users from Google Sheet
-                    status = self.pull_users_config(sheet_url, users_sheet_name)
-                    if not status:
-                        return status
-                    # pull_obs_config() manages registry lock itself
-                    status = self.pull_obs_config(sheet_url, sheet_name, langs)
-                    if not status:
-                        return status
-
-                    # if "ip_langs" has been specified - set infrastructure's ip_langs and lock environment
-                    if "ip_langs" in details and details["ip_langs"] and not self.skipper.registry.infrastructure_lock:
-                        status: ExecutionStatus = self.skipper.infrastructure.set_ip_langs(details["ip_langs"])
+                        # fetch users from Google Sheet
+                        status = self.pull_users_config(sheet_url, users_sheet_name)
                         if not status:
                             return status
-                    return self.skipper.activate_registry()
+                        # pull_obs_config() manages registry lock itself
+                        status = self.pull_obs_config(sheet_url, sheet_name, langs)
+                        if not status:
+                            return status
+
+                        # if "ip_langs" has been specified - set infrastructure's ip_langs and lock environment
+                        if "ip_langs" in details and details["ip_langs"] and \
+                                not self.skipper.registry.infrastructure_lock:
+                            status: ExecutionStatus = self.skipper.infrastructure.set_ip_langs(details["ip_langs"])
+                            if not status:
+                                return status
+                        return self.skipper.activate_registry()
                 elif command == "dispose":
                     return self.delete_minions()
                 elif command == "get info":
@@ -1352,8 +1402,9 @@ class Skipper:
             else:
                 raise RuntimeError("This block of code should not be executed")
 
-    class HTTPApi:
+    class HTTPApi(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.HTTPApi, self).__init__()
             self.skipper: Skipper = skipper
 
             self.skipper.app.add_url_rule("/media/play", view_func=self._http_api_play_media, methods=["POST"])
@@ -1376,8 +1427,9 @@ class Skipper:
                 session=SessionContext(ip=request.remote_addr, user=User.vmix_player())
             ).to_http_status()
 
-    class BGWorker:
+    class BGWorker(LockableObject):
         def __init__(self, skipper):
+            super(Skipper.BGWorker, self).__init__()
             self.skipper: Skipper = skipper
             self._last_registry_state = self.skipper.registry.masked_json()
             self._last_registry_dict = self.skipper.registry.dict()
@@ -1447,6 +1499,7 @@ class Skipper:
             return diff
 
     def __init__(self, port=None):
+        super(Skipper, self).__init__()
         self.event_sender: Skipper.EventSender = Skipper.EventSender(self)
         self.event_handler: Skipper.EventHandler = Skipper.EventHandler(self)
         self.logger: Skipper.Logger = Skipper.Logger(self)
