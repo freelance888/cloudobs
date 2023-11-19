@@ -18,6 +18,7 @@ from util import CallbackThread
 
 class OBS:
     MAIN_STREAM_SOURCE_NAME = "original_stream"
+    MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE = "original_stream_update"
     MAIN_MEDIA_NAME = "media"
     TEAMSPEAK_SOURCE_NAME = "ts_input"
     TRANSITION_INPUT_NAME = "transition"
@@ -270,6 +271,17 @@ class OBS:
         response = self.client.call(obs.requests.SetMute(source=source_name, mute=mute))
         if not response.status:
             raise RuntimeError(f"OBS::set_mute(): datain: {response.datain}, dataout: {response.dataout}")
+
+    def rename_input(self, name_from, name_to):
+        """
+        Renames source
+        :param name_from: old name
+        :param name_to: new name
+        :return:
+        """
+        response = self.client.call(obs.requests.SetSourceName(sourceName=name_from, newName=name_to))
+        if not response.status:
+            raise RuntimeError(f"OBS::rename_input(): datain {response.datain}, dataout: {response.dataout}")
 
     # def set_source_mute(self, mute):
     #     self.set_mute(OBS.MAIN_STREAM_SOURCE_NAME, mute)

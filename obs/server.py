@@ -2,6 +2,7 @@ import glob
 import os
 import re
 import json
+import sys
 import time
 from datetime import datetime, timedelta
 
@@ -18,7 +19,6 @@ from threading import RLock
 from util import ExecutionStatus
 from models import MinionSettings
 from util import CallbackThread
-
 
 load_dotenv()
 BASE_MEDIA_DIR = os.getenv("MEDIA_DIR", "./content")
@@ -68,9 +68,12 @@ class OBSMonitoring:
         self.obs_wrapper: OBS = obs_wrapper
         self.obs_controller = obs_controller
 
-        self.lock = threading.RLock()
+        self.sync_lock = threading.RLock()
         self.monitoring_thread = threading.Thread(target=self.monitoring)
         self.monitoring_thread.start()
+
+        # self.media_cb_thread = CallbackThread()
+        # self.media_cb_thread.start()
 
     def monitoring(self):
         while True:
@@ -81,7 +84,7 @@ class OBSMonitoring:
             time.sleep(3)
 
     def sync(self):
-        with self.lock:
+        with self.sync_lock:
             self._check_configs()
             self._check_connection()
             self._sync_scene()
@@ -148,7 +151,8 @@ class OBSMonitoring:
             source_name = scene_item["sourceName"]
             if source_name not in self.obs_config.inputs:
                 # pass
-                if source_name not in ("Desktop Audio", OBS.MAIN_MEDIA_NAME):
+                if source_name not in ("Desktop Audio", OBS.MAIN_MEDIA_NAME) and \
+                        not source_name.startswith(OBS.MAIN_MEDIA_NAME):
                     self.obs.call(obsws.requests.DeleteSceneItem(item=source_name, scene=self.obs_config.scene))
         # sync all inputs
         for source_name in self.obs_config.inputs.keys():
@@ -253,8 +257,8 @@ class OBSMonitoring:
         with self.obs_config.media_lock:
             if self.obs_config and self.obs_config.playing_media_name and not self._source_exists(OBS.MAIN_MEDIA_NAME):
                 self.obs_wrapper._run_media(self.obs_config.playing_media_name,
-                                 OBS.MAIN_MEDIA_NAME,
-                                 timestamp=(time.time() - self.obs_config.playing_media_ts) * 1000)
+                                            OBS.MAIN_MEDIA_NAME,
+                                            timestamp=(time.time() - self.obs_config.playing_media_ts) * 1000)
 
     def _source_exists(self, source_name):
         """
@@ -541,9 +545,31 @@ class OBSController:
 
         status: ExecutionStatus = ExecutionStatus()
         try:
-            self.obs_instance.add_or_replace_stream(
-                stream_name=OBS.MAIN_STREAM_SOURCE_NAME, source_url=self.minion_settings.addr_config.original_media_url
-            )
+            self.media_cb_thread.delete_cb_type('refresh_source')
+
+            self.obs_instance.delete_source_if_exist(OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE)
+            self._spawn_main_stream_source(input_name=OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE, is_muted=True)
+
+            self.obs_monitoring.sync()
+
+            def on_replace_foo():
+                try:
+                    with self.obs_monitoring.sync_lock:
+                        self.obs_instance.delete_source_if_exist(source_name=OBS.MAIN_STREAM_SOURCE_NAME)
+                        self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE, mute=False)
+                        self.obs_instance.rename_input(name_from=OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE,
+                                                       name_to=OBS.MAIN_STREAM_SOURCE_NAME)
+                        self.obs_monitoring.obs_config.inputs.pop(OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE)
+                    self.obs_monitoring.sync()
+                except Exception as ex:
+                    print(f"ERROR while refreshing the stream: {ex}")
+                    sys.stdout.flush()
+
+            self.media_cb_thread.append_callback(foo=on_replace_foo, delay=4, cb_type='refresh_source')
+
+            # self.obs_instance.add_or_replace_stream(
+            #     stream_name=OBS.MAIN_STREAM_SOURCE_NAME, source_url=self.minion_settings.addr_config.original_media_url
+            # )
         except Exception as ex:
             status.append_error(f"Server::refresh_media_source(): Couldn't refresh stream. Details: {ex}")
         return status
@@ -577,60 +603,8 @@ class OBSController:
         status = self.activate_transition()
 
     def activate_monitoring(self):
-        obs_config: OBSConfig = self.obs_monitoring.obs_config
-
-        # sync teamspeak
-        obs_config.inputs[OBS.TEAMSPEAK_SOURCE_NAME] = OBSInput(
-            source_kind="pulse_output_capture",
-            source_settings={
-                "device_id": "obs_sink.monitor",
-            },
-            is_muted=False,
-            volume=self.minion_settings.ts_volume.value,
-            filters={
-                OBS.TS_GAIN_FILTER_NAME: OBSFilter(
-                    enabled=self.minion_settings.ts_gain_settings.enabled,
-                    filter_type="gain_filter",
-                    filter_settings={
-                        "db": self.minion_settings.ts_gain_settings.gain,
-                    }
-                ),
-                OBS.TS_LIMITER_FILTER_NAME: OBSFilter(
-                    enabled=self.minion_settings.ts_limiter_settings.enabled,
-                    filter_type="limiter_filter",
-                    filter_settings={
-                        "release_time": self.minion_settings.ts_limiter_settings.release_time,
-                        "threshold": self.minion_settings.ts_limiter_settings.threshold,
-                    }
-                ),
-            }
-        )
-
-        # sync main source
-        obs_config.inputs[OBS.MAIN_STREAM_SOURCE_NAME] = OBSInput(
-            source_kind="ffmpeg_source",
-            source_settings={
-                "buffering_mb": 12,
-                "input": self.minion_settings.addr_config.original_media_url,
-                "is_local_file": False,
-                "clear_on_media_end": False,
-            },
-            is_muted=False,
-            monitor_type="none",
-            volume=self.minion_settings.source_volume.value,
-            filters={
-                OBS.COMPRESSOR_FILTER_NAME: OBSFilter(
-                    filter_type="compressor_filter",
-                    filter_settings={
-                        "sidechain_source": OBS.TEAMSPEAK_SOURCE_NAME,
-                        "ratio": self.minion_settings.sidechain_settings.ratio,
-                        "release_time": self.minion_settings.sidechain_settings.release_time,
-                        "threshold": self.minion_settings.sidechain_settings.threshold,
-                        "output_gain": self.minion_settings.sidechain_settings.output_gain,
-                    }
-                )
-            }
-        )
+        self._spawn_teamspeak_source()
+        self._spawn_main_stream_source()
 
         self.obs_monitoring.sync()
 
@@ -772,3 +746,62 @@ class OBSController:
             return ExecutionStatus(True)
         except Exception as ex:
             return ExecutionStatus(False, f"Couldn't activate transition. Details: {ex}")
+
+    def _spawn_main_stream_source(self, input_name=OBS.MAIN_STREAM_SOURCE_NAME, is_muted=False,
+                                  source_settings_input=None):
+        if not source_settings_input:
+            source_settings_input = self.minion_settings.addr_config.original_media_url
+        # sync main source
+        self.obs_monitoring.obs_config.inputs[input_name] = OBSInput(
+            source_kind="ffmpeg_source",
+            source_settings={
+                "buffering_mb": 12,
+                "input": source_settings_input,
+                "is_local_file": False,
+                "clear_on_media_end": False,
+            },
+            is_muted=is_muted,
+            monitor_type="none",
+            volume=self.minion_settings.source_volume.value,
+            filters={
+                OBS.COMPRESSOR_FILTER_NAME: OBSFilter(
+                    filter_type="compressor_filter",
+                    filter_settings={
+                        "sidechain_source": OBS.TEAMSPEAK_SOURCE_NAME,
+                        "ratio": self.minion_settings.sidechain_settings.ratio,
+                        "release_time": self.minion_settings.sidechain_settings.release_time,
+                        "threshold": self.minion_settings.sidechain_settings.threshold,
+                        "output_gain": self.minion_settings.sidechain_settings.output_gain,
+                    }
+                )
+            }
+        )
+
+    def _spawn_teamspeak_source(self, input_name=OBS.TEAMSPEAK_SOURCE_NAME):
+        # sync teamspeak
+        self.obs_monitoring.obs_config.inputs[input_name] = OBSInput(
+            source_kind="pulse_output_capture",
+            source_settings={
+                "device_id": "obs_sink.monitor",
+            },
+            is_muted=False,
+            volume=self.minion_settings.ts_volume.value,
+            filters={
+                OBS.TS_GAIN_FILTER_NAME: OBSFilter(
+                    enabled=self.minion_settings.ts_gain_settings.enabled,
+                    filter_type="gain_filter",
+                    filter_settings={
+                        "db": self.minion_settings.ts_gain_settings.gain,
+                    }
+                ),
+                OBS.TS_LIMITER_FILTER_NAME: OBSFilter(
+                    enabled=self.minion_settings.ts_limiter_settings.enabled,
+                    filter_type="limiter_filter",
+                    filter_settings={
+                        "release_time": self.minion_settings.ts_limiter_settings.release_time,
+                        "threshold": self.minion_settings.ts_limiter_settings.threshold,
+                    }
+                ),
+            }
+        )
+
