@@ -551,25 +551,25 @@ class OBSController:
             self._spawn_main_stream_source(input_name=OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE, is_muted=True)
 
             self.obs_monitoring.sync()
+            self.obs_instance.reorder_inputs([OBS.MAIN_STREAM_SOURCE_NAME, OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE])
 
             def on_replace_foo():
                 try:
                     with self.obs_monitoring.sync_lock:
-                        self.obs_instance.delete_source_if_exist(source_name=OBS.MAIN_STREAM_SOURCE_NAME)
-                        self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE, mute=False)
-                        self.obs_instance.rename_input(name_from=OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE,
-                                                       name_to=OBS.MAIN_STREAM_SOURCE_NAME)
-                        self.obs_monitoring.obs_config.inputs.pop(OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE)
+                        try:
+                            self.obs_instance.delete_source_if_exist(source_name=OBS.MAIN_STREAM_SOURCE_NAME)
+                            self.obs_instance.set_mute(source_name=OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE,
+                                                       mute=False)
+                            self.obs_instance.rename_input(name_from=OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE,
+                                                           name_to=OBS.MAIN_STREAM_SOURCE_NAME)
+                        finally:
+                            self.obs_monitoring.obs_config.inputs.pop(OBS.MAIN_STREAM_SOURCE_NAME_REFRESH_SOURCE)
                     self.obs_monitoring.sync()
                 except Exception as ex:
                     print(f"ERROR while refreshing the stream: {ex}")
                     sys.stdout.flush()
 
             self.media_cb_thread.append_callback(foo=on_replace_foo, delay=4, cb_type='refresh_source')
-
-            # self.obs_instance.add_or_replace_stream(
-            #     stream_name=OBS.MAIN_STREAM_SOURCE_NAME, source_url=self.minion_settings.addr_config.original_media_url
-            # )
         except Exception as ex:
             status.append_error(f"Server::refresh_media_source(): Couldn't refresh stream. Details: {ex}")
         return status

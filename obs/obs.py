@@ -283,6 +283,45 @@ class OBS:
         if not response.status:
             raise RuntimeError(f"OBS::rename_input(): datain {response.datain}, dataout: {response.dataout}")
 
+    def reorder_inputs(self, source_names):
+        """
+        Reorders scene inputs
+        :param source_names: array of source names
+        :return:
+        """
+        # since ReorderSceneItems requires all the items listed in scene (otherwise it will
+        # remove items from scene). So we need to ensure that we pass all the items listed in scene.
+        # Also ensure that all passed source names are present in the scene
+        # for source_name in source_names:
+        #     self.client.call(obs.requests.AddSceneItem(sceneName=OBS.MAIN_SCENE_NAME,
+        #                                                sourceName=source_name,
+        #                                                setVisible=True))
+
+        response = self.client.call(obs.requests.GetSceneItemList(OBS.MAIN_SCENE_NAME))
+        if not response.status:
+            raise RuntimeError(f"OBS::reorder_inputs(): datain {response.datain}, dataout: {response.dataout}")
+
+        existing_items = [item['sourceName'] for item in response.getSceneItems()]
+        ordered_items = []
+
+        for source_name in source_names:
+            if source_name in existing_items:
+                ordered_items.append(source_name)
+
+        for source_name in existing_items:
+            if source_name not in ordered_items:
+                ordered_items.append(source_name)
+
+        items = [{'name': source_name} for source_name in ordered_items]
+        try:
+            response = self.client.call(
+                obs.requests.ReorderSceneItems(items, scene=OBS.MAIN_SCENE_NAME)
+            )
+            if not response.status:
+                raise RuntimeError(f"OBS::reorder_inputs(): datain {response.datain}, dataout: {response.dataout}")
+        except:
+            pass
+
     # def set_source_mute(self, mute):
     #     self.set_mute(OBS.MAIN_STREAM_SOURCE_NAME, mute)
     #
