@@ -569,7 +569,7 @@ class OBSController:
                     print(f"ERROR while refreshing the stream: {ex}")
                     sys.stdout.flush()
 
-            self.media_cb_thread.append_callback(foo=on_replace_foo, delay=4, cb_type='refresh_source')
+            self.media_cb_thread.append_callback(foo=on_replace_foo, delay=6, cb_type='refresh_source')
         except Exception as ex:
             status.append_error(f"Server::refresh_media_source(): Couldn't refresh stream. Details: {ex}")
         return status
